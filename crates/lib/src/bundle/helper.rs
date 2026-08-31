@@ -48,13 +48,12 @@ impl BundleProcessor {
     ) -> Result<(Vec<String>, HashMap<usize, usize>), KoraError> {
         let indices = sign_only_indices.unwrap_or_else(|| (0..transactions.len()).collect());
 
-        // Build map and filtered list (duplicates silently ignored)
         let mut index_to_position: HashMap<usize, usize> = HashMap::with_capacity(indices.len());
         let mut filtered: Vec<String> = Vec::with_capacity(indices.len());
 
         for idx in indices {
             if index_to_position.contains_key(&idx) {
-                continue; // skip duplicate
+                continue;
             }
             let tx = transactions.get(idx).ok_or_else(|| {
                 KoraError::ValidationError(format!(
@@ -110,7 +109,6 @@ impl BundleProcessor {
 
         let mut alt_cache: HashMap<Pubkey, Vec<Pubkey>> = HashMap::new();
 
-        // Phase 1: Decode, resolve, validate, calc fees, collect instructions
         for encoded in encoded_txs {
             let transaction = TransactionUtil::decode_b64_transaction(encoded)?;
 
@@ -123,7 +121,6 @@ impl BundleProcessor {
             )
             .await?;
 
-            // Check usage limit for each transaction in the bundle (skip for estimates)
             if let BundleProcessingMode::CheckUsage(user_id) = processing_mode {
                 UsageTracker::check_transaction_usage_limit(
                     config,
@@ -150,7 +147,6 @@ impl BundleProcessor {
             resolved_transactions.push(resolved_tx);
         }
 
-        // Calculate the estimated fee for each transaction using the full bundle context
         for resolved_tx in resolved_transactions.iter_mut() {
             let fee_calc = FeeConfigUtil::estimate_kora_fee(
                 resolved_tx,
@@ -168,7 +164,6 @@ impl BundleProcessor {
                     || KoraError::ValidationError("Bundle fee calculation overflow".to_string()),
                 )?;
 
-            // Track how many transactions are missing payment instructions
             if fee_calc.payment_instruction_fee > 0 {
                 txs_missing_payment_count += 1;
             }
@@ -193,7 +188,6 @@ impl BundleProcessor {
                 })?;
         }
 
-        // Phase 2: Calculate payments with cross-tx ATA visibility
         let mut bundle_payment_totals = PaymentLamportTotals::default();
         let mut total_solana_estimated_fee = 0u64;
         for resolved in resolved_transactions.iter_mut() {
@@ -265,7 +259,6 @@ impl BundleProcessor {
         let tx_count = self.resolved_transactions.len();
 
         for (i, resolved) in self.resolved_transactions.iter_mut().enumerate() {
-            // Get latest blockhash if signatures are empty and blockhash is not set
             if blockhash.is_none() && resolved.transaction.signatures.is_empty() {
                 blockhash = Some(
                     rpc_client
@@ -275,7 +268,6 @@ impl BundleProcessor {
                 );
             }
 
-            // Add lighthouse assertion only to last transaction in bundle
             if i == tx_count - 1 {
                 LighthouseUtil::add_fee_payer_assertion(
                     &mut resolved.transaction,
@@ -493,11 +485,10 @@ mod tests {
         let txs = vec!["tx0".to_string(), "tx1".to_string()];
         let (result, index_to_position) =
             BundleProcessor::extract_transactions_to_process(&txs, Some(vec![0, 0, 1])).unwrap();
-        // Duplicates are silently skipped, only unique indices processed
         assert_eq!(result, vec!["tx0".to_string(), "tx1".to_string()]);
         assert_eq!(index_to_position.len(), 2);
-        assert_eq!(index_to_position.get(&0), Some(&0)); // tx0 at position 0 in filtered
-        assert_eq!(index_to_position.get(&1), Some(&1)); // tx1 at position 1 in filtered
+        assert_eq!(index_to_position.get(&0), Some(&0));
+        assert_eq!(index_to_position.get(&1), Some(&1));
     }
 
     #[test]
@@ -539,9 +530,7 @@ mod tests {
     fn test_merge_signed_transactions_descending_indices() {
         let original =
             vec!["tx0".to_string(), "tx1".to_string(), "tx2".to_string(), "tx3".to_string()];
-        // indices [2, 0] means: signed[0] = tx2, signed[1] = tx0
         let signed = vec!["signed_tx2".to_string(), "signed_tx0".to_string()];
-        // index 2 -> position 0, index 0 -> position 1
         let index_to_position =
             std::collections::HashMap::from([(2_usize, 0_usize), (0_usize, 1_usize)]);
 

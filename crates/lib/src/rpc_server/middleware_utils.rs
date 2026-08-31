@@ -144,7 +144,6 @@ mod tests {
     };
     use tower::{Layer, Service, ServiceExt};
 
-    // Mock service that always returns OK
     #[derive(Clone)]
     struct MockService;
 
@@ -215,7 +214,6 @@ mod tests {
         let layer = MethodValidationLayer::new(allowed_methods);
         let mut service = layer.layer(MockService);
 
-        // Test each allowed method
         for method in &["liveness", "getConfig", "signTransaction", "estimateTransactionFee"] {
             let body = format!(r#"{{"jsonrpc":"2.0","method":"{}","id":1}}"#, method);
             let request = Request::builder()

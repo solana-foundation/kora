@@ -21,7 +21,6 @@ export function runAuthenticationTests() {
                 rpcUrl: koraRpcUrl,
             });
 
-            // Auth failure should result in an error
             await expect(client.getConfig()).rejects.toThrow();
         });
 
@@ -32,7 +31,6 @@ export function runAuthenticationTests() {
                 rpcUrl: koraRpcUrl,
             });
 
-            // Auth failure should result in an error
             await expect(client.getConfig()).rejects.toThrow();
         });
 
@@ -55,7 +53,6 @@ export function runAuthenticationTests() {
                 rpcUrl: koraRpcUrl,
             });
 
-            // No credentials should fail when auth is enabled
             await expect(client.getConfig()).rejects.toThrow();
         });
     });

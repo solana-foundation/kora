@@ -125,10 +125,7 @@ mod tests {
     fn test_usage_limit_config_parsing() {
         let config = ConfigBuilder::new()
             .with_usage_limit_config(true, Some("redis://localhost:6379"), false)
-            .with_usage_limit_rules(vec![
-                // Transaction lifetime rule
-                (None, None, 100, None),
-            ])
+            .with_usage_limit_rules(vec![(None, None, 100, None)])
             .build_config()
             .unwrap();
 
@@ -162,10 +159,7 @@ mod tests {
     fn test_usage_limit_time_bucket_rule() {
         let config = ConfigBuilder::new()
             .with_usage_limit_config(true, Some("redis://localhost:6379"), false)
-            .with_usage_limit_rules(vec![
-                // Transaction time-bucket rule: 50 per hour
-                (None, None, 50, Some(3600)),
-            ])
+            .with_usage_limit_rules(vec![(None, None, 50, Some(3600))])
             .build_config()
             .unwrap();
 
@@ -185,14 +179,12 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_usage_limit_config(true, Some("redis://localhost:6379"), false)
             .with_usage_limit_rules(vec![
-                // Time-windowed instruction rule
                 (
                     Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
                     Some("Transfer"),
                     10,
                     Some(86400),
                 ),
-                // Lifetime instruction rule (no window)
                 (
                     Some("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"),
                     Some("CreateIdempotent"),
@@ -206,7 +198,6 @@ mod tests {
         assert!(config.kora.usage_limit.enabled);
         assert_eq!(config.kora.usage_limit.rules.len(), 2);
 
-        // Check time-windowed rule
         match &config.kora.usage_limit.rules[0] {
             UsageLimitRuleConfig::Instruction { program, instruction, max, window_seconds } => {
                 assert_eq!(program, "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -217,7 +208,6 @@ mod tests {
             _ => panic!("Expected Instruction rule"),
         }
 
-        // Check lifetime rule
         match &config.kora.usage_limit.rules[1] {
             UsageLimitRuleConfig::Instruction { program, instruction, max, window_seconds } => {
                 assert_eq!(program, "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
@@ -233,10 +223,7 @@ mod tests {
     fn test_transaction_rule_config_parse() {
         let config = ConfigBuilder::new()
             .with_usage_limit_config(true, Some("redis://localhost:6379"), false)
-            .with_usage_limit_rules(vec![
-                // Transaction rule with window
-                (None, None, 100, Some(3600)),
-            ])
+            .with_usage_limit_rules(vec![(None, None, 100, Some(3600))])
             .build_config()
             .unwrap();
 
@@ -253,10 +240,7 @@ mod tests {
     fn test_transaction_rule_config_lifetime() {
         let config = ConfigBuilder::new()
             .with_usage_limit_config(true, Some("redis://localhost:6379"), false)
-            .with_usage_limit_rules(vec![
-                // Transaction lifetime rule
-                (None, None, 50, None),
-            ])
+            .with_usage_limit_rules(vec![(None, None, 50, None)])
             .build_config()
             .unwrap();
 
@@ -273,15 +257,12 @@ mod tests {
     fn test_instruction_rule_config_parse() {
         let config = ConfigBuilder::new()
             .with_usage_limit_config(true, Some("redis://localhost:6379"), false)
-            .with_usage_limit_rules(vec![
-                // Instruction rule with window
-                (
-                    Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
-                    Some("Transfer"),
-                    10,
-                    Some(86400),
-                ),
-            ])
+            .with_usage_limit_rules(vec![(
+                Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+                Some("Transfer"),
+                10,
+                Some(86400),
+            )])
             .build_config()
             .unwrap();
 
@@ -300,10 +281,12 @@ mod tests {
     fn test_instruction_rule_config_lifetime() {
         let config = ConfigBuilder::new()
             .with_usage_limit_config(true, Some("redis://localhost:6379"), false)
-            .with_usage_limit_rules(vec![
-                // Instruction lifetime rule
-                (Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"), Some("Burn"), 5, None),
-            ])
+            .with_usage_limit_rules(vec![(
+                Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+                Some("Burn"),
+                5,
+                None,
+            )])
             .build_config()
             .unwrap();
 

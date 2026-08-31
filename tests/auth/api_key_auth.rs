@@ -7,7 +7,6 @@ async fn test_api_key_authentication_valid() {
     let valid_hmac = create_valid_hmac_signature_headers();
     let valid_headers_hmac = valid_hmac.iter().map(|(k, v)| (k.as_str(), v.as_str()));
 
-    // Test valid API key
     let response = make_auth_request(Some(
         std::iter::once((X_API_KEY, TEST_API_KEY))
             .chain(valid_headers_hmac.clone())
@@ -28,7 +27,6 @@ async fn test_api_key_authentication_invalid() {
     let valid_hmac = create_valid_hmac_signature_headers();
     let valid_headers_hmac = valid_hmac.iter().map(|(k, v)| (k.as_str(), v.as_str()));
 
-    // Test invalid API key
     let invalid_response = make_auth_request(Some(
         std::iter::once((X_API_KEY, "wrong-key"))
             .chain(valid_headers_hmac.clone())
@@ -45,7 +43,6 @@ async fn test_api_key_authentication_missing() {
     let valid_hmac = create_valid_hmac_signature_headers();
     let valid_headers_hmac = valid_hmac.iter().map(|(k, v)| (k.as_str(), v.as_str()));
 
-    // Test missing API key
     let missing_response =
         make_auth_request(Some(valid_headers_hmac.clone().collect::<Vec<(&str, &str)>>())).await;
 

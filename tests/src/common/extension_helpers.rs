@@ -41,7 +41,6 @@ impl ExtensionHelpers {
         }
     }
 
-    /// Create a mint with InterestBearingConfig extension
     pub async fn create_mint_with_interest_bearing(
         rpc_client: &Arc<RpcClient>,
         payer: &Keypair,
@@ -99,7 +98,6 @@ impl ExtensionHelpers {
         Ok(())
     }
 
-    /// Create a manual token account with MemoTransfer extension
     pub async fn create_token_account_with_memo_transfer(
         rpc_client: &Arc<RpcClient>,
         payer: &Keypair,
@@ -111,9 +109,7 @@ impl ExtensionHelpers {
             return Ok(());
         }
 
-        // Calculate space for token accounts with MemoTransfer extension
-        // Also include TransferFeeAmount if the mint has TransferFeeConfig
-        // (The USDC mint 2022 has TransferFeeConfig, so we need to account for it)
+        // Must include TransferFeeAmount for USDC mint 2022's TransferFeeConfig
         let account_space = ExtensionType::try_calculate_account_len::<Token2022Account>(&[
             ExtensionType::MemoTransfer,
             ExtensionType::TransferFeeAmount,
@@ -193,7 +189,6 @@ impl ExtensionHelpers {
         Ok(())
     }
 
-    /// Create a mint with TransferHook extension for testing
     pub async fn create_mint_with_transfer_hook(
         rpc_client: &Arc<RpcClient>,
         payer: &Keypair,
@@ -201,7 +196,6 @@ impl ExtensionHelpers {
         hook_program_id: &Pubkey,
     ) -> Result<()> {
         if rpc_client.get_account(&mint_keypair.pubkey()).await.is_err() {
-            // Calculate space for mint with TransferHook extension
             let space = ExtensionType::try_calculate_account_len::<Token2022Mint>(&[
                 ExtensionType::TransferHook,
             ])?;
@@ -216,7 +210,6 @@ impl ExtensionHelpers {
                 &spl_token_2022_interface::id(),
             );
 
-            // Initialize the transfer hook extension
             let initialize_hook_instruction = transfer_hook::instruction::initialize(
                 &spl_token_2022_interface::id(),
                 &mint_keypair.pubkey(),
@@ -265,7 +258,6 @@ impl ExtensionHelpers {
         Ok(())
     }
 
-    /// Initialize Extra Account Meta List for transfer hook
     async fn initialize_extra_account_meta_list(
         rpc_client: &Arc<RpcClient>,
         payer: &Keypair,
@@ -278,7 +270,7 @@ impl ExtensionHelpers {
             return Ok(());
         }
 
-        // Create an empty list of extra account metas (our simple hook doesn't need any)
+        // Empty list: our simple hook doesn't require additional accounts
         let extra_account_metas = vec![];
 
         let mut initialize_instruction = initialize_extra_account_meta_list(

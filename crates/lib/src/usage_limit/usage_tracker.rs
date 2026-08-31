@@ -199,7 +199,6 @@ impl UsageTracker {
                 let token_account =
                     token_program.unpack_token_account(&destination_account.data)?;
 
-                // Check if this is a payment to Kora
                 if token_account.owner() == payment_destination
                     && Self::owner_signed_or_authorized_by_multisig(
                         owner,
@@ -250,14 +249,12 @@ impl UsageTracker {
             return Ok(LimiterResult::Allowed);
         }
 
-        // Extract instruction rules using pre-computed indices (no per-request separation)
         let instruction_rules: Vec<&InstructionRule> = self
             .instruction_rule_indices
             .iter()
             .filter_map(|&idx| self.rules[idx].as_instruction())
             .collect();
 
-        // Batch count instruction rules in single pass
         let instruction_counts = if !instruction_rules.is_empty() {
             InstructionRule::count_all_rules(&instruction_rules, ctx)
         } else {
@@ -624,19 +621,16 @@ mod tests {
             timestamp: 1000000,
         };
 
-        // First transaction should succeed
         assert!(matches!(
             tracker.check_and_record(&mut ctx1).await.unwrap(),
             LimiterResult::Allowed
         ));
 
-        // Second transaction should succeed (at limit)
         assert!(matches!(
             tracker.check_and_record(&mut ctx2).await.unwrap(),
             LimiterResult::Allowed
         ));
 
-        // Third transaction should fail (over limit)
         assert!(matches!(
             tracker.check_and_record(&mut ctx3).await.unwrap(),
             LimiterResult::Denied { .. }
@@ -700,7 +694,6 @@ mod tests {
         let user_id1 = "test-user-1".to_string();
         let user_id2 = "test-user-2".to_string();
 
-        // Use up user1's limit
         let mut tx1a = create_mock_resolved_transaction();
         let mut ctx1a = LimiterContext {
             transaction: &mut tx1a,
@@ -735,7 +728,6 @@ mod tests {
             LimiterResult::Denied { .. }
         ));
 
-        // User2 should still be able to make transactions
         let mut tx2a = create_mock_resolved_transaction();
         let mut ctx2a = LimiterContext {
             transaction: &mut tx2a,
@@ -785,7 +777,6 @@ mod tests {
 
         let user_id = "test-user-unlimited".to_string();
 
-        // Should allow many transactions when no rules (limiter is not enabled)
         for _ in 0..10 {
             let mut tx = create_mock_resolved_transaction();
             let mut ctx = LimiterContext {
@@ -821,10 +812,8 @@ mod tests {
         let tracker = UsageTracker::new(true, store, rules, false);
 
         let user_id = "test-user-multiple-rules".to_string();
-        // Use realistic timestamp (current time) so expiry calculations work correctly
         let now = UsageTracker::current_timestamp();
 
-        // First two should pass (time bucket limit is 2)
         let mut tx1 = create_mock_resolved_transaction();
         let mut ctx1 = LimiterContext {
             transaction: &mut tx1,
@@ -848,7 +837,6 @@ mod tests {
             LimiterResult::Allowed
         ));
 
-        // Third should fail (time bucket limit exceeded)
         let mut tx3 = create_mock_resolved_transaction();
         let mut ctx3 = LimiterContext {
             transaction: &mut tx3,
@@ -864,7 +852,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_usage_limiter_disabled_fallback() {
-        // Test that when usage limiting is disabled, transactions are allowed
         let _m = ConfigMockBuilder::new().with_usage_limit_enabled(false).build_and_setup();
 
         // Initialize the usage limiter - it should set to None when disabled
@@ -897,7 +884,6 @@ mod tests {
             .with_usage_limit_fallback(true)
             .build_and_setup();
 
-        // Initialize with no cache_url - should use in-memory store but no rules = limiter disabled
         let _ = UsageTracker::init_usage_limiter().await;
 
         let config = get_config().unwrap();
@@ -923,7 +909,6 @@ mod tests {
             .with_usage_limit_fallback(false)
             .build_and_setup();
 
-        // Initialize with no cache_url and no rules - should set limiter to None
         let _ = UsageTracker::init_usage_limiter().await;
 
         let config = get_config().unwrap();
@@ -966,8 +951,6 @@ mod tests {
         let config = ConfigMockBuilder::new().build();
         let rpc_client = RpcMockBuilder::new().build();
 
-        // signer_a is the message fee payer (first signer slot); signer_b funds the CreateAccount
-        // and is the signer Kora is asked to sign with.
         let signer_a = Keypair::new();
         let signer_b = Keypair::new();
         let new_account = Keypair::new();
@@ -987,8 +970,6 @@ mod tests {
             .unwrap()
         };
 
-        // Selecting signer_b binds counting to signer_b: its CreateAccount is subsidized, so the
-        // 4th request trips the limit.
         for attempt in 1..=3 {
             let mut tx = build_tx();
             tracker
@@ -1009,8 +990,6 @@ mod tests {
             .expect_err("4th request for signer_b must exceed the CreateAccount limit");
         assert!(matches!(err, KoraError::UsageLimitExceeded(_)));
 
-        // Selecting signer_a (the first message signer) does not subsidize the CreateAccount whose
-        // payer is signer_b, so accounting stays at zero and the limit is never reached.
         for attempt in 1..=5 {
             let mut tx = build_tx();
             tracker
@@ -1173,8 +1152,6 @@ mod tests {
             .build_with_sequential_accounts(vec![&destination_account, &source_account]);
         let config = ConfigMockBuilder::new().build();
 
-        // The transfer authority is a delegate (signed), but the source account is owned by
-        // source_owner. Usage identity must be the funding wallet, not the rotatable delegate.
         let mut tx = make_spl_transfer_transaction(
             &delegate.pubkey(),
             &[],

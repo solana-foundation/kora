@@ -32,7 +32,6 @@ import {
 } from '../src/types/index.js';
 import { getInstructionsFromBase64Message } from '../src/utils/transaction.js';
 
-// Mock fetch globally
 const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
@@ -40,7 +39,6 @@ describe('KoraClient Unit Tests', () => {
     let client: KoraClient;
     const mockRpcUrl = 'http://localhost:8080';
 
-    // Helper Functions
     const mockSuccessfulResponse = (result: any) => {
         mockFetch.mockResolvedValueOnce({
             json: jest.fn().mockResolvedValueOnce({
@@ -478,8 +476,6 @@ describe('KoraClient Unit Tests', () => {
             signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
         };
 
-        // Create a mock base64-encoded transaction
-        // This is a minimal valid transaction structure
         const mockTransactionBase64 =
             'Aoq7ymA5OGP+gmDXiY5m3cYXlY2Rz/a/gFjOgt9ZuoCS7UzuiGGaEnW2OOtvHvMQHkkD7Z4LRF5B63ftu+1oZwIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgECB1urjQEjgFgzqYhJ8IXJeSg4cJP1j1g2CJstOQTDchOKUzqH3PxgGW3c4V3vZV05A5Y30/MggOBs0Kd00s1JEwg5TaEeaV4+KL2y7fXIAuf6cN0ZQitbhY+G9ExtBSChspOXPgNcy9pYpETe4bmB+fg4bfZx1tnicA/kIyyubczAmbcIKIuniNOOQYG2ggKCz8NjEsHVezrWMatndu1wk6J5miGP26J6Vwp31AljiAajAFuP0D9mWJwSeFuA7J5rPwbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpd/O36SW02zRtNtqk6GFeip2+yBQsVTeSbLL4rWJRkd4CBgQCBQQBCgxAQg8AAAAAAAYGBAIFAwEKDBAnAAAAAAAABg==';
 
@@ -500,7 +496,6 @@ describe('KoraClient Unit Tests', () => {
         });
 
         it('should successfully append payment instruction', async () => {
-            // Mock estimateTransactionFee call
             mockFetch.mockResolvedValueOnce({
                 json: jest.fn().mockResolvedValueOnce({
                     id: 1,
@@ -536,7 +531,6 @@ describe('KoraClient Unit Tests', () => {
                 signer_address: mockFeeEstimate.signer_pubkey,
             });
 
-            // Verify only estimateTransactionFee was called
             expect(mockFetch).toHaveBeenCalledTimes(1);
             expect(mockFetch).toHaveBeenCalledWith(mockRpcUrl, {
                 body: JSON.stringify({
@@ -556,7 +550,6 @@ describe('KoraClient Unit Tests', () => {
         });
 
         it('should handle fixed pricing configuration', async () => {
-            // Mock estimateTransactionFee call
             mockFetch.mockResolvedValueOnce({
                 json: jest.fn().mockResolvedValueOnce({
                     id: 1,
@@ -584,7 +577,6 @@ describe('KoraClient Unit Tests', () => {
         });
 
         it('should handle estimateTransactionFee RPC error', async () => {
-            // Mock failed estimateTransactionFee
             const mockError = { code: -32602, message: 'Invalid transaction' };
             mockFetch.mockResolvedValueOnce({
                 json: jest.fn().mockResolvedValueOnce({
@@ -609,7 +601,6 @@ describe('KoraClient Unit Tests', () => {
             // Generate a real KeyPairSigner (simulates a user's wallet)
             const userSigner = await generateKeyPairSigner();
 
-            // Mock estimateTransactionFee to return the user's address as source_wallet context
             const feeEstimate: EstimateTransactionFeeResponse = {
                 fee_in_lamports: 5000,
                 fee_in_token: 50000,
@@ -618,7 +609,7 @@ describe('KoraClient Unit Tests', () => {
             };
             mockSuccessfulResponse(feeEstimate);
 
-            // Get payment instruction — authority is a plain address (no signer attached)
+            // authority is a plain address (no signer attached)
             const result = await client.getPaymentInstruction({
                 ...validRequest,
                 source_wallet: userSigner.address,
@@ -633,9 +624,7 @@ describe('KoraClient Unit Tests', () => {
                 source: '11111111111111111111111111111111' as any,
             });
 
-            // Combine both instructions in a transaction — previously this would throw
-            // "Multiple distinct signers" because the payment instruction had a NoopSigner.
-            // Now the payment instruction uses a plain address, so no conflict.
+            // Previously threw "Multiple distinct signers" because the payment instruction had a NoopSigner; now it uses a plain address, so no conflict.
             const feePayer = createNoopSigner('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7' as any);
             const txMessage = appendTransactionMessageInstructions(
                 [userOwnedIx, result.payment_instruction],
@@ -645,7 +634,6 @@ describe('KoraClient Unit Tests', () => {
                 ),
             );
 
-            // This should NOT throw "Multiple distinct signers"
             await expect(partiallySignTransactionMessageWithSigners(txMessage)).resolves.toBeDefined();
         });
 
@@ -660,13 +648,11 @@ describe('KoraClient Unit Tests', () => {
             };
             mockSuccessfulResponse(feeEstimate);
 
-            // Pass the signer directly as source_wallet
             const result = await client.getPaymentInstruction({
                 ...validRequest,
                 source_wallet: userSigner,
             });
 
-            // The authority account meta should carry the signer
             const authorityMeta = result.payment_instruction.accounts?.[2];
             expect(authorityMeta).toEqual(
                 expect.objectContaining({
@@ -676,7 +662,6 @@ describe('KoraClient Unit Tests', () => {
                 }),
             );
 
-            // Combining with another instruction using the same signer should work
             const userOwnedIx: Instruction = getTransferInstruction({
                 amount: 1000n,
                 authority: userSigner,
@@ -898,7 +883,6 @@ describe('KoraClient Unit Tests', () => {
 describe('Transaction Utils', () => {
     describe('getInstructionsFromBase64Message', () => {
         it('should parse instructions from a valid base64 message', () => {
-            // This is a sample base64 encoded transaction message
             const validMessage =
                 'AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIDAAEMAgAAAAEAAAAAAAAA';
 

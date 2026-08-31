@@ -48,12 +48,12 @@ impl ConfigValidator {
         for token_str in allowed_tokens {
             let token_pubkey = match Pubkey::from_str(token_str) {
                 Ok(pk) => pk,
-                Err(_) => continue, // Skip invalid pubkeys
+                Err(_) => continue,
             };
 
             let account: Account = match rpc_client.get_account(&token_pubkey).await {
                 Ok(acc) => acc,
-                Err(_) => continue, // Skip if can't fetch
+                Err(_) => continue,
             };
 
             if account.owner != TOKEN_2022_PROGRAM_ID {
@@ -63,7 +63,7 @@ impl ConfigValidator {
             let mint_with_extensions =
                 match StateWithExtensions::<Token2022MintState>::unpack(&account.data) {
                     Ok(m) => m,
-                    Err(_) => continue, // Skip if can't parse
+                    Err(_) => continue,
                 };
 
             if mint_with_extensions
@@ -421,19 +421,16 @@ impl ConfigValidator {
             }
         };
 
-        // Validate rate limit (warn if 0)
         if config.kora.rate_limit == 0 {
             warnings.push("Rate limit is set to 0 - this will block all requests".to_string());
         }
 
-        // Validate payment address
         if let Some(payment_address) = &config.kora.payment_address {
             if let Err(e) = Pubkey::from_str(payment_address) {
                 errors.push(format!("Invalid payment address: {e}"));
             }
         }
 
-        // Validate reCAPTCHA score threshold (must be between MIN and MAX inclusive)
         let score_threshold = config.kora.auth.recaptcha_score_threshold;
         if !(MIN_RECAPTCHA_SCORE..=MAX_RECAPTCHA_SCORE).contains(&score_threshold) {
             errors.push(format!(
@@ -441,7 +438,6 @@ impl ConfigValidator {
             ));
         }
 
-        // Validate enabled methods (warn if all false)
         let methods = &config.kora.enabled_methods;
         if !methods.iter().any(|enabled| enabled) {
             warnings.push(
@@ -449,7 +445,6 @@ impl ConfigValidator {
             );
         }
 
-        // Validate signing configuration
         if config.kora.sign_timeout_seconds < MIN_SIGN_TIMEOUT_SECONDS {
             errors.push("sign_timeout_seconds must be at least 1 second".to_string());
         }
@@ -471,23 +466,19 @@ impl ConfigValidator {
         errors.extend(plugin_errors);
         warnings.extend(plugin_warnings);
 
-        // Validate max allowed lamports (warn if 0)
         if config.validation.max_allowed_lamports == 0 {
             warnings
                 .push("Max allowed lamports is 0 - this will block all SOL transfers".to_string());
         }
 
-        // Validate max signatures (warn if 0)
         if config.validation.max_signatures == 0 {
             warnings.push("Max signatures is 0 - this will block all transactions".to_string());
         }
 
-        // Validate price source (warn if Mock)
         if matches!(config.validation.price_source, PriceSource::Mock) {
             warnings.push("Using Mock price source - not suitable for production".to_string());
         }
 
-        // Validate Jupiter API key is set when using Jupiter price source
         if matches!(config.validation.price_source, PriceSource::Jupiter)
             && std::env::var("JUPITER_API_KEY").is_err()
         {
@@ -507,7 +498,6 @@ impl ConfigValidator {
             );
         }
 
-        // Validate allowed programs (warn if empty, wildcard, or missing system/token programs).
         let is_wildcard = config.validation.allowed_programs.is_all();
         if is_wildcard {
             warnings.push(
@@ -538,7 +528,6 @@ impl ConfigValidator {
             );
         }
 
-        // Validate lighthouse configuration
         if config.kora.lighthouse.enabled {
             let lighthouse_program = LIGHTHOUSE_PROGRAM_ID.to_string();
             if !is_wildcard && !config.validation.allowed_programs.contains(&lighthouse_program) {
@@ -554,7 +543,6 @@ impl ConfigValidator {
                 ));
             }
 
-            // Warn about signAndSend methods not having lighthouse protection
             let enabled_methods = &config.kora.enabled_methods;
             let mut unprotected_methods = Vec::new();
             if enabled_methods.sign_and_send_transaction {
@@ -573,7 +561,6 @@ impl ConfigValidator {
             }
         }
 
-        // Validate base58 pubkey format for allowed_programs
         for pubkey_str in &config.validation.allowed_programs {
             if Pubkey::from_str(pubkey_str).is_err() {
                 errors.push(format!(
@@ -583,7 +570,6 @@ impl ConfigValidator {
             }
         }
 
-        // Validate base58 pubkey format for require_one_of_programs
         for pubkey_str in &config.validation.require_one_of_programs {
             if Pubkey::from_str(pubkey_str).is_err() {
                 errors.push(format!(
@@ -593,7 +579,6 @@ impl ConfigValidator {
             }
         }
 
-        // Validate require_one_of_programs constraints
         if !config.validation.require_one_of_programs.is_empty() {
             for program in &config.validation.require_one_of_programs {
                 if !config.validation.allowed_programs.contains(program) {
@@ -604,9 +589,7 @@ impl ConfigValidator {
             }
         }
 
-        // Validate allowed tokens. Only required when the price model actually charges fees;
-        // a Free-pricing operator (e.g. a devnet-deploy paymaster) has no reason to maintain
-        // an allowlist since no SPL token is ever used for payment.
+        // Only required when fees are charged; Free-pricing operators need no allowlist.
         if config.validation.is_payment_required() && config.validation.allowed_tokens.is_empty() {
             errors.push("No allowed tokens configured".to_string());
         } else if !config.validation.allowed_tokens.is_empty() {
@@ -615,14 +598,12 @@ impl ConfigValidator {
             }
         }
 
-        // Validate allowed spl paid tokens
         if let Err(e) =
             TokenUtil::check_valid_tokens(config.validation.allowed_spl_paid_tokens.as_slice())
         {
             errors.push(format!("Invalid spl paid token address: {e}"));
         }
 
-        // Warn if using "All" for allowed_spl_paid_tokens
         if matches!(config.validation.allowed_spl_paid_tokens, SplTokenConfig::All) {
             warnings.push(
                 "⚠️  Using 'All' for allowed_spl_paid_tokens - this accepts ANY SPL token for payment. \
@@ -631,12 +612,10 @@ impl ConfigValidator {
             );
         }
 
-        // Validate disallowed accounts
         if let Err(e) = TokenUtil::check_valid_tokens(&config.validation.disallowed_accounts) {
             errors.push(format!("Invalid disallowed account address: {e}"));
         }
 
-        // Validate Token2022 extensions
         if let Err(e) = validate_token2022_extensions(&config.validation.token_2022, &mut warnings)
         {
             errors.push(format!("Token2022 extension validation failed: {e}"));
@@ -647,7 +626,6 @@ impl ConfigValidator {
         let has_token22_program =
             config.validation.allowed_programs.contains(&TOKEN_2022_PROGRAM_ID.to_string());
 
-        // Warn only when Token2022 is enabled and PermanentDelegate is not blocked.
         if has_token22_program
             && !config
                 .validation
@@ -664,16 +642,13 @@ impl ConfigValidator {
             );
         }
 
-        // Check if fees are enabled (not Free pricing)
         let fees_enabled = !matches!(config.validation.price.model, PriceModel::Free);
 
         if fees_enabled {
-            // If fees enabled, token or token22 must be enabled in allowed_programs
             if !has_token_program && !has_token22_program {
                 errors.push("When fees are enabled, at least one token program (SPL Token or Token2022) must be in allowed_programs".to_string());
             }
 
-            // If fees enabled, allowed_spl_paid_tokens can't be empty
             if !config.validation.allowed_spl_paid_tokens.has_tokens() {
                 errors.push(
                     "When fees are enabled, allowed_spl_paid_tokens cannot be empty".to_string(),
@@ -687,7 +662,6 @@ impl ConfigValidator {
             );
         }
 
-        // Validate that all tokens in allowed_spl_paid_tokens are also in allowed_tokens
         for paid_token in &config.validation.allowed_spl_paid_tokens {
             if !config.validation.allowed_tokens.contains(paid_token) {
                 errors.push(format!(
@@ -696,7 +670,6 @@ impl ConfigValidator {
             }
         }
 
-        // Validate bundle configuration
         if config.kora.bundle.enabled && config.kora.bundle.jito.simulate_bundle_url.is_none() {
             errors.push(
                 "Bundle support is enabled but jito.simulate_bundle_url is not set. \
@@ -706,12 +679,10 @@ impl ConfigValidator {
             );
         }
 
-        // Validate fee payer policy - warn about enabled risky operations
         Self::validate_fee_payer_policy(&config.validation.fee_payer_policy, &mut warnings);
 
         Self::warn_mutable_transfer_hook_payment_risk(&config.validation, &mut warnings);
 
-        // Validate margin (error if negative)
         match &config.validation.price.model {
             PriceModel::Fixed { amount, token, strict } => {
                 if *amount == 0 {
@@ -727,7 +698,6 @@ impl ConfigValidator {
                     ));
                 }
 
-                // Warn about dangerous configurations with fixed pricing
                 let has_auth = config.kora.auth.has_resolved_auth();
                 if !has_auth {
                     warnings.push(
@@ -738,7 +708,6 @@ impl ConfigValidator {
                     );
                 }
 
-                // Warn about strict mode
                 if *strict {
                     warnings.push(
                         "Strict pricing mode enabled. \
@@ -757,7 +726,6 @@ impl ConfigValidator {
             _ => {}
         };
 
-        // General authentication warning
         let has_auth = config.kora.auth.has_resolved_auth();
         if !has_auth {
             warnings.push(
@@ -778,7 +746,6 @@ impl ConfigValidator {
             ));
         }
 
-        // Validate usage limit configuration
         let usage_config = &config.kora.usage_limit;
         if usage_config.enabled {
             if usage_config.rules.is_empty() {
@@ -794,7 +761,6 @@ impl ConfigValidator {
             warnings.extend(usage_warnings);
         }
 
-        // Validate RPC cache config
         if config.kora.cache.enabled {
             let (cache_errors, cache_warnings) =
                 CacheValidator::validate_rpc_cache(&config.kora.cache).await;
@@ -802,9 +768,7 @@ impl ConfigValidator {
             warnings.extend(cache_warnings);
         }
 
-        // RPC validation - only if not skipped
         if !skip_rpc_validation {
-            // Validate allowed programs - should be executable
             for program_str in &config.validation.allowed_programs {
                 if let Ok(program_pubkey) = Pubkey::from_str(program_str) {
                     if let Err(e) = validate_account(
@@ -820,7 +784,6 @@ impl ConfigValidator {
                 }
             }
 
-            // Validate allowed tokens - should be non-executable token mints
             for token_str in &config.validation.allowed_tokens {
                 if let Ok(token_pubkey) = Pubkey::from_str(token_str) {
                     if let Err(e) =
@@ -832,7 +795,6 @@ impl ConfigValidator {
                 }
             }
 
-            // Validate allowed spl paid tokens - should be non-executable token mints
             for token_str in &config.validation.allowed_spl_paid_tokens {
                 if let Ok(token_pubkey) = Pubkey::from_str(token_str) {
                     if let Err(e) =
@@ -844,7 +806,6 @@ impl ConfigValidator {
                 }
             }
 
-            // Check Token2022 mints for risky extensions
             Self::check_token_mint_extensions(
                 rpc_client,
                 &config.validation.allowed_tokens,
@@ -852,7 +813,6 @@ impl ConfigValidator {
             )
             .await;
 
-            // Validate missing ATAs for payment address
             if let Some(payment_address) = &config.kora.payment_address {
                 if let Ok(payment_address) = Pubkey::from_str(payment_address) {
                     match find_missing_atas(config, rpc_client, &payment_address).await {
@@ -890,7 +850,6 @@ impl ConfigValidator {
             .await;
         }
 
-        // Validate signers configuration if provided
         if let Some(path) = signers_config_path {
             match SignerPoolConfig::load_config(path.as_ref()) {
                 Ok(signer_config) => {
@@ -907,7 +866,6 @@ impl ConfigValidator {
             println!("ℹ️  Signers configuration not validated. Include --signers-config path/to/signers.toml to validate signers");
         }
 
-        // Output results
         println!("=== Configuration Validation ===");
         if errors.is_empty() {
             println!("✓ Configuration validation successful!");
@@ -940,7 +898,6 @@ fn validate_token2022_extensions(
     config: &Token2022Config,
     warnings: &mut Vec<String>,
 ) -> Result<(), String> {
-    // Validate blocked mint extensions
     for ext_name in &config.blocked_mint_extensions {
         if spl_token_2022_util::parse_mint_extension_string(ext_name).is_none() {
             return Err(format!(
@@ -950,7 +907,6 @@ fn validate_token2022_extensions(
         }
     }
 
-    // Validate blocked account extensions
     for ext_name in &config.blocked_account_extensions {
         if spl_token_2022_util::parse_account_extension_string(ext_name).is_none() {
             return Err(format!(
@@ -1040,10 +996,8 @@ mod tests {
             metrics: MetricsConfig::default(),
         };
 
-        // Initialize global config
         let _ = update_config(config.clone());
 
-        // Test empty tokens list
         config.validation.allowed_tokens = vec![];
         let _ = update_config(config);
 
@@ -1088,7 +1042,6 @@ mod tests {
             metrics: MetricsConfig::default(),
         };
 
-        // Initialize global config
         let _ = update_config(config);
 
         let rpc_client = RpcClient::new_with_commitment(
@@ -1398,14 +1351,14 @@ mod tests {
     async fn test_validate_with_result_warnings() {
         let config = Config {
             validation: ValidationConfig {
-                max_allowed_lamports: 0, // Should warn
+                max_allowed_lamports: 0,
                 max_priority_fee_lamports: None,
-                max_signatures: 0,                                   // Should warn
-                allowed_programs: ProgramsConfig::Allowlist(vec![]), // Should warn
+                max_signatures: 0,
+                allowed_programs: ProgramsConfig::Allowlist(vec![]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
-                price_source: PriceSource::Mock, // Should warn
+                price_source: PriceSource::Mock,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
@@ -1416,7 +1369,7 @@ mod tests {
                 cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig {
-                rate_limit: 0, // Should warn
+                rate_limit: 0,
                 max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods {
                     liveness: false,
@@ -1447,7 +1400,6 @@ mod tests {
             metrics: MetricsConfig::default(),
         };
 
-        // Initialize global config
         let _ = update_config(config);
 
         let rpc_client = RpcClient::new_with_commitment(
@@ -1492,7 +1444,7 @@ mod tests {
         config.kora.cache.enabled = false;
         config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
         config.validation.allowed_programs =
-            ProgramsConfig::Allowlist(vec![SPL_TOKEN_PROGRAM_ID.to_string()]); // no system program
+            ProgramsConfig::Allowlist(vec![SPL_TOKEN_PROGRAM_ID.to_string()]);
 
         let _ = update_config(config);
 
@@ -1512,7 +1464,7 @@ mod tests {
         config.kora.cache.enabled = false;
         config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
         config.validation.allowed_programs =
-            ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]); // no token program
+            ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]);
 
         let _ = update_config(config);
 
@@ -1657,7 +1609,7 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     "11111111111111111111111111111112".to_string(),
-                ]), // Missing system program, but valid base58
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -1675,7 +1627,6 @@ mod tests {
             metrics: MetricsConfig::default(),
         };
 
-        // Initialize global config
         let _ = update_config(config);
 
         let rpc_client = RpcClient::new_with_commitment(
@@ -1773,16 +1724,14 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
-                allowed_tokens: vec![], // Error - no tokens
+                allowed_tokens: vec![],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "invalid_token_address".to_string()
-                ]), // Error - invalid token
-                disallowed_accounts: vec!["invalid_account_address".to_string()], // Error - invalid account
+                ]),
+                disallowed_accounts: vec!["invalid_account_address".to_string()],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
-                price: PriceConfig {
-                    model: PriceModel::Margin { margin: -0.1 }, // Error - negative margin
-                },
+                price: PriceConfig { model: PriceModel::Margin { margin: -0.1 } },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
@@ -1828,8 +1777,8 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig {
                     model: PriceModel::Fixed {
-                        amount: 0,                                  // Should warn
-                        token: "invalid_token_address".to_string(), // Should error
+                        amount: 0,
+                        token: "invalid_token_address".to_string(),
                         strict: false,
                     },
                 },
@@ -1876,7 +1825,7 @@ mod tests {
                 price: PriceConfig {
                     model: PriceModel::Fixed {
                         amount: 1000,
-                        token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(), // Valid but not in allowed
+                        token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
                         strict: false,
                     },
                 },
@@ -1931,7 +1880,7 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig {
                     model: PriceModel::Fixed {
-                        amount: 0, // Should warn
+                        amount: 0,
                         token: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
                         strict: false,
                     },
@@ -1970,9 +1919,9 @@ mod tests {
                 max_allowed_lamports: 1_000_000,
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
-                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]), // Missing token programs
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]), // Empty when fees enabled - should error
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -2018,7 +1967,7 @@ mod tests {
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: SplTokenConfig::All, // All tokens are allowed
+                allowed_spl_paid_tokens: SplTokenConfig::All,
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -2041,7 +1990,6 @@ mod tests {
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
 
-        // Check that it warns about using "All" for allowed_spl_paid_tokens
         let warnings = result.unwrap();
         assert!(warnings.iter().any(|w| w.contains("Using 'All' for allowed_spl_paid_tokens")));
         assert!(warnings.iter().any(|w| w.contains("volatility risk")));
@@ -2061,7 +2009,7 @@ mod tests {
                 ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
-                    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(), // Not in allowed_tokens
+                    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
                 ]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
@@ -2088,7 +2036,6 @@ mod tests {
         assert!(errors.iter().any(|e| e.contains("Token EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v in allowed_spl_paid_tokens must also be in allowed_tokens")));
     }
 
-    // Helper to create a simple test that only validates programs (no tokens)
     fn create_program_only_config() -> Config {
         Config {
             validation: ValidationConfig {
@@ -2096,7 +2043,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
-                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()], // Required to pass basic validation
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
                 ]),
@@ -2116,16 +2063,15 @@ mod tests {
         }
     }
 
-    // Helper to create a simple test that only validates tokens (no programs)
     fn create_token_only_config() -> Config {
         Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
-                allowed_programs: ProgramsConfig::Allowlist(vec![]), // No programs
+                allowed_programs: ProgramsConfig::Allowlist(vec![]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]), // Empty to avoid duplicate validation
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -2147,17 +2093,13 @@ mod tests {
     async fn test_validate_with_result_rpc_validation_valid_program() {
         let config = create_program_only_config();
 
-        // Initialize global config
         let _ = update_config(config);
 
         let rpc_client = create_mock_rpc_client_with_account(&create_mock_program_account());
 
-        // Test with RPC validation enabled (skip_rpc_validation = false)
-        // The program validation should pass, but token validation will fail (AccountNotFound)
         let result = ConfigValidator::validate_with_result(&rpc_client, false).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
-        // Should have token validation errors (account not found), but no program validation errors
         assert!(errors.iter().any(|e| e.contains("Token")
             && e.contains("validation failed")
             && e.contains("not found")));
@@ -2170,16 +2112,12 @@ mod tests {
         std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = create_token_only_config();
 
-        // Initialize global config
         let _ = update_config(config);
 
         let rpc_client = create_mock_rpc_client_with_mint(6);
 
-        // Test with RPC validation enabled (skip_rpc_validation = false)
-        // Token validation should pass (mock returns token mint) since we have no programs
         let result = ConfigValidator::validate_with_result(&rpc_client, false).await;
         assert!(result.is_ok());
-        // Should have warnings about no programs but no errors
         let warnings = result.unwrap();
         assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
     }
@@ -2210,12 +2148,10 @@ mod tests {
             kora: KoraConfig::default(),
         };
 
-        // Initialize global config
         let _ = update_config(config);
 
         let rpc_client = create_mock_rpc_client_with_account(&create_mock_non_executable_account());
 
-        // Test with RPC validation enabled (skip_rpc_validation = false)
         let result = ConfigValidator::validate_with_result(&rpc_client, false).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -2252,7 +2188,6 @@ mod tests {
 
         let rpc_client = create_mock_rpc_client_account_not_found();
 
-        // Test with RPC validation enabled (skip_rpc_validation = false)
         let result = ConfigValidator::validate_with_result(&rpc_client, false).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -2288,12 +2223,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        // Use account not found RPC client - should not matter when skipping RPC validation
         let rpc_client = create_mock_rpc_client_account_not_found();
 
-        // Test with RPC validation disabled (skip_rpc_validation = true)
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
-        assert!(result.is_ok()); // Should pass because RPC validation is skipped
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -2617,8 +2550,6 @@ mod tests {
         assert!(result.is_ok());
         let warnings = result.unwrap();
 
-        // Should have warnings for ALL enabled fee payer policy flags
-        // System policies
         assert!(warnings
             .iter()
             .any(|w| w.contains("System transfers") && w.contains("allow_transfer")));
@@ -2631,7 +2562,6 @@ mod tests {
             .iter()
             .any(|w| w.contains("System Allocate instructions") && w.contains("allow_allocate")));
 
-        // Nonce policies
         assert!(warnings
             .iter()
             .any(|w| w.contains("nonce account initialization") && w.contains("allow_initialize")));
@@ -2645,7 +2575,6 @@ mod tests {
             .iter()
             .any(|w| w.contains("nonce authority changes") && w.contains("allow_authorize")));
 
-        // SPL Token policies
         assert!(warnings
             .iter()
             .any(|w| w.contains("SPL Token transfers") && w.contains("allow_transfer")));
@@ -2686,7 +2615,6 @@ mod tests {
             .iter()
             .any(|w| w.contains("SPL Token ThawAccount") && w.contains("allow_thaw_account")));
 
-        // Token2022 policies
         assert!(warnings
             .iter()
             .any(|w| w.contains("Token2022 transfers") && w.contains("allow_transfer")));
@@ -2727,7 +2655,6 @@ mod tests {
             .iter()
             .any(|w| w.contains("Token2022 ThawAccount") && w.contains("allow_thaw_account")));
 
-        // ALT policies
         assert!(warnings
             .iter()
             .any(|w| w.contains("ALT CreateLookupTable") && w.contains("allow_create")));
@@ -2744,7 +2671,6 @@ mod tests {
             .iter()
             .any(|w| w.contains("ALT CloseLookupTable") && w.contains("allow_close")));
 
-        // Loader-v4 policies
         assert!(warnings
             .iter()
             .any(|w| w.contains("Loader-v4 Write") && w.contains("allow_write")));
@@ -2767,7 +2693,6 @@ mod tests {
             .iter()
             .any(|w| w.contains("Loader-v4 Finalize") && w.contains("allow_finalize")));
 
-        // BPF Loader Upgradeable (loader-v3) policies
         for (description, field) in [
             ("BPF Loader Upgradeable InitializeBuffer", "allow_initialize_buffer"),
             ("BPF Loader Upgradeable Write", "allow_write"),
@@ -2786,7 +2711,6 @@ mod tests {
             );
         }
 
-        // Each warning should contain risk explanation
         let fee_payer_warnings: Vec<_> =
             warnings.iter().filter(|w| w.contains("Fee payer policy")).collect();
         for warning in fee_payer_warnings {
@@ -2868,7 +2792,6 @@ mod tests {
         )
         .await;
 
-        // Should have warnings for both extensions
         assert_eq!(warnings.len(), 2);
         assert!(warnings.iter().any(|w| w.contains("PermanentDelegate extension")));
         assert!(warnings.iter().any(|w| w.contains("TransferHook extension")));
@@ -2918,7 +2841,7 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
-                allow_durable_transactions: true, // Enabled - should warn
+                allow_durable_transactions: true,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -2961,7 +2884,7 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
-                allow_durable_transactions: false, // Disabled - should not warn
+                allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -2984,7 +2907,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_jupiter_price_source_requires_api_key() {
-        // Ensure JUPITER_API_KEY is not set
         std::env::remove_var("JUPITER_API_KEY");
 
         let config = Config {
@@ -3001,7 +2923,7 @@ mod tests {
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
                 ]),
                 disallowed_accounts: vec![],
-                price_source: PriceSource::Jupiter, // Jupiter requires API key
+                price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
@@ -3020,7 +2942,6 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().build();
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
 
-        // Should fail because JUPITER_API_KEY is not set
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert!(errors.iter().any(|e| e.contains("JUPITER_API_KEY")));
@@ -3038,7 +2959,7 @@ mod tests {
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
-                ]), // Lighthouse program NOT included
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -3088,13 +3009,13 @@ mod tests {
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
-                    LIGHTHOUSE_PROGRAM_ID.to_string(), // Lighthouse in allowed
+                    LIGHTHOUSE_PROGRAM_ID.to_string(),
                 ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
                 ]),
-                disallowed_accounts: vec![LIGHTHOUSE_PROGRAM_ID.to_string()], // Also in disallowed!
+                disallowed_accounts: vec![LIGHTHOUSE_PROGRAM_ID.to_string()],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig::default(),
@@ -3140,7 +3061,7 @@ mod tests {
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
-                ]), // Lighthouse NOT included - but should be OK since disabled
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -3158,7 +3079,7 @@ mod tests {
             },
             kora: KoraConfig {
                 lighthouse: LighthouseConfig {
-                    enabled: false, // Disabled
+                    enabled: false,
                     fail_if_transaction_size_overflow: true,
                 },
                 ..Default::default()
@@ -3173,7 +3094,6 @@ mod tests {
         assert!(result.is_ok());
         let warnings = result.unwrap();
 
-        // Should not have lighthouse errors since it's disabled
         assert!(!warnings.iter().any(|w| w.contains("Lighthouse")));
     }
 
@@ -3195,8 +3115,6 @@ mod tests {
             .iter()
             .any(|e| e.contains("sign_timeout_seconds must be at least 1 second")));
     }
-
-    // --- warn_unvalidated_programs ---
 
     #[test]
     fn test_warn_unvalidated_programs_no_warnings_for_standard_programs() {
@@ -3225,7 +3143,6 @@ mod tests {
             config
         };
 
-        // Paid pricing + policy that allows immediate-send mutable hooks -> warning.
         let config = build(
             TransferHookPolicy::DenyMutableForDelayedSigning,
             PriceModel::Margin { margin: 0.0 },
@@ -3234,13 +3151,11 @@ mod tests {
         ConfigValidator::warn_mutable_transfer_hook_payment_risk(&config.validation, &mut warnings);
         assert!(warnings.iter().any(|w| w.contains("mutable Token-2022 transfer hooks")));
 
-        // DenyAll -> no warning.
         let config = build(TransferHookPolicy::DenyAll, PriceModel::Margin { margin: 0.0 });
         let mut warnings = Vec::new();
         ConfigValidator::warn_mutable_transfer_hook_payment_risk(&config.validation, &mut warnings);
         assert!(warnings.is_empty());
 
-        // Free pricing -> no warning even if the policy would allow mutable hooks.
         let config = build(TransferHookPolicy::AllowAll, PriceModel::Free);
         let mut warnings = Vec::new();
         ConfigValidator::warn_mutable_transfer_hook_payment_risk(&config.validation, &mut warnings);
@@ -3270,9 +3185,7 @@ mod tests {
 
     #[test]
     fn test_warn_unvalidated_programs_no_warning_for_bpf_loader_upgradeable() {
-        // BPF Loader Upgradeable now has a dedicated fee-payer instruction parser
-        // (`BpfLoaderUpgradeableInstructionPolicy`) and is in `known_programs`. Operators
-        // who allowlist it should see no validation warning.
+        // Has a dedicated fee-payer parser and is in `known_programs`; no warning expected.
         let allowed =
             vec![SYSTEM_PROGRAM_ID.to_string(), BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()];
         let mut warnings = Vec::new();
@@ -3302,7 +3215,6 @@ mod tests {
             vec![SYSTEM_PROGRAM_ID.to_string(), VOTE_PROGRAM_ID.to_string(), custom.clone()];
         let mut warnings = Vec::new();
         ConfigValidator::warn_unvalidated_programs(&allowed, &mut warnings);
-        // One targeted warning for Vote, one generic for the custom program
         assert_eq!(warnings.len(), 2);
         assert!(warnings.iter().any(|w| w.contains("Vote Program")));
         assert!(warnings.iter().any(|w| w.contains(&custom)));

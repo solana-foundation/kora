@@ -49,7 +49,6 @@ function transactionToBase64(transaction: Transaction): string {
 
 /**
  * Helper to build a SPL token transfer transaction.
- * This replaces the deprecated transferTransaction endpoint.
  */
 async function buildTokenTransferTransaction(params: {
     amount: bigint;
@@ -60,13 +59,10 @@ async function buildTokenTransferTransaction(params: {
 }): Promise<{ blockhash: Blockhash; transaction: string }> {
     const { client, amount, mint, sourceWallet, destinationWallet } = params;
 
-    // Get the payer signer from Kora (fee payer)
     const { signer_address } = await client.getPayerSigner();
 
-    // Get blockhash
     const { blockhash } = await client.getBlockhash();
 
-    // Find source and destination ATAs
     const [sourceAta] = await findAssociatedTokenPda({
         mint,
         owner: sourceWallet.address,
@@ -78,7 +74,6 @@ async function buildTokenTransferTransaction(params: {
         tokenProgram: TOKEN_PROGRAM_ADDRESS,
     });
 
-    // Build transfer instruction
     const transferIx = getTransferInstruction({
         amount,
         authority: sourceWallet,
@@ -86,8 +81,7 @@ async function buildTokenTransferTransaction(params: {
         source: sourceAta,
     });
 
-    // Build transaction message with Kora as fee payer
-    // We create a mock signer for the fee payer address since we only need the address
+    // Mock signer: only the address is needed, not signing capability
     const feePayerSigner = {
         address: signer_address,
     } as TransactionSigner;
@@ -103,7 +97,6 @@ async function buildTokenTransferTransaction(params: {
         tx => appendTransactionMessageInstruction(transferIx, tx),
     );
 
-    // Compile to transaction
     const transaction = compileTransaction(transactionMessage);
     const base64Transaction = getBase64EncodedWireTransaction(transaction);
 
@@ -129,7 +122,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         koraAddress = testSuite.koraAddress;
     }, 90000); // allow adequate time for airdrops and token initialization
 
-    // Run authentication tests only when auth is enabled
     if (AUTH_ENABLED) {
         runAuthenticationTests();
     }
@@ -151,21 +143,18 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(config.validation_config.price.type).toBeDefined();
             expect(config.validation_config.fee_payer_policy).toBeDefined();
 
-            // System policy
             expect(config.validation_config.fee_payer_policy.system).toBeDefined();
             expect(config.validation_config.fee_payer_policy.system.allow_transfer).toBeDefined();
             expect(config.validation_config.fee_payer_policy.system.allow_assign).toBeDefined();
             expect(config.validation_config.fee_payer_policy.system.allow_create_account).toBeDefined();
             expect(config.validation_config.fee_payer_policy.system.allow_allocate).toBeDefined();
 
-            // System nonce policy
             expect(config.validation_config.fee_payer_policy.system.nonce).toBeDefined();
             expect(config.validation_config.fee_payer_policy.system.nonce.allow_initialize).toBeDefined();
             expect(config.validation_config.fee_payer_policy.system.nonce.allow_advance).toBeDefined();
             expect(config.validation_config.fee_payer_policy.system.nonce.allow_authorize).toBeDefined();
             expect(config.validation_config.fee_payer_policy.system.nonce.allow_withdraw).toBeDefined();
 
-            // SPL token policy
             expect(config.validation_config.fee_payer_policy.spl_token).toBeDefined();
             expect(config.validation_config.fee_payer_policy.spl_token.allow_transfer).toBeDefined();
             expect(config.validation_config.fee_payer_policy.spl_token.allow_burn).toBeDefined();
@@ -177,7 +166,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(config.validation_config.fee_payer_policy.spl_token.allow_freeze_account).toBeDefined();
             expect(config.validation_config.fee_payer_policy.spl_token.allow_thaw_account).toBeDefined();
 
-            // Token2022 policy
             expect(config.validation_config.fee_payer_policy.token_2022).toBeDefined();
             expect(config.validation_config.fee_payer_policy.token_2022.allow_transfer).toBeDefined();
             expect(config.validation_config.fee_payer_policy.token_2022.allow_burn).toBeDefined();
@@ -209,7 +197,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             const { tokens } = await client.getSupportedTokens();
             expect(Array.isArray(tokens)).toBe(true);
             expect(tokens.length).toBeGreaterThan(0);
-            expect(tokens).toContain(usdcMint); // USDC should be supported
+            expect(tokens).toContain(usdcMint);
         });
 
         it('should get blockhash', async () => {
@@ -279,8 +267,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             });
 
             const transaction = transactionFromBase64(transactionString);
-            // Partially sign transaction with test wallet before sending
-            // Kora will add fee payer signature via signAndSendTransaction
+            // Kora adds the fee payer signature via signAndSendTransaction
             const signedTransaction = await partiallySignTransaction([testWallet.keyPair], transaction);
             const base64SignedTransaction = transactionToBase64(signedTransaction);
             const signResult = await client.signAndSendTransaction({
@@ -341,7 +328,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
     // Bundle tests require bundle.enabled = true in the Kora config
     (FREE_PRICING ? describe.skip : describe)('Bundle Operations', () => {
         it('should sign bundle of transactions', async () => {
-            // Create two transfer transactions for the bundle
             const { transaction: tx1String } = await buildTokenTransferTransaction({
                 amount: 1000000n,
                 client,
@@ -357,7 +343,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
                 sourceWallet: testWallet,
             });
 
-            // Partially sign both transactions with test wallet
             const tx1 = transactionFromBase64(tx1String);
             const tx2 = transactionFromBase64(tx2String);
             const signedTx1 = await partiallySignTransaction([testWallet.keyPair], tx1);
@@ -377,7 +362,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         });
 
         it('should sign and send bundle of transactions', async () => {
-            // Create two transfer transactions for the bundle
             const { transaction: tx1String } = await buildTokenTransferTransaction({
                 amount: 1000000n,
                 client,
@@ -393,7 +377,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
                 sourceWallet: testWallet,
             });
 
-            // Partially sign both transactions with test wallet
             const tx1 = transactionFromBase64(tx1String);
             const tx2 = transactionFromBase64(tx2String);
             const signedTx1 = await partiallySignTransaction([testWallet.keyPair], tx1);

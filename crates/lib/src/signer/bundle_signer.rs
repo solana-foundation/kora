@@ -223,7 +223,6 @@ mod tests {
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
-        // Get original default signature
         let original_sig = resolved.transaction.signatures[0];
 
         let result = BundleSigner::sign_transaction_for_bundle(
@@ -236,7 +235,6 @@ mod tests {
         .await;
 
         assert!(result.is_ok());
-        // Signature should be different from original default
         assert_ne!(resolved.transaction.signatures[0], original_sig);
     }
 
@@ -263,7 +261,6 @@ mod tests {
 
         assert!(result.is_ok());
 
-        // Verify the signature is cryptographically valid
         let signature = &resolved.transaction.signatures[0];
         let message_bytes = resolved.transaction.message.serialize();
         assert!(

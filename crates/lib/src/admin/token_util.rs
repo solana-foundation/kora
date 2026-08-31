@@ -147,7 +147,6 @@ async fn create_atas_for_signer(
         })
         .collect::<Vec<Instruction>>();
 
-    // Process instructions in chunks
     let total_atas = instructions.len();
     let chunks: Vec<_> = instructions.chunks(chunk_size).collect();
     let num_chunks = chunks.len();
@@ -162,10 +161,8 @@ async fn create_atas_for_signer(
         let chunk_num = chunk_idx + 1;
         println!("Processing chunk {chunk_num}/{num_chunks}");
 
-        // Build instructions for this chunk with compute budget
         let mut chunk_instructions = Vec::new();
 
-        // Add compute budget instructions to each chunk
         if let Some(compute_unit_price) = compute_unit_price {
             chunk_instructions
                 .push(ComputeBudgetInstruction::set_compute_unit_price(compute_unit_price));
@@ -175,7 +172,6 @@ async fn create_atas_for_signer(
                 .push(ComputeBudgetInstruction::set_compute_unit_limit(compute_unit_limit));
         }
 
-        // Add the ATA creation instructions for this chunk
         chunk_instructions.extend_from_slice(chunk);
 
         let blockhash = rpc_client
@@ -205,7 +201,6 @@ async fn create_atas_for_signer(
                     "✓ Chunk {chunk_num}/{num_chunks} successful. Transaction signature: {signature}"
                 );
 
-                // Print the ATAs created in this chunk
                 let chunk_end = std::cmp::min(created_atas_idx + chunk.len(), atas_to_create.len());
 
                 (created_atas_idx..chunk_end).for_each(|i| {
@@ -240,7 +235,6 @@ async fn create_atas_for_signer(
         }
     }
 
-    // Show summary of all successfully created ATAs
     println!("\n🎉 All ATA creation completed successfully!");
     println!("Successfully created ATAs ({total_atas}/{total_atas}):");
     println!(
@@ -256,7 +250,6 @@ pub async fn find_missing_atas(
     rpc_client: &RpcClient,
     payment_address: &Pubkey,
 ) -> Result<Vec<ATAToCreate>, KoraError> {
-    // Parse all allowed SPL paid token mints
     let mut token_mints = Vec::new();
     for token_str in &config.validation.allowed_spl_paid_tokens {
         match Pubkey::from_str(token_str) {
@@ -405,9 +398,6 @@ mod tests {
         let payment_address = Pubkey::new_unique();
         let rpc_client = create_mock_rpc_client_account_not_found();
 
-        // Mint is fetched first to determine the token program, then the ATA is looked up.
-        // Mint 1: mint fetched (Ok) → ATA exists (Ok)
-        // Mint 2: mint fetched (Ok) → ATA missing (Err)
         let responses = Arc::new(Mutex::new(VecDeque::from([
             Ok(create_mock_spl_mint_account(6)),
             Ok(create_mock_token_account(&Pubkey::new_unique(), &Pubkey::new_unique())),
@@ -459,8 +449,6 @@ mod tests {
         );
         assert_ne!(legacy_pda, real_token2022_ata);
 
-        // First call: fetch the Token-2022 mint so the program id resolves to Token-2022.
-        // Second call: ATA lookup must hit the real Token-2022 ATA (Ok).
         let responses = Arc::new(Mutex::new(VecDeque::from([
             Ok(create_mock_token2022_mint_account(6)),
             Ok(create_mock_token_account(&payment_address, &token2022_mint)),

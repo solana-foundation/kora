@@ -55,9 +55,6 @@ impl TokenState for Token2022Account {
 }
 
 impl Token2022Account {
-    /*
-    Token account only extensions
-     */
     pub fn has_memo_extension(&self) -> bool {
         self.has_extension(ExtensionType::MemoTransfer)
     }
@@ -79,10 +76,6 @@ impl Token2022Extensions for Token2022Account {
     fn get_extension_types(&self) -> &Vec<ExtensionType> {
         &self.extensions_types
     }
-
-    /*
-    Token account & mint account extensions (each their own type)
-     */
 
     fn has_confidential_transfer_extension(&self) -> bool {
         self.has_extension(ExtensionType::ConfidentialTransferAccount)
@@ -224,10 +217,6 @@ impl Token2022Extensions for Token2022Mint {
         &self.extensions_types
     }
 
-    /*
-    Token account & mint account extensions (each their own type)
-     */
-
     fn has_confidential_transfer_extension(&self) -> bool {
         self.has_extension(ExtensionType::ConfidentialTransferMint)
     }
@@ -324,7 +313,6 @@ impl TokenInterface for Token2022Program {
         authority: &Pubkey,
         amount: u64,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        // Get the mint from the source account data
         #[allow(deprecated)]
         Ok(spl_token_2022_interface::instruction::transfer(
             &self.program_id(),

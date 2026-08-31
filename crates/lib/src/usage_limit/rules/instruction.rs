@@ -88,7 +88,6 @@ impl InstructionRule {
             return vec![];
         }
 
-        // Group rules by program ID
         let mut system_rules: Vec<(usize, &InstructionRule)> = vec![];
         let mut ata_rules: Vec<(usize, &InstructionRule)> = vec![];
         let mut other_rules: Vec<(usize, &InstructionRule)> = vec![];
@@ -105,7 +104,6 @@ impl InstructionRule {
 
         let mut counts = vec![0u64; rules.len()];
 
-        // Count System instructions
         if !system_rules.is_empty() {
             match ctx.transaction.get_or_parse_system_instructions() {
                 Ok(parsed) => {
@@ -123,12 +121,10 @@ impl InstructionRule {
             }
         }
 
-        // Count ATA instructions (manual parsing)
         if !ata_rules.is_empty() {
             Self::count_batch_manual(&ata_rules, ctx, &mut counts);
         }
 
-        // Count other program instructions (manual parsing)
         if !other_rules.is_empty() {
             Self::count_batch_manual(&other_rules, ctx, &mut counts);
         }
@@ -156,17 +152,11 @@ impl InstructionRule {
                 if let Some(instructions) = parsed.get(&ix_type) {
                     let count = instructions
                         .iter()
-                        .filter(|ix_data| {
-                            match ix_data {
-                                ParsedSystemInstructionData::SystemCreateAccount {
-                                    payer, ..
-                                } => {
-                                    // Count instructions where Kora IS the payer
-                                    // This tracks subsidized account creations
-                                    kora_signer == Some(*payer)
-                                }
-                                _ => false,
+                        .filter(|ix_data| match ix_data {
+                            ParsedSystemInstructionData::SystemCreateAccount { payer, .. } => {
+                                kora_signer == Some(*payer)
                             }
+                            _ => false,
                         })
                         .count() as u64;
                     counts[*idx] = count;
@@ -196,7 +186,6 @@ impl InstructionRule {
                     InstructionIdentifier::identify(&instruction.program_id, &instruction.data)
                 {
                     if instr_type == rule.instruction {
-                        // For ATA instructions, check if Kora is the payer (first account)
                         if rule.program == ATA_PROGRAM_ID {
                             match (instruction.accounts.first(), kora_signer) {
                                 (Some(payer), Some(kora)) if payer.pubkey == kora => {
@@ -454,7 +443,6 @@ mod tests {
     fn test_identify_loader_v4_via_bincode_serialized_data() {
         use solana_loader_v4_interface::instruction::LoaderV4Instruction;
 
-        // Round-trip through bincode to keep our discriminator map aligned with the upstream enum.
         let cases: &[(LoaderV4Instruction, &str)] = &[
             (LoaderV4Instruction::Write { offset: 0, bytes: vec![1, 2] }, LOADER_V4_WRITE),
             (
@@ -574,7 +562,6 @@ mod tests {
         };
         assert_eq!(rule.count_increment(&mut ctx), 1);
 
-        // User is authority -> NOT counted (even though Kora is fee payer)
         let mut tx_user = build_tx(&user.pubkey());
         let mut ctx = LimiterContext {
             transaction: &mut tx_user,

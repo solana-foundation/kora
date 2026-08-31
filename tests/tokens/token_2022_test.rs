@@ -5,10 +5,6 @@ use jsonrpsee::rpc_params;
 use kora_lib::transaction::TransactionUtil;
 use solana_sdk::{pubkey::Pubkey, signature::Signer};
 
-// **************************************************************************************
-// Token 2022 Transfer Tests
-// **************************************************************************************
-
 /// Test transferTransaction with Token 2022 transfer (DEPRECATED endpoint)
 #[tokio::test]
 async fn test_transfer_transaction_token_2022_legacy() {
@@ -41,7 +37,6 @@ async fn test_transfer_transaction_token_2022_legacy() {
 }
 
 /// Test Token 2022 transfer transaction returns valid unsigned transaction (DEPRECATED endpoint)
-/// Note: ATA creation for destination is handled automatically by Kora
 #[tokio::test]
 async fn test_transfer_transaction_token_2022_with_ata_legacy() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
@@ -68,15 +63,10 @@ async fn test_transfer_transaction_token_2022_with_ata_legacy() {
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
     assert!(response["signer_pubkey"].as_str().is_some(), "Expected signer_pubkey in response");
 
-    // Verify we can decode the unsigned transaction
     let transaction_string = response["transaction"].as_str().unwrap();
     let _transaction = TransactionUtil::decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
 }
-
-// **************************************************************************************
-// Token 2022 Sign Transaction Tests
-// **************************************************************************************
 
 #[tokio::test]
 async fn test_sign_token_2022_transaction_legacy() {

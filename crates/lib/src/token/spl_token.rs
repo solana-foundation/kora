@@ -364,7 +364,7 @@ mod tests {
 
         let instruction = result.unwrap();
         assert_eq!(instruction.program_id, spl_token_interface::id());
-        assert_eq!(instruction.accounts.len(), 4); // account, mint, owner, rent sysvar
+        assert_eq!(instruction.accounts.len(), 4);
     }
 
     #[test]
@@ -380,7 +380,7 @@ mod tests {
 
         let instruction = result.unwrap();
         assert_eq!(instruction.program_id, spl_token_interface::id());
-        assert_eq!(instruction.accounts.len(), 3); // source, destination, authority
+        assert_eq!(instruction.accounts.len(), 3);
     }
 
     #[test]
@@ -405,7 +405,7 @@ mod tests {
 
         let instruction = result.unwrap();
         assert_eq!(instruction.program_id, spl_token_interface::id());
-        assert_eq!(instruction.accounts.len(), 4); // source, mint, destination, authority
+        assert_eq!(instruction.accounts.len(), 4);
     }
 
     #[test]
@@ -436,7 +436,7 @@ mod tests {
             program.create_associated_token_account_instruction(&funding_account, &wallet, &mint);
 
         assert_eq!(instruction.program_id, spl_associated_token_account_interface::program::id());
-        assert_eq!(instruction.accounts.len(), 6); // funding, ata, wallet, mint, system_program, token_program
+        assert_eq!(instruction.accounts.len(), 6);
     }
 
     #[test]

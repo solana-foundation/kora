@@ -1,78 +1,92 @@
-import { KoraClient } from "../src";
 import {
-  getBase64Encoder,
-  getBase58Encoder,
-  getTransactionDecoder,
-  createKeyPairSignerFromBytes,
-  KeyPairSigner,
-  Transaction,
-  signTransaction,
-  getBase64EncodedWireTransaction,
-} from "@solana/kit";
+    address,
+    Address,
+    appendTransactionMessageInstruction,
+    appendTransactionMessageInstructions,
+    type Blockhash,
+    compileTransaction,
+    createKeyPairSignerFromBytes,
+    createTransactionMessage,
+    getBase58Encoder,
+    getBase64EncodedWireTransaction,
+    type KeyPairSigner,
+    partiallySignTransaction,
+    pipe,
+    setTransactionMessageFeePayerSigner,
+    setTransactionMessageLifetimeUsingBlockhash,
+    type TransactionSigner,
+} from '@solana/kit';
+import { findAssociatedTokenPda, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 
-function transactionFromBase64(base64: string): Transaction {
-  const encoder = getBase64Encoder();
-  const decoder = getTransactionDecoder();
-  const messageBytes = encoder.encode(base64);
-  return decoder.decode(messageBytes);
+import { KoraClient } from '../src/index.js';
+
+async function loadKeypairSignerFromEnvironmentBase58(envVar: string): Promise<KeyPairSigner> {
+    const privateKey = process.env[envVar];
+    if (!privateKey) {
+        throw new Error(`Environment variable ${envVar} is not set`);
+    }
+    return createKeyPairSignerFromBytes(getBase58Encoder().encode(privateKey));
 }
 
-async function loadKeypairSignerFromEnvironmentBase58(
-  envVar: string
-): Promise<KeyPairSigner> {
-  const privateKey = process.env[envVar];
-  if (!privateKey) {
-    throw new Error(`Environment variable ${envVar} is not set`);
-  }
-  const privateKeyBytes = getBase58Encoder().encode(privateKey);
-  return createKeyPairSignerFromBytes(privateKeyBytes);
+async function buildTransferInstruction(mint: Address, sender: KeyPairSigner, recipient: Address, amount: bigint) {
+    const [source] = await findAssociatedTokenPda({ mint, owner: sender.address, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const [destination] = await findAssociatedTokenPda({
+        mint,
+        owner: recipient,
+        tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+    return getTransferInstruction({ amount, authority: sender, destination, source });
 }
 
 async function main() {
-  // Initialize the client with your RPC endpoint
-  const rpcUrl = process.env.KORA_RPC_URL!;
-  const usdcMint = process.env.USDC_MINT!;
-  const client = new KoraClient({ rpcUrl });
+    const rpcUrl = process.env.KORA_RPC_URL!;
+    const usdcMint = address(process.env.USDC_MINT!);
+    const client = new KoraClient({ rpcUrl });
 
-  try {
-    // Get supported tokens
-    const { tokens } = await client.getSupportedTokens();
+    const sender = await loadKeypairSignerFromEnvironmentBase58('PRIVATE_KEY');
 
-    // Get current configuration
-    const config = await client.getConfig();
+    const { signer_address } = await client.getPayerSigner();
+    // Kora signs as fee payer server-side, so the client only needs its address here.
+    const feePayer = { address: address(signer_address) } as TransactionSigner;
 
-    // Load signer from env var
-    const signer =
-      await loadKeypairSignerFromEnvironmentBase58("PRIVATE_KEY");
+    const transferInstruction = await buildTransferInstruction(usdcMint, sender, sender.address, 1_000_000n);
 
-    // Example transfer
-    const transferResult = await client.transferTransaction(
-      {
-        amount: 1000000, // 1 USDC (6 decimals)
-        token: usdcMint, // USDC mint
-        source: signer.address.toString(),
-        destination: signer.address.toString(), // Sending to self as example
-      }
-    );
+    const buildMessage = async () => {
+        const { blockhash } = await client.getBlockhash();
+        return pipe(
+            createTransactionMessage({ version: 0 }),
+            tx => setTransactionMessageFeePayerSigner(feePayer, tx),
+            tx =>
+                setTransactionMessageLifetimeUsingBlockhash(
+                    { blockhash: blockhash as Blockhash, lastValidBlockHeight: BigInt(Number.MAX_SAFE_INTEGER) },
+                    tx,
+                ),
+        );
+    };
 
-    // Sign the transaction
-    const transaction = transactionFromBase64(transferResult.transaction);
-
-    // Send signed transaction
-    const signedTransaction = await signTransaction(
-      [signer.keyPair],
-      transaction
-    );
-
-    // Send signed transaction
-    const signature = await client.signAndSendTransaction({
-      transaction: getBase64EncodedWireTransaction(signedTransaction),
+    // The fee is priced against the transaction that will actually run, so estimate
+    // against the unpaid message first and rebuild with the payment appended.
+    const estimateMessage = appendTransactionMessageInstruction(transferInstruction, await buildMessage());
+    const { payment_instruction } = await client.getPaymentInstruction({
+        fee_token: usdcMint,
+        source_wallet: sender.address,
+        transaction: getBase64EncodedWireTransaction(compileTransaction(estimateMessage)),
     });
 
-    console.log("Transfer signature:", signature);
-  } catch (error) {
-    console.error("Error:", error);
-  }
+    const finalMessage = appendTransactionMessageInstructions(
+        [transferInstruction, payment_instruction],
+        await buildMessage(),
+    );
+    const signedTransaction = await partiallySignTransaction([sender.keyPair], compileTransaction(finalMessage));
+
+    const { signature } = await client.signAndSendTransaction({
+        transaction: getBase64EncodedWireTransaction(signedTransaction),
+    });
+
+    console.log('Transfer signature:', signature);
 }
 
-main();
+main().catch(error => {
+    console.error('Error:', error);
+    process.exit(1);
+});

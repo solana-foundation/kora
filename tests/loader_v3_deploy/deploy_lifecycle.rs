@@ -32,7 +32,6 @@ async fn deploy_v3_program_through_kora() -> Result<()> {
     let bytes = read_test_program_so()?;
     let pdata = derive_program_data_address(&program.pubkey());
 
-    // 1. create_buffer (Kora as authority)
     let buffer_lamports = ctx
         .rpc_client()
         .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_buffer(bytes.len()))
@@ -46,7 +45,6 @@ async fn deploy_v3_program_through_kora() -> Result<()> {
     )?;
     submit_and_confirm(&ctx, &kora_pubkey, &create_buf, &[&buffer]).await?;
 
-    // 2. Write the full program in chunks (Kora as authority)
     futures::stream::iter(bytes.chunks(WRITE_CHUNK_SIZE).enumerate().map(Ok))
         .try_for_each_concurrent(16, |(i, chunk)| {
             let offset = (i * WRITE_CHUNK_SIZE) as u32;
@@ -56,7 +54,6 @@ async fn deploy_v3_program_through_kora() -> Result<()> {
         })
         .await?;
 
-    // 3. Deploy with Kora as upgrade authority
     let program_lamports = ctx
         .rpc_client()
         .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_program())
@@ -75,7 +72,6 @@ async fn deploy_v3_program_through_kora() -> Result<()> {
     // ("Program was deployed in this block already"); wait for the slot to advance.
     wait_for_next_slot(&ctx).await?;
 
-    // 4. Assert on-chain: programdata.upgrade_authority == Kora
     let pdata_account = ctx.rpc_client().get_account(&pdata).await?;
     let state: UpgradeableLoaderState = bincode::deserialize(
         &pdata_account.data[..UpgradeableLoaderState::size_of_programdata_metadata()],
@@ -91,12 +87,10 @@ async fn deploy_v3_program_through_kora() -> Result<()> {
         other => panic!("expected ProgramData state, got {other:?}"),
     }
 
-    // 5. Drainage attempt: hand authority to attacker → DeployAuthority plugin rejects
     let bad_set_auth =
         loader_v3::set_upgrade_authority(&program.pubkey(), &kora_pubkey, Some(&attacker.pubkey()));
     expect_reject(&ctx, &kora_pubkey, &[bad_set_auth], &[], "DeployAuthority").await?;
 
-    // 6. Drainage attempt: close with attacker as recipient → drainage guard rejects
     let bad_close = loader_v3::close_any(
         &pdata,
         &attacker.pubkey(),
@@ -109,7 +103,6 @@ async fn deploy_v3_program_through_kora() -> Result<()> {
     //  validator, so simulation exhausts CU before the plugin's reject runs. Plugin
     //  unit tests cover that path.)
 
-    // 7. Cleanup: close program (Kora as authority + recipient)
     let close_ix =
         loader_v3::close_any(&pdata, &kora_pubkey, Some(&kora_pubkey), Some(&program.pubkey()));
     submit_and_confirm(&ctx, &kora_pubkey, &[close_ix], &[]).await?;

@@ -21,7 +21,6 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         assert!(!response.version.is_empty());
-        // Version should match Cargo.toml version
         assert_eq!(response.version, env!("CARGO_PKG_VERSION"));
     }
 }

@@ -174,9 +174,7 @@ mod tests {
 
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message.clone());
 
-        // Should have correct number of signatures (all default/empty)
         assert_eq!(transaction.signatures.len(), message.header().num_required_signatures as usize);
-        // All signatures should be default (empty)
         for sig in &transaction.signatures {
             assert_eq!(*sig, Signature::default());
         }
@@ -192,7 +190,6 @@ mod tests {
             vec![AccountMeta::new(keypair.pubkey(), true)],
         );
 
-        // Create V0 message
         let v0_message = v0::Message {
             header: solana_message::MessageHeader {
                 num_required_signatures: 1,
@@ -219,7 +216,6 @@ mod tests {
 
     #[test]
     fn test_decode_b64_transaction_legacy_fallback() {
-        // Test that we can decode legacy transactions and convert them to versioned
         let keypair = Keypair::new();
         let instruction = Instruction::new_with_bytes(
             Pubkey::new_unique(),

@@ -32,7 +32,6 @@ async fn test_sign_transaction_if_paid_with_payment_address_legacy() {
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
 
-    // Use TransactionBuilder with legacy format
     let encoded_tx = ctx
         .transaction_builder()
         .with_fee_payer(fee_payer)
@@ -42,7 +41,6 @@ async fn test_sign_transaction_if_paid_with_payment_address_legacy() {
         .await
         .expect("Failed to create signed legacy transaction");
 
-    // Call signTransaction endpoint - should succeed when payment goes to correct address
     let response: serde_json::Value = ctx
         .rpc_call("signTransaction", rpc_params![encoded_tx])
         .await
@@ -57,10 +55,9 @@ async fn test_sign_transaction_if_paid_with_wrong_destination_legacy() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
-    let wrong_destination = Keypair::new(); // Random wrong destination
+    let wrong_destination = Keypair::new();
     let test_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    // Create a transfer to the WRONG destination (not the payment address)
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &test_mint);
     let wrong_dest_ata = get_associated_token_address(&wrong_destination.pubkey(), &test_mint);
 
@@ -83,7 +80,6 @@ async fn test_sign_transaction_if_paid_with_wrong_destination_legacy() {
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
 
-    // Use TransactionBuilder with legacy format
     let encoded_tx = ctx
         .transaction_builder()
         .with_fee_payer(fee_payer)

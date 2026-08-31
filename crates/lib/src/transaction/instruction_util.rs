@@ -30,7 +30,6 @@ use crate::{
 /// Discriminator of the p-token `Batch` instruction (`spl_token_interface` variant `Batch = 255`).
 const BATCH_DISCRIMINATOR: u8 = 255;
 
-// Instruction type that we support to parse from the transaction
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ParsedSystemInstructionType {
     SystemTransfer,
@@ -44,7 +43,6 @@ pub enum ParsedSystemInstructionType {
     // Note: SystemUpgradeNonceAccount not included - no authority parameter
 }
 
-// Instruction type that we support to parse from the transaction
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ParsedSystemInstructionData {
     // Includes transfer and transfer with seed
@@ -62,7 +60,6 @@ pub enum ParsedSystemInstructionData {
         // CreateAccountWithSeed has a distinct required `base` signer; None for plain CreateAccount.
         base: Option<Pubkey>,
     },
-    // Includes withdraw nonce account
     SystemWithdrawNonceAccount {
         lamports: u64,
         nonce_authority: Pubkey,
@@ -77,17 +74,14 @@ pub enum ParsedSystemInstructionData {
     SystemAllocate {
         account: Pubkey,
     },
-    // Initialize nonce account
     SystemInitializeNonceAccount {
         nonce_account: Pubkey,
         nonce_authority: Pubkey,
     },
-    // Advance nonce account
     SystemAdvanceNonceAccount {
         nonce_account: Pubkey,
         nonce_authority: Pubkey,
     },
-    // Authorize nonce account
     SystemAuthorizeNonceAccount {
         nonce_account: Pubkey,
         nonce_authority: Pubkey,
@@ -136,7 +130,6 @@ pub enum ParsedALTInstructionType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ParsedSPLInstructionData {
-    // Includes transfer and transfer with seed (both spl and spl 2022)
     SplTokenTransfer {
         amount: u64,
         owner: Pubkey,
@@ -146,13 +139,11 @@ pub enum ParsedSPLInstructionData {
         destination_address: Pubkey,
         is_2022: bool,
     },
-    // Includes burn and burn with seed
     SplTokenBurn {
         owner: Pubkey,
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
     },
-    // Includes close account
     SplTokenCloseAccount {
         owner: Pubkey,
         account: Pubkey,
@@ -160,19 +151,16 @@ pub enum ParsedSPLInstructionData {
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
     },
-    // Includes approve and approve with seed
     SplTokenApprove {
         owner: Pubkey,
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
     },
-    // Revoke
     SplTokenRevoke {
         owner: Pubkey,
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
     },
-    // SetAuthority
     SplTokenSetAuthority {
         authority: Pubkey,
         new_authority: Option<Pubkey>,
@@ -201,13 +189,11 @@ pub enum ParsedSPLInstructionData {
         signers: Vec<Pubkey>,
         is_2022: bool,
     },
-    // FreezeAccount
     SplTokenFreezeAccount {
         freeze_authority: Pubkey,
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
     },
-    // ThawAccount
     SplTokenThawAccount {
         freeze_authority: Pubkey,
         multisig_signers: Vec<Pubkey>,
@@ -247,7 +233,6 @@ pub enum ParsedSPLInstructionData {
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
     },
-    // UnwrapLamports
     SplTokenUnwrapLamports {
         owner: Pubkey,
         multisig_signers: Vec<Pubkey>,
@@ -419,8 +404,6 @@ pub enum ParsedBpfLoaderUpgradeableInstructionData {
     },
 }
 
-/// Macro to validate that an instruction has the required number of accounts
-/// Usage: validate_accounts!(instruction, min_count)
 macro_rules! validate_number_accounts {
     ($instruction:expr, $min_count:expr) => {
         if $instruction.accounts.len() < $min_count {
@@ -508,7 +491,6 @@ pub const PARSED_DATA_FIELD_RECIPIENT: &str = "recipient";
 pub const PARSED_DATA_FIELD_NONCE_AUTHORITY: &str = "nonceAuthority";
 pub const PARSED_DATA_FIELD_NEW_AUTHORITY: &str = "newAuthority";
 
-// SPL Token instruction type constants
 pub const PARSED_DATA_FIELD_REVOKE: &str = "revoke";
 pub const PARSED_DATA_FIELD_SET_AUTHORITY: &str = "setAuthority";
 pub const PARSED_DATA_FIELD_MINT_TO: &str = "mintTo";
@@ -529,7 +511,6 @@ pub const PARSED_DATA_FIELD_EXTENSION_TYPES: &str = "extensionTypes";
 pub const PARSED_DATA_FIELD_BATCH: &str = "batch";
 pub const PARSED_DATA_FIELD_INSTRUCTIONS: &str = "instructions";
 
-// Additional field names for new instructions
 pub const PARSED_DATA_FIELD_MINT_AUTHORITY: &str = "mintAuthority";
 pub const PARSED_DATA_FIELD_FREEZE_AUTHORITY: &str = "freezeAuthority";
 pub const PARSED_DATA_FIELD_AUTHORITY_TYPE: &str = "authorityType";
@@ -539,7 +520,6 @@ pub const PARSED_DATA_FIELD_M: &str = "m";
 pub const PARSED_DATA_FIELD_RENT_SYSVAR: &str = "rentSysvar";
 
 impl IxUtils {
-    /// Helper method to extract a field as a string from JSON with proper error handling
     fn get_field_as_str<'a>(
         info: &'a serde_json::Value,
         field_name: &str,
@@ -554,7 +534,6 @@ impl IxUtils {
             })
     }
 
-    /// Helper method to extract a field as a Pubkey from JSON with proper error handling
     fn get_field_as_pubkey(
         info: &serde_json::Value,
         field_name: &str,
@@ -568,18 +547,15 @@ impl IxUtils {
         })
     }
 
-    /// Helper method to extract a field as u64 from JSON string with proper error handling
     fn get_field_as_u64(info: &serde_json::Value, field_name: &str) -> Result<u64, KoraError> {
         let value = info.get(field_name).ok_or_else(|| {
             KoraError::SerializationError(format!("Missing field '{}'", field_name))
         })?;
 
-        // Try as native JSON number first
         if let Some(num) = value.as_u64() {
             return Ok(num);
         }
 
-        // Fall back to string parsing
         if let Some(str_val) = value.as_str() {
             return str_val.parse::<u64>().map_err(|e| {
                 KoraError::SerializationError(format!(
@@ -708,7 +684,6 @@ impl IxUtils {
             .collect()
     }
 
-    /// Helper method to get account index from hashmap with proper error handling
     fn get_account_index(
         account_keys_hashmap: &HashMap<Pubkey, u8>,
         pubkey: &Pubkey,
@@ -992,18 +967,10 @@ impl IxUtils {
             .collect()
     }
 
-    /// Reconstruct a CompiledInstruction from various UiInstruction formats
-    ///
-    /// This is required because when you simulate a transaction with inner instructions flag,
-    /// the RPC pre-parses some of the instructions (like for SPL program and System Program),
-    /// however this is an issue for Kora, as we expected "Compiled" instructions rather than "Parsed" instructions,
-    /// because we have our own parsing logic on our Kora's side.
-    ///
-    /// So we need to reconstruct the "Compiled" instructions from the "Parsed" instructions, by "unparsing" the "Parsed" instructions.
-    ///
-    /// There's no known way to force the RPC to not parsed the instructions, so we need this "hack" to reverse the process.
-    ///
-    /// Example: https://github.com/anza-xyz/agave/blob/68032b576dc4c14b31c15974c6734ae1513980a3/transaction-status/src/parse_system.rs#L11
+    /// Simulating with the inner-instructions flag makes the RPC pre-parse SPL/System
+    /// instructions into "Parsed" form, but Kora's parsing logic expects "Compiled"
+    /// instructions; there's no RPC option to disable this, so we reconstruct (unparse) them.
+    /// Reference: https://github.com/anza-xyz/agave/blob/68032b576dc4c14b31c15974c6734ae1513980a3/transaction-status/src/parse_system.rs#L11
     pub fn reconstruct_instruction_from_ui(
         ui_instruction: &UiInstruction,
         all_account_keys: &mut Vec<Pubkey>,
@@ -1049,7 +1016,6 @@ impl IxUtils {
     ) -> Result<CompiledInstruction, KoraError> {
         match ui_parsed {
             UiParsedInstruction::Parsed(parsed) => {
-                // Reconstruct based on program type
                 if parsed.program_id == SYSTEM_PROGRAM_ID.to_string() {
                     Self::reconstruct_system_instruction(parsed, account_keys_hashmap)
                 } else if parsed.program_id == spl_token_interface::ID.to_string()
@@ -1057,8 +1023,7 @@ impl IxUtils {
                 {
                     Self::reconstruct_spl_token_instruction(parsed, account_keys_hashmap)
                 } else {
-                    // For unsupported programs, create a stub instruction with just the program ID
-                    // This ensures the program ID is preserved for security validation
+                    // Unsupported program: stub instruction keeps only the program ID, needed for security validation
                     let program_id = parsed.program_id.parse::<Pubkey>().map_err(|e| {
                         KoraError::SerializationError(format!(
                             "Invalid parsed instruction program_id '{}': {}",
@@ -1160,7 +1125,6 @@ impl IxUtils {
         result
     }
 
-    /// Reconstruct system program instructions from parsed format
     fn reconstruct_system_instruction(
         parsed: &solana_transaction_status_client_types::ParsedInstruction,
         account_keys_hashmap: &HashMap<Pubkey, u8>,
@@ -1475,7 +1439,6 @@ impl IxUtils {
         }
     }
 
-    /// Reconstruct SPL token program instructions from parsed format
     fn reconstruct_spl_token_instruction(
         parsed: &solana_transaction_status_client_types::ParsedInstruction,
         account_keys_hashmap: &HashMap<Pubkey, u8>,
@@ -1904,7 +1867,6 @@ impl IxUtils {
                 let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
                 let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
 
-                // Different variants have different account structures and discriminators
                 let (data, accounts) = match instruction_type {
                     PARSED_DATA_FIELD_INITIALIZE_ACCOUNT => {
                         // InitializeAccount: [account, mint, owner, rent]
@@ -2179,7 +2141,6 @@ impl IxUtils {
         for instruction in transaction.all_instructions.iter() {
             let program_id = instruction.program_id;
 
-            // Handle System Program transfers and account creation
             if program_id == SYSTEM_PROGRAM_ID {
                 match bincode::deserialize::<SystemInstruction>(&instruction.data) {
                     Ok(SystemInstruction::CreateAccount { lamports, owner, .. }) => {
@@ -2306,9 +2267,7 @@ impl IxUtils {
                     }
                     // UpgradeNonceAccount: Not parsed - no authority parameter, cannot validate fee payer involvement
                     // Anyone can upgrade any nonce account without signing
-                    Ok(SystemInstruction::UpgradeNonceAccount) => {
-                        // Skip parsing
-                    }
+                    Ok(SystemInstruction::UpgradeNonceAccount) => {}
                     _ => {
                         if let Some((lamports, owner)) =
                             Self::parse_create_account_allow_prefund(&instruction.data)
@@ -3260,12 +3219,9 @@ impl IxUtils {
                 ) {
                     Ok(spl_ix) => spl_ix,
                     Err(e) => {
-                        // Token-2022 also processes token-metadata and token-group interface
-                        // instructions, which are not TokenInstruction variants. Each family
-                        // is opt-in; when allowed, record it through the unknown-extension
-                        // channel like other un-modelled Token-2022 instructions; its
-                        // accounts and authority fields are validated by the
-                        // Token2022SecurityParser.
+                        // Token-2022 also processes opt-in token-metadata/token-group instructions, which
+                        // aren't TokenInstruction variants; route allowed families through the
+                        // unknown-extension channel, validated by Token2022SecurityParser.
                         if let Some(family) =
                             Token2022SecurityParser::token_2022_interface_instruction_family(
                                 &instruction.data,
@@ -4617,40 +4573,34 @@ mod tests {
 
     #[test]
     fn test_get_field_as_u64() {
-        // Valid JSON number
         let valid_number = serde_json::json!({
             "amount": 1000
         });
         assert_eq!(IxUtils::get_field_as_u64(&valid_number, "amount").unwrap(), 1000);
 
-        // Valid JSON string containing a number
         let valid_string_number = serde_json::json!({
             "amount": "2000"
         });
         assert_eq!(IxUtils::get_field_as_u64(&valid_string_number, "amount").unwrap(), 2000);
 
-        // Missing field
         let missing_field = serde_json::json!({
             "other": 3000
         });
         let err = IxUtils::get_field_as_u64(&missing_field, "amount").unwrap_err();
         assert!(matches!(err, crate::error::KoraError::SerializationError(_)));
 
-        // Invalid string that cannot be parsed as a u64
         let invalid_string = serde_json::json!({
             "amount": "invalid"
         });
         let err = IxUtils::get_field_as_u64(&invalid_string, "amount").unwrap_err();
         assert!(matches!(err, crate::error::KoraError::SerializationError(_)));
 
-        // JSON null or other unexpected type
         let null_value = serde_json::json!({
             "amount": null
         });
         let err = IxUtils::get_field_as_u64(&null_value, "amount").unwrap_err();
         assert!(matches!(err, crate::error::KoraError::SerializationError(_)));
 
-        // Unexpected type (array)
         let array_value = serde_json::json!({
             "amount": [1, 2, 3]
         });

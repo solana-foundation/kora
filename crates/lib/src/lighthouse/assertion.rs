@@ -65,23 +65,18 @@ impl LighthouseUtil {
         Self::append_lighthouse_assertion(transaction, assertion_ix, config)
     }
 
-    /// Build instruction data for AssertAccountInfo with Lamports assertion
     fn build_assert_account_info_data(min_lamports: u64) -> Vec<u8> {
         let mut data = Vec::with_capacity(12);
 
-        // Instruction discriminator
         data.push(ASSERT_ACCOUNT_INFO_DISCRIMINATOR);
 
-        // LogLevel::Silent
         data.push(LOG_LEVEL_SILENT);
 
-        // AccountInfoAssertion::Lamports variant
         data.push(ACCOUNT_INFO_ASSERTION_LAMPORTS);
 
         // Lamports value (u64 little-endian)
         data.extend_from_slice(&min_lamports.to_le_bytes());
 
-        // IntegerOperator::GreaterThanOrEqual
         data.push(INTEGER_OPERATOR_GTE);
 
         data
@@ -99,7 +94,6 @@ impl LighthouseUtil {
         }
     }
 
-    /// Find an account in the account keys list or add it
     fn find_or_add_account(
         account_keys: &mut Vec<Pubkey>,
         pubkey: &Pubkey,
@@ -207,7 +201,6 @@ impl LighthouseUtil {
         })
     }
 
-    /// Append an instruction to a versioned transaction
     fn append_instruction_to_transaction(
         transaction: &mut VersionedTransaction,
         instruction: Instruction,
@@ -255,7 +248,6 @@ impl LighthouseUtil {
         }
     }
 
-    /// Append a Lighthouse assertion instruction to a transaction.
     /// Handles size overflow based on config settings.
     pub(crate) fn append_lighthouse_assertion(
         transaction: &mut VersionedTransaction,
@@ -295,7 +287,6 @@ impl LighthouseUtil {
             }
         }
 
-        // Commit the change
         *transaction = tx_with_assertion;
         Ok(())
     }

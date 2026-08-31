@@ -767,7 +767,6 @@ mod tests {
 
     #[tokio::test]
     async fn no_loader_v4_instructions_is_noop() {
-        // Plugin should not interfere with non-loader-v4 transactions.
         let (config, rpc_client) = build_runner();
         let fee_payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();

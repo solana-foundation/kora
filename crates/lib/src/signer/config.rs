@@ -974,7 +974,6 @@ weight = 2
         assert_eq!(config.signers.len(), 2);
         assert!(matches!(config.signer_pool.strategy, SelectionStrategy::RoundRobin));
 
-        // Check first signer
         let signer1 = &config.signers[0];
         assert_eq!(signer1.name, "memory_signer_1");
         assert_eq!(signer1.weight, Some(1));

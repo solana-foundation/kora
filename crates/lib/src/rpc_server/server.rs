@@ -113,13 +113,11 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     log::info!("RPC server started on {addr}, port {port}");
 
-    // Initialize usage limiter
     if let Err(e) = UsageTracker::init_usage_limiter().await {
         log::error!("Failed to initialize usage limiter: {e}");
         return Err(anyhow::anyhow!("Usage limiter initialization failed: {e}"));
     }
 
-    // Build middleware stack with tracing and CORS
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
         .allow_methods([Method::POST, Method::GET])
@@ -134,13 +132,11 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
 
     let config = get_config()?;
 
-    // Get the RPC client from KoraRpc to pass to metrics initialization
     let rpc_client = rpc.get_rpc_client().clone();
 
     let (metrics_handle, metrics_layers, balance_tracker_handle) =
         run_metrics_server_if_required(port, rpc_client).await?;
 
-    // Build whitelist of allowed methods from enabled_methods config
     let allowed_methods = config.kora.enabled_methods.get_enabled_method_names();
 
     let recaptcha_config = config.kora.auth.resolved_recaptcha_secret().map(|secret| {
@@ -155,29 +151,22 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         // Add metrics handler first (before other layers) so it can intercept /metrics
         .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
         .layer(RateLimitLayer::new(config.kora.rate_limit, Duration::from_secs(1)))
-        // Add metrics handler layer for Prometheus metrics
         .option_layer(
             metrics_layers.as_ref().and_then(|layers| layers.metrics_handler_layer.clone()),
         )
         .layer(cors)
-        // Method validation layer - to fail fast
         .layer(MethodValidationLayer::new(allowed_methods.clone()))
-        // Add metrics collection layer
         .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
-        // Add authentication layer for API key if configured
         .option_layer(
             get_value_by_priority("KORA_API_KEY", config.kora.auth.api_key.clone())
                 .map(ApiKeyAuthLayer::new),
         )
-        // Add authentication layer for HMAC if configured
         .option_layer(
             get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone())
                 .map(|secret| HmacAuthLayer::new(secret, config.kora.auth.max_timestamp_age)),
         )
-        // Add reCAPTCHA verification layer if configured
         .option_layer(recaptcha_config.map(RecaptchaLayer::new));
 
-    // Configure and build the server with HTTP support
     let server = ServerBuilder::default()
         .max_request_body_size(config.kora.max_request_body_size as u32)
         .set_middleware(middleware)
@@ -187,7 +176,6 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
 
     let rpc_module = build_rpc_module(rpc)?;
 
-    // Start the RPC server
     let rpc_handle = server
         .start(rpc_module)
         .map_err(|e| anyhow::anyhow!("Failed to start RPC server: {}", e))?;
@@ -387,7 +375,6 @@ mod tests {
         let result = build_rpc_module(kora_rpc);
         assert!(result.is_ok(), "Failed to build RPC module with all methods enabled");
 
-        // Verify that the module has the expected methods
         let module = result.unwrap();
         let method_names: Vec<&str> = module.method_names().collect();
         assert_eq!(method_names.len(), 10);
@@ -406,7 +393,6 @@ mod tests {
 
     #[test]
     fn test_build_rpc_module_all_methods_disabled() {
-        // Setup config with all methods disabled
         let enabled_methods = EnabledMethods {
             estimate_transaction_fee: false,
             get_supported_tokens: false,
@@ -427,11 +413,9 @@ mod tests {
         let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
         let _ = setup_or_get_test_signer();
 
-        // Create RPC module
         let rpc_client = RpcMockBuilder::new().build();
         let kora_rpc = KoraRpc::new(rpc_client);
 
-        // Build the module - should succeed even with no methods
         let result = build_rpc_module(kora_rpc);
         assert!(result.is_ok(), "Failed to build RPC module with all methods disabled");
 
@@ -440,7 +424,6 @@ mod tests {
 
     #[test]
     fn test_build_rpc_module_selective_methods() {
-        // Setup config with only some methods enabled
         let enabled_methods = EnabledMethods {
             liveness: true,
             get_config: true,
@@ -461,15 +444,12 @@ mod tests {
         let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
         let _ = setup_or_get_test_signer();
 
-        // Create RPC module
         let rpc_client = RpcMockBuilder::new().build();
         let kora_rpc = KoraRpc::new(rpc_client);
 
-        // Build the module
         let result = build_rpc_module(kora_rpc);
         assert!(result.is_ok(), "Failed to build RPC module with selective methods");
 
-        // Verify that only the expected methods are registered
         let module = result.unwrap();
         let method_names: Vec<&str> = module.method_names().collect();
         assert_eq!(method_names.len(), 3);

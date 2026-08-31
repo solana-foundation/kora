@@ -27,11 +27,9 @@ pub mod mock_state {
     use once_cell::sync::Lazy;
     use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
-    // Global mock config storage
     static MOCK_CONFIG: Lazy<Arc<RwLock<Option<Config>>>> =
         Lazy::new(|| Arc::new(RwLock::new(None)));
 
-    // Mutex to synchronize access to global mock state
     static MOCK_MTX: Mutex<()> = Mutex::new(());
 
     /// Setup config mock with global state
@@ -39,7 +37,6 @@ pub mod mock_state {
     pub fn setup_config_mock(config: Config) -> MutexGuard<'static, ()> {
         let lock = MOCK_MTX.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-        // Set the mock config globally
         let mut mock_config = MOCK_CONFIG.write().unwrap();
         *mock_config = Some(config);
         drop(mock_config);

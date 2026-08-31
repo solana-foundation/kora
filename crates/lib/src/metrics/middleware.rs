@@ -112,14 +112,11 @@ where
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
             let method = get_jsonrpc_method(&body_bytes).unwrap_or(UNKNOWN_METHOD.to_string());
 
-            // Reconstruct the request with the consumed body
             let new_body = Body::from(body_bytes);
             let new_request = Request::from_parts(parts, new_body);
 
-            // Call the inner service
             let result = inner.call(new_request).await;
 
-            // Record metrics
             let metrics = HttpMetrics::get();
             let duration = start.elapsed();
 

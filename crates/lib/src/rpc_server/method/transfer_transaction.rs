@@ -79,7 +79,6 @@ pub async fn transfer_transaction(
     let token_mint = Pubkey::from_str(&request.token)
         .map_err(|e| KoraError::ValidationError(format!("Invalid token address: {e}")))?;
 
-    // Check source and destination are not disallowed
     if validator.is_disallowed_account(&source) {
         return Err(KoraError::InvalidTransaction(format!(
             "Source account {source} is disallowed"
@@ -93,11 +92,9 @@ pub async fn transfer_transaction(
 
     let mut instructions = vec![];
 
-    // Handle native SOL transfers
     if request.token == NATIVE_SOL {
         instructions.push(transfer(&source, &destination, request.amount));
     } else {
-        // Handle wrapped SOL and other SPL tokens
         let token_mint =
             validator.fetch_and_validate_token_mint(&token_mint, config, rpc_client).await?;
         let token_program = token_mint.get_token_program();
@@ -115,11 +112,10 @@ pub async fn transfer_transaction(
         )?;
 
         match CacheUtil::get_account(config, rpc_client, &dest_ata, false).await {
-            Ok(_) => {} // account exists, no ATA needed
+            Ok(_) => {}
             Err(KoraError::AccountNotFound(_)) => {
-                // Create ATA for destination if it doesn't exist (Kora pays for ATA creation)
                 instructions.push(token_program.create_associated_token_account_instruction(
-                    &signer_pubkey, // Kora pays for ATA creation
+                    &signer_pubkey,
                     &destination,
                     &token_mint.address(),
                 ));
@@ -149,7 +145,7 @@ pub async fn transfer_transaction(
 
     let message = VersionedMessage::Legacy(Message::new_with_blockhash(
         &instructions,
-        Some(&signer_pubkey), // Kora as fee payer
+        Some(&signer_pubkey),
         &blockhash,
     ));
     let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
@@ -267,10 +263,8 @@ mod tests {
     #[tokio::test]
     #[allow(deprecated)]
     async fn test_transfer_transaction_account_not_found_preserved() {
-        // Let's test the specific error mapping logic that was fixed at line 112.
         let pubkey = Pubkey::new_unique();
 
-        // This is simulating the error returned by CacheUtil::get_account when the account is not found
         let error_from_cache = KoraError::AccountNotFound(pubkey.to_string());
 
         let mapped_error = Err::<(), KoraError>(error_from_cache).map_err(|e| match e {
@@ -284,10 +278,8 @@ mod tests {
     #[tokio::test]
     #[allow(deprecated)]
     async fn test_transfer_transaction_rpc_error_preserved() {
-        // Test the specific error mapping logic that was fixed at line 112 for RPC errors.
         let pubkey = Pubkey::new_unique();
 
-        // This is simulating the error returned by CacheUtil::get_account when there's an RPC error
         let error_from_cache = KoraError::RpcError("Service Unavailable".to_string());
 
         let mapped_error = Err::<(), KoraError>(error_from_cache).map_err(|e| match e {

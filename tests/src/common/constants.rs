@@ -1,16 +1,8 @@
-// ============================================================================
-// Network URLs
-// ============================================================================
-
 /// Default local Solana RPC URL
 pub const DEFAULT_RPC_URL: &str = "http://127.0.0.1:8899";
 
 /// Default Kora test server URL
 pub const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
-
-// ============================================================================
-// Test Public Keys
-// ============================================================================
 
 /// Default recipient public key for tests
 pub const RECIPIENT_PUBKEY: &str = "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM";
@@ -46,26 +38,14 @@ pub const LIGHTHOUSE_PROGRAM_PATH: &str = "tests/src/common/fixtures/test-progra
 pub const DISABLE_SBPF_V0_V1_V2_DEPLOYMENT_FEATURE: &str =
     "B8JJXCy5amZyWG9r7EnUYLwzXSXTxG7GZ1qZ1qggo83g";
 
-// ============================================================================
-// Test Configuration
-// ============================================================================
-
 /// Test USDC mint decimals
 pub const TEST_USDC_MINT_DECIMALS: u8 = 6;
-
-// ============================================================================
-// Authentication Test Constants
-// ============================================================================
 
 /// Test API key for authentication tests
 pub const TEST_API_KEY: &str = "test-api-key-123";
 
 /// Test HMAC secret for authentication tests
 pub const TEST_HMAC_SECRET: &str = "test-hmac-secret-456";
-
-// ============================================================================
-// Test Environment Variables
-// ============================================================================
 
 /// Test server URL environment variable
 pub const TEST_SERVER_URL_ENV: &str = "TEST_SERVER_URL";

@@ -43,17 +43,15 @@ pub async fn run_metrics_server_if_required(
         return Ok((None, None, None));
     }
 
-    // Initialize balance tracker if metrics are enabled and start background tracking
     let balance_tracker_handle = if let Err(e) = BalanceTracker::init().await {
         log::warn!("Failed to initialize balance tracker: {e}");
-        // Don't fail metrics server startup if balance tracker fails to initialize
+        // A failed balance tracker must not block metrics server startup.
         None
     } else {
-        // Start background balance tracking (only if initialized worked)
         BalanceTracker::start_background_tracking(rpc_client).await
     };
 
-    // If running on the same port as the RPC server, we don't need to run a separate metrics server
+    // Sharing the RPC port means no separate metrics server is needed.
     if metrics_config.port == rpc_port {
         log::info!("Metrics endpoint enabled at {} on RPC server", metrics_config.endpoint);
         return Ok((None, get_metrics_layers(&metrics_config), balance_tracker_handle));
@@ -63,15 +61,12 @@ pub async fn run_metrics_server_if_required(
     log::info!("Metrics server started on {addr}, port {}", metrics_config.port);
     log::info!("Metrics endpoint: {}", metrics_config.endpoint);
 
-    // Simple middleware stack for metrics-only server
     let middleware = tower::ServiceBuilder::new()
         .layer(MetricsHandlerLayer::new(metrics_config.endpoint.clone()));
 
-    // Configure and build the server
     let server =
         ServerBuilder::default().set_middleware(middleware).http_only().build(addr).await?;
 
-    // Empty RPC module since we only serve metrics
     let module = RpcModule::new(());
 
     let metrics_server_handle = server

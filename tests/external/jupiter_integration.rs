@@ -100,7 +100,6 @@ async fn test_jupiter_integration_sol() {
 #[tokio::test]
 async fn test_jupiter_integration_unknown_token() {
     const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
-    // Invalid token mint
     const UNKNOWN_TOKEN_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1w";
 
     let oracle = get_price_oracle(PriceSource::Jupiter)

@@ -52,7 +52,7 @@ const DEFAULTS = {
     // 9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ
     TEST_USDC_MINT_SECRET: '59kKmXphL5UJANqpFFjtH17emEq3oRNmYsx6a3P3vSGJRmhMgVdzH77bkNEi9bArRViT45e8L2TsuPxKNFoc3Qfg',
 
-    TOKEN_DROP_AMOUNT: 100_000, // Default signer type
+    TOKEN_DROP_AMOUNT: 100_000,
 };
 
 interface TestSuite {
@@ -154,11 +154,9 @@ async function setupTestSuite(): Promise<TestSuite> {
         .use(tokenProgram())
         .use(associatedTokenProgram());
 
-    // Airdrop SOL via LiteSVM
     await client.airdrop(koraAddress, lamports(solDropAmount));
     await client.airdrop(testWallet.address, lamports(solDropAmount));
 
-    // Create mint
     await client.token.instructions
         .createMint({
             newMint: usdcMint,
@@ -167,7 +165,7 @@ async function setupTestSuite(): Promise<TestSuite> {
         })
         .sendTransaction();
 
-    // Mint tokens to testWallet's ATA (auto-creates ATA)
+    // mintToATA auto-creates the ATA
     await client.token.instructions
         .mintToATA({
             mint: usdcMint.address,
@@ -178,7 +176,6 @@ async function setupTestSuite(): Promise<TestSuite> {
         })
         .sendTransaction();
 
-    // Create ATAs for kora and destination wallets
     for (const owner of [koraAddress, destinationAddress]) {
         await client.associatedToken.instructions
             .createAssociatedTokenIdempotent({

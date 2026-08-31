@@ -11,10 +11,8 @@ use crate::{
 };
 use std::time::Duration;
 
-// Global signer pool (for multi-signer support)
 static GLOBAL_SIGNER_POOL: Lazy<RwLock<Option<Arc<SignerPool>>>> = Lazy::new(|| RwLock::new(None));
 
-// Global config with zero-cost reads and hot-reload capability
 static GLOBAL_CONFIG: AtomicPtr<Config> = AtomicPtr::new(std::ptr::null_mut());
 
 // Tracks detached background tasks (currently the fire-and-forget broadcasts of
@@ -77,12 +75,10 @@ pub fn get_request_signer_with_signer_key(
     let pool = get_signer_pool()?;
     sync_probe_lease_from_config(&pool, config);
 
-    // If client provided a signer signer_key, try to use that specific signer
     if let Some(signer_key) = signer_key {
         return pool.get_signer_by_pubkey(signer_key);
     }
 
-    // Use configured selection strategy (defaults to round-robin if not specified)
     pool.get_next_signer()
         .map_err(|e| KoraError::InternalServerError(format!("Failed to get signer from pool: {e}")))
 }
@@ -93,7 +89,6 @@ pub fn reserve_request_signer_by_pubkey(
     get_request_signer_with_signer_key(Some(&signer_pubkey.to_string()))
 }
 
-/// Initialize the global signer pool with a SignerPool instance
 pub fn init_signer_pool(pool: SignerPool) -> Result<(), KoraError> {
     let mut pool_guard = GLOBAL_SIGNER_POOL.write();
     if pool_guard.is_some() {
@@ -110,7 +105,6 @@ pub fn init_signer_pool(pool: SignerPool) -> Result<(), KoraError> {
     Ok(())
 }
 
-/// Get a reference to the global signer pool
 pub fn get_signer_pool() -> Result<Arc<SignerPool>, KoraError> {
     let pool_guard = GLOBAL_SIGNER_POOL.read();
     match &*pool_guard {
@@ -119,13 +113,11 @@ pub fn get_signer_pool() -> Result<Arc<SignerPool>, KoraError> {
     }
 }
 
-/// Get information about all signers (for monitoring/debugging)
 pub fn get_signers_info() -> Result<Vec<crate::signer::SignerInfo>, KoraError> {
     let pool = get_signer_pool()?;
     Ok(pool.get_signers_info())
 }
 
-/// Update the global signer configs with a new config (test only)
 #[cfg(test)]
 pub fn update_signer_pool(new_pool: SignerPool) -> Result<(), KoraError> {
     let mut pool_guard = GLOBAL_SIGNER_POOL.write();
@@ -135,7 +127,6 @@ pub fn update_signer_pool(new_pool: SignerPool) -> Result<(), KoraError> {
     Ok(())
 }
 
-/// Initialize the global config with a Config instance
 pub fn init_config(config: Config) -> Result<(), KoraError> {
     let current_ptr = GLOBAL_CONFIG.load(Ordering::Acquire);
     if !current_ptr.is_null() {
@@ -147,7 +138,6 @@ pub fn init_config(config: Config) -> Result<(), KoraError> {
     Ok(())
 }
 
-/// Get a reference to the global config (zero-cost read)
 pub fn get_config() -> Result<&'static Config, KoraError> {
     let config_ptr = GLOBAL_CONFIG.load(Ordering::Acquire);
     if config_ptr.is_null() {
@@ -158,7 +148,6 @@ pub fn get_config() -> Result<&'static Config, KoraError> {
     Ok(unsafe { &*config_ptr })
 }
 
-/// Update the global config with a new full config (test only)
 #[cfg(test)]
 pub fn update_config(new_config: Config) -> Result<(), KoraError> {
     let old_ptr = GLOBAL_CONFIG.load(Ordering::Acquire);
@@ -166,7 +155,6 @@ pub fn update_config(new_config: Config) -> Result<(), KoraError> {
 
     GLOBAL_CONFIG.store(new_ptr, Ordering::Release);
 
-    // Clean up old config if it exists
     if !old_ptr.is_null() {
         unsafe {
             let _ = Box::from_raw(old_ptr);
@@ -215,8 +203,6 @@ mod tests {
             let _ = rx.await;
         });
 
-        // Release the task shortly after the drain starts so it completes within
-        // the timeout window.
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(50)).await;
             let _ = tx.send(());

@@ -52,7 +52,6 @@ pub struct TransactionBuilder {
 }
 
 impl TransactionBuilder {
-    /// Create a legacy transaction builder
     pub fn legacy() -> Self {
         Self {
             version: TransactionVersion::Legacy,
@@ -65,7 +64,6 @@ impl TransactionBuilder {
         }
     }
 
-    /// Create a V0 transaction builder without lookup tables
     pub fn v0() -> Self {
         Self {
             version: TransactionVersion::V0,
@@ -78,7 +76,6 @@ impl TransactionBuilder {
         }
     }
 
-    /// Create a V0 transaction builder with lookup tables
     pub fn v0_with_lookup(lookup_tables: Vec<Pubkey>) -> Self {
         Self {
             version: TransactionVersion::V0WithLookup(lookup_tables),
@@ -91,7 +88,6 @@ impl TransactionBuilder {
         }
     }
 
-    /// Create a V1 transaction builder
     pub fn v1() -> Self {
         Self {
             version: TransactionVersion::V1,
@@ -104,13 +100,11 @@ impl TransactionBuilder {
         }
     }
 
-    /// Set the RPC client for fetching blockhash and lookup tables
     pub fn with_rpc_client(mut self, client: Arc<RpcClient>) -> Self {
         self.rpc_client = Some(client);
         self
     }
 
-    /// Set the fee payer
     pub fn with_fee_payer(mut self, fee_payer: Pubkey) -> Self {
         self.fee_payer = Some(fee_payer);
         self
@@ -122,20 +116,17 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add a simple SOL transfer instruction
     pub fn with_transfer(mut self, from: &Pubkey, to: &Pubkey, lamports: u64) -> Self {
         self.instructions.push(transfer(from, to, lamports));
         self
     }
 
-    /// Add a system assign instruction
     pub fn with_system_assign(mut self, account: &Pubkey, owner: &Pubkey) -> Self {
         let instruction = solana_system_interface::instruction::assign(account, owner);
         self.instructions.push(instruction);
         self
     }
 
-    /// Add a system create_account instruction
     pub fn with_system_create_account(
         mut self,
         from: &Pubkey,
@@ -150,15 +141,13 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add a system allocate instruction
     pub fn with_system_allocate(mut self, account: &Pubkey, space: u64) -> Self {
         let instruction = solana_system_interface::instruction::allocate(account, space);
         self.instructions.push(instruction);
         self
     }
 
-    /// Add a CreateAccountAllowPrefund instruction (tag 13, hand-encoded — no constructor in
-    /// system-interface 2.0.0; funding account omitted when lamports == 0).
+    // Tag 13, hand-encoded (no constructor in system-interface 2.0.0); omit funding account if lamports == 0
     pub fn with_create_account_allow_prefund(
         mut self,
         new_account: &Pubkey,
@@ -179,7 +168,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add an SPL token transfer instruction
     pub fn with_spl_transfer(
         mut self,
         token_mint: &Pubkey,
@@ -204,7 +192,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add an SPL payment instruction (direct token transfer using spl_token)
     pub fn with_spl_payment(
         mut self,
         token_mint: &Pubkey,
@@ -229,7 +216,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add an SPL payment instruction with specified token accounts
     pub fn with_spl_payment_with_accounts(
         mut self,
         from_token_account: &Pubkey,
@@ -251,7 +237,7 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add an SPL token transfer_checked instruction (includes mint address for lookup table testing)
+    // Includes mint address for lookup table testing
     pub fn with_spl_transfer_checked(
         mut self,
         token_mint: &Pubkey,
@@ -279,33 +265,29 @@ impl TransactionBuilder {
         self
     }
 
-    /// Set the priority fee (flat lamports) in the V1 transaction config
+    // Flat lamports amount for priority fee
     pub fn with_v1_priority_fee(mut self, lamports: u64) -> Self {
         self.v1_priority_fee = Some(lamports);
         self
     }
 
-    /// Leave the compute unit limit and loaded accounts data size limit out of the V1
-    /// transaction config, which requests zero of each.
+    // Omit resource limits from V1 config (requests zero compute units and zero data size)
     pub fn with_v1_unset_resource_limits(mut self) -> Self {
         self.v1_unset_resource_limits = true;
         self
     }
 
-    /// Add compute budget instructions (both limit and price)
     pub fn with_compute_budget(mut self, units: u32, price: u64) -> Self {
         self.instructions.insert(0, ComputeBudgetInstruction::set_compute_unit_limit(units));
         self.instructions.insert(1, ComputeBudgetInstruction::set_compute_unit_price(price));
         self
     }
 
-    /// Add a custom instruction
     pub fn with_instruction(mut self, instruction: Instruction) -> Self {
         self.instructions.push(instruction);
         self
     }
 
-    /// Add a Token 2022 transfer_checked instruction
     pub fn with_spl_token_2022_transfer_checked(
         mut self,
         token_mint: &Pubkey,
@@ -341,7 +323,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add Token 2022 transfer checked instruction with specific token accounts
     pub fn with_spl_token_2022_transfer_checked_with_accounts(
         mut self,
         token_mint: &Pubkey,
@@ -367,7 +348,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add ATA creation instruction for SPL Token
     pub fn with_create_ata(mut self, mint: &Pubkey, owner: &Pubkey) -> Self {
         let instruction =
             spl_associated_token_account_interface::instruction::create_associated_token_account(
@@ -380,7 +360,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add ATA creation idempotent instruction for SPL Token
     pub fn with_create_ata_idempotent(mut self, mint: &Pubkey, owner: &Pubkey) -> Self {
         let instruction =
             spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
@@ -393,7 +372,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add ATA creation instruction for Token2022
     pub fn with_create_token2022_ata(mut self, mint: &Pubkey, owner: &Pubkey) -> Self {
         let instruction =
             spl_associated_token_account_interface::instruction::create_associated_token_account(
@@ -406,7 +384,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add manual token account creation and initialization for SPL Token
     pub fn with_create_and_init_token_account(
         mut self,
         account: &Keypair,
@@ -414,7 +391,6 @@ impl TransactionBuilder {
         owner: &Pubkey,
         rent_lamports: u64,
     ) -> Self {
-        // Create account instruction
         let create_instruction = create_account(
             &self.fee_payer.expect("Fee payer must be set"),
             &account.pubkey(),
@@ -423,7 +399,6 @@ impl TransactionBuilder {
             &spl_token_interface::id(),
         );
 
-        // Initialize account instruction
         let init_instruction = spl_token_interface::instruction::initialize_account3(
             &spl_token_interface::id(),
             &account.pubkey(),
@@ -438,7 +413,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add SPL token revoke instruction
     pub fn with_spl_revoke(mut self, token_account: &Pubkey, owner: &Pubkey) -> Self {
         let instruction = spl_token_interface::instruction::revoke(
             &spl_token_interface::id(),
@@ -451,7 +425,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add Token2022 revoke instruction
     pub fn with_token2022_revoke(mut self, token_account: &Pubkey, owner: &Pubkey) -> Self {
         let instruction = spl_token_2022_interface::instruction::revoke(
             &spl_token_2022_interface::id(),
@@ -464,7 +437,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add SPL token withdraw_excess_lamports instruction
     pub fn with_spl_withdraw_excess_lamports(
         mut self,
         account: &Pubkey,
@@ -483,7 +455,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add Token2022 withdraw_excess_lamports instruction
     pub fn with_token2022_withdraw_excess_lamports(
         mut self,
         account: &Pubkey,
@@ -502,7 +473,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Wrap the given SPL token instructions in a single p-token `Batch` instruction
     pub fn with_spl_batch(mut self, inner: Vec<Instruction>) -> Self {
         let instruction =
             spl_token_interface::instruction::batch(&spl_token_interface::id(), &inner)
@@ -511,7 +481,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add SPL token set_authority instruction
     pub fn with_spl_set_authority(
         mut self,
         account: &Pubkey,
@@ -532,7 +501,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add Token2022 set_authority instruction
     pub fn with_token2022_set_authority(
         mut self,
         account: &Pubkey,
@@ -553,7 +521,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add SPL token mint_to instruction
     pub fn with_spl_mint_to(
         mut self,
         mint: &Pubkey,
@@ -574,7 +541,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add Token2022 mint_to instruction
     pub fn with_token2022_mint_to(
         mut self,
         mint: &Pubkey,
@@ -595,7 +561,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add SPL token freeze_account instruction
     pub fn with_spl_freeze_account(
         mut self,
         token_account: &Pubkey,
@@ -614,7 +579,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add Token2022 freeze_account instruction
     pub fn with_token2022_freeze_account(
         mut self,
         token_account: &Pubkey,
@@ -633,7 +597,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add SPL token thaw_account instruction
     pub fn with_spl_thaw_account(
         mut self,
         token_account: &Pubkey,
@@ -652,7 +615,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add Token2022 thaw_account instruction
     pub fn with_token2022_thaw_account(
         mut self,
         token_account: &Pubkey,
@@ -671,7 +633,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Build the transaction and return as base64-encoded string
     pub async fn build(self) -> Result<String> {
         let rpc_client =
             self.rpc_client.ok_or_else(|| anyhow::anyhow!("RPC client is required"))?;
@@ -696,7 +657,6 @@ impl TransactionBuilder {
                     VersionedMessage::V0(v0_message)
                 }
                 TransactionVersion::V0WithLookup(lookup_table_keys) => {
-                    // Fetch and deserialize lookup tables
                     let mut lookup_table_accounts = Vec::new();
                     for key in lookup_table_keys {
                         let account = rpc_client.get_account(&key).await?;
@@ -716,8 +676,7 @@ impl TransactionBuilder {
                     VersionedMessage::V0(v0_message)
                 }
                 TransactionVersion::V1 => {
-                    // An empty config mask requests 0 compute units and a 0 (32KiB)
-                    // loaded-accounts-data cap, so real limits must be set explicitly.
+                    // Empty config requests 0 compute units and 0 (32KiB) data cap; must set limits explicitly
                     let mut config = if self.v1_unset_resource_limits {
                         TransactionConfig::empty()
                     } else {
@@ -739,10 +698,8 @@ impl TransactionBuilder {
             };
 
         let transaction = if self.signers.is_empty() {
-            // Unsigned transaction
             TransactionUtil::new_unsigned_versioned_transaction(message)
         } else {
-            // Signed transaction - create with proper number of signatures
             let num_required_signatures = message.header().num_required_signatures as usize;
             let mut tx = VersionedTransaction {
                 signatures: vec![Signature::default(); num_required_signatures],
@@ -764,15 +721,13 @@ impl TransactionBuilder {
         Ok(TransactionUtil::encode_versioned_transaction(&transaction)?)
     }
 
-    /// Build a durable transaction using a nonce account's stored blockhash.
     pub async fn build_with_nonce(self, nonce_pubkey: &Pubkey) -> Result<String> {
         let rpc_client =
             self.rpc_client.ok_or_else(|| anyhow::anyhow!("RPC client is required"))?;
 
         let fee_payer = self.fee_payer.ok_or_else(|| anyhow::anyhow!("Fee payer is required"))?;
 
-        // Fetch the nonce account and extract the stored blockhash (durable nonce)
-        // Use Versions because nonce account data has a version prefix
+        // Nonce account data has a version prefix; deserialize as Versions
         let nonce_account = rpc_client.get_account(nonce_pubkey).await?;
         let nonce_versions: solana_nonce::versions::Versions =
             bincode::deserialize(&nonce_account.data)?;
@@ -806,10 +761,8 @@ impl TransactionBuilder {
         };
 
         let transaction = if self.signers.is_empty() {
-            // Unsigned transaction
             TransactionUtil::new_unsigned_versioned_transaction(message)
         } else {
-            // Signed transaction - create with proper number of signatures
             let num_required_signatures = message.header().num_required_signatures as usize;
             let mut tx = VersionedTransaction {
                 signatures: vec![Signature::default(); num_required_signatures],

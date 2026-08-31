@@ -207,14 +207,12 @@ impl ConfigBuilder {
             .map(|(program, instruction, max, window_seconds)| {
                 match (program, instruction) {
                     (None, None) => {
-                        // Transaction rule
                         let window_part = window_seconds
                             .map(|w| format!(", window_seconds = {w}"))
                             .unwrap_or_default();
                         format!("{{ type = \"transaction\", max = {max}{window_part} }}")
                     }
                     (Some(p), Some(i)) => {
-                        // Instruction rule
                         let window_part = window_seconds
                             .map(|w| format!(", window_seconds = {w}"))
                             .unwrap_or_default();
@@ -228,7 +226,6 @@ impl ConfigBuilder {
             .collect::<Vec<_>>()
             .join(", ");
 
-        // Append rules to existing config or create new one
         if let Some(ref mut config) = self.kora.usage_limit_config {
             config.push_str(&format!("rules = [{rules_toml}]\n"));
         } else {

@@ -11,21 +11,16 @@ impl SignerValidator {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
 
-        // Check if signers list is empty
         Self::try_result(config.validate_signer_not_empty(), &mut errors);
 
-        // Validate each signer configuration - delegate to existing method
         for (index, signer) in config.signers.iter().enumerate() {
             Self::try_result(signer.validate_individual_signer_config(index), &mut errors);
         }
 
-        // Check for duplicate names - delegate to existing method
         Self::try_result(config.validate_signer_names(), &mut errors);
 
-        // Validate strategy weights - delegate to existing method
         Self::try_result(config.validate_strategy_weights(), &mut errors);
 
-        // Generate strategy-specific warnings
         Self::validate_strategy_warnings(config, &mut warnings);
 
         for signer in &config.signers {
@@ -87,7 +82,6 @@ impl SignerValidator {
                 }
             }
             _ => {
-                // For non-weighted strategies, warn if weights are specified
                 for signer in &config.signers {
                     if signer.weight.is_some() {
                         warnings.push(format!(
@@ -116,7 +110,7 @@ mod tests {
             signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
             signers: vec![SignerConfig {
                 name: "test_signer".to_string(),
-                weight: Some(10), // Weight specified for non-weighted strategy
+                weight: Some(10),
                 config: SignerTypeConfig::Memory {
                     config: MemorySignerConfig { private_key_env: "TEST_KEY".to_string() },
                 },

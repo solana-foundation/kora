@@ -58,10 +58,8 @@ pub async fn sign_bundle(
         return Err(BundleError::Jito(JitoError::NotEnabled).into());
     }
 
-    // Validate bundle size on ALL transactions first
     BundleValidator::validate_jito_bundle_size(&transactions)?;
 
-    // Extract only the transactions we need to process
     let (transactions_to_process, index_to_position) =
         BundleProcessor::extract_transactions_to_process(&transactions, sign_only_indices.clone())?;
 
@@ -105,13 +103,11 @@ pub async fn sign_bundle(
     let signed_resolved =
         processor.sign_all(&signer, &fee_payer, rpc_client, config, false).await?;
 
-    // Encode signed transactions
     let encoded_signed: Vec<String> = signed_resolved
         .iter()
         .map(|r| TransactionUtil::encode_versioned_transaction(&r.transaction))
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Merge signed transactions back into original positions
     let signed_transactions = BundleProcessor::merge_signed_transactions(
         &transactions,
         encoded_signed,
@@ -269,8 +265,6 @@ mod tests {
                 .build(),
         );
 
-        // Create transactions with signer as fee payer
-
         let transactions: Vec<String> = (0..5)
             .map(|_| {
                 let ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1000000000);
@@ -280,7 +274,6 @@ mod tests {
             })
             .collect();
 
-        // Use signer_key to ensure consistency - prevents race conditions with parallel tests
         let request = SignBundleRequest {
             transactions,
             signer_key: Some(signer_pubkey.to_string()),
@@ -319,13 +312,11 @@ mod tests {
                 .build(),
         );
 
-        // Create transaction with signer as fee payer
         let ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1000000000);
         let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&signer_pubkey)));
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let encoded_tx = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
 
-        // Single transaction bundle is valid
         let request = SignBundleRequest {
             transactions: vec![encoded_tx],
             signer_key: Some(signer_pubkey.to_string()),
@@ -344,7 +335,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_sign_bundle_sig_verify_default() {
-        // Test that sig_verify defaults correctly via serde (defaults to false)
         let json = r#"{"transactions": ["tx1"]}"#;
         let request: SignBundleRequest = serde_json::from_str(json).unwrap();
 

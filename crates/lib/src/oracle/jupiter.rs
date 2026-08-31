@@ -179,7 +179,6 @@ impl JupiterPriceOracle {
 
         Self::validate_price_data(sol_price, SOL_MINT)?;
 
-        // Convert all prices to SOL-denominated
         let mut result = HashMap::new();
         for mint_address in mint_addresses {
             if let Some(price_data) = jupiter_response.get(mint_address.as_str()) {
@@ -230,7 +229,6 @@ mod tests {
     #[test]
     #[serial]
     fn test_new_fails_without_api_key() {
-        // Clear both the global state AND the environment variable
         std::env::remove_var("JUPITER_API_KEY");
         {
             let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
@@ -363,7 +361,6 @@ mod tests {
             *api_key_guard = Some("test-api-key".to_string());
         }
 
-        // SOL price is normal, but the queried token price exceeds MAX_REASONABLE_PRICE
         let mock_response = r#"{
             "So11111111111111111111111111111111111111112": {
                 "usdPrice": 100.0,
@@ -409,7 +406,6 @@ mod tests {
             *api_key_guard = Some("test-api-key".to_string());
         }
 
-        // SOL price is normal, but the queried token price is below MIN_REASONABLE_PRICE
         let mock_response = r#"{
             "So11111111111111111111111111111111111111112": {
                 "usdPrice": 100.0,

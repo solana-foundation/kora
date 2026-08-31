@@ -16,7 +16,6 @@ import {
 } from '@solana/kit';
 import { identity, signer } from '@solana/kit-plugin-signer';
 
-// Mock fetch globally
 const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
@@ -161,7 +160,6 @@ describe('createKitKoraClient', () => {
         let client: KoraKitClient;
 
         beforeEach(async () => {
-            // Mock getPayerSigner for init
             mockRpcResponse({
                 signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
@@ -282,7 +280,6 @@ describe('createKitKoraClient', () => {
 
             // Kit's executor wraps errors — the original RPC error is the cause
             await expect(client.sendTransaction([dummyIx])).rejects.toThrow();
-            // Verify signAndSendTransaction was attempted
             const calls = mockFetch.mock.calls.map(c => JSON.parse(c[1].body).method);
             expect(calls).toContain('signAndSendTransaction');
         });
@@ -316,7 +313,6 @@ describe('createKitKoraClient', () => {
 
             const result = await client.planTransaction([dummyIx]);
 
-            // Returns a transaction message (has version, instructions, feePayer)
             expect(result).toBeDefined();
             expect('version' in result).toBe(true);
             expect('instructions' in result).toBe(true);
@@ -348,7 +344,6 @@ describe('createKitKoraClient', () => {
             }));
 
             expect(extended.custom.hello()).toBe('world');
-            // Original methods preserved via spread
             expect(extended.kora).toBeDefined();
             expect(typeof extended.sendTransaction).toBe('function');
             expect(typeof extended.planTransaction).toBe('function');
@@ -367,7 +362,6 @@ describe('createKitKoraClient', () => {
                 feePayerWallet: MOCK_WALLET,
             });
 
-            // Plugin that adds extra property (with spread)
             const extended = client.use(<T extends object>(c: T) => ({
                 ...c,
                 extra: 42,
@@ -394,7 +388,6 @@ describe('createKitKoraClient', () => {
                 apiKey: 'test-api-key',
             });
 
-            // The init call should include the API key header
             const headers = mockFetch.mock.calls[0][1].headers;
             expect(headers['x-api-key']).toBe('test-api-key');
         });
@@ -415,7 +408,6 @@ describe('createKitKoraClient', () => {
                 getRecaptchaToken: mockGetToken,
             });
 
-            // The init call should include the reCAPTCHA token header
             expect(mockGetToken).toHaveBeenCalledTimes(1);
             const headers = mockFetch.mock.calls[0][1].headers;
             expect(headers['x-recaptcha-token']).toBe('test-recaptcha-token');

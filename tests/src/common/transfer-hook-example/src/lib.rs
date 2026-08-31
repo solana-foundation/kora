@@ -18,10 +18,8 @@ use spl_tlv_account_resolution::{account::ExtraAccountMeta, state::ExtraAccountM
 
 solana_program::declare_id!("Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA");
 
-// Program entrypoint
 entrypoint!(process_instruction);
 
-// Main processor
 pub fn process_instruction(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -47,8 +45,8 @@ pub fn process_instruction(
     forward_cpi(accounts, instruction_data)
 }
 
-// Invokes instruction_data on the program in accounts[0] with accounts[1..], so tests can drive
-// instructions (e.g. p-token batches) into Kora's validator as inner CPI instructions.
+// Invokes instruction_data on accounts[0] program with accounts[1..]: allows tests to drive
+// inner CPI (e.g. p-token batches) into Kora's validator
 fn forward_cpi(accounts: &[AccountInfo], instruction_data: &[u8]) -> ProgramResult {
     let target_program = &accounts[0];
     let cpi_accounts = &accounts[1..];
@@ -73,7 +71,6 @@ fn forward_cpi(accounts: &[AccountInfo], instruction_data: &[u8]) -> ProgramResu
     invoke(&instruction, accounts)
 }
 
-// Execute transfer hook logic
 fn execute_transfer_hook(
     _program_id: &Pubkey,
     _accounts: &[AccountInfo],
@@ -87,7 +84,7 @@ fn execute_transfer_hook(
     // 4. Extra account meta list (required)
     // ... any additional accounts from ExtraAccountMetaList
 
-    // Simple logic: block transfers over 1 million tokens (adjust decimals as needed)
+    // Block transfers over 1 million tokens
     if amount > 1_000_000 {
         msg!("Transfer blocked: amount {} exceeds limit", amount);
         return Err(ProgramError::Custom(1));
@@ -97,7 +94,7 @@ fn execute_transfer_hook(
     Ok(())
 }
 
-// Initialize Extra Account Meta List using proper TLV format
+// Use proper TLV format for Extra Account Meta List
 fn initialize_extra_account_meta_list(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -116,31 +113,26 @@ fn initialize_extra_account_meta_list(
     let payer_info = next_account_info(accounts_iter)?;
     let system_program_info = next_account_info(accounts_iter)?;
 
-    // Derive the expected PDA address
     let seeds = &[b"extra-account-metas", mint_info.key.as_ref()];
     let (expected_address, bump) = Pubkey::find_program_address(seeds, program_id);
 
-    // Verify this is the correct PDA
     if expected_address != *extra_account_meta_list_info.key {
         msg!("Error: Extra Account Meta List address mismatch");
         msg!("Expected: {}, Got: {}", expected_address, extra_account_meta_list_info.key);
         return Err(ProgramError::InvalidSeeds);
     }
 
-    // Check if account is already initialized
     if extra_account_meta_list_info.data_len() > 0 {
         msg!("Extra Account Meta List already initialized");
         return Ok(());
     }
 
-    // Calculate the required space for the ExtraAccountMetaList using TLV format
     let account_size = ExtraAccountMetaList::size_of(extra_account_metas.len())?;
     let rent = Rent::get()?;
     let required_lamports = rent.minimum_balance(account_size);
 
     msg!("Creating PDA with TLV size: {}, lamports: {}", account_size, required_lamports);
 
-    // Create the PDA account
     let create_account_ix = system_instruction::create_account(
         payer_info.key,
         extra_account_meta_list_info.key,
@@ -157,7 +149,6 @@ fn initialize_extra_account_meta_list(
         &[signer_seeds],
     )?;
 
-    // Initialize the account data with proper TLV format
     {
         let mut data = extra_account_meta_list_info.try_borrow_mut_data()?;
         ExtraAccountMetaList::init::<ExecuteInstruction>(&mut data, extra_account_metas)?;
@@ -167,7 +158,6 @@ fn initialize_extra_account_meta_list(
     Ok(())
 }
 
-// Update Extra Account Meta List using proper TLV format
 fn update_extra_account_meta_list(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -181,7 +171,6 @@ fn update_extra_account_meta_list(
 
     msg!("Updating Extra Account Meta List with TLV format");
 
-    // Verify this is the correct PDA
     let seeds = &[b"extra-account-metas", mint_info.key.as_ref()];
     let (expected_address, _bump) = Pubkey::find_program_address(seeds, program_id);
 
@@ -190,7 +179,6 @@ fn update_extra_account_meta_list(
         return Err(ProgramError::InvalidSeeds);
     }
 
-    // Update the account data
     {
         let mut data = extra_account_meta_list_info.try_borrow_mut_data()?;
         ExtraAccountMetaList::update::<ExecuteInstruction>(&mut data, extra_account_metas)?;

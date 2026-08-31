@@ -58,13 +58,11 @@ impl BalanceTracker {
             return Ok(());
         }
 
-        // Get all signers in the pool
         let signers_info = get_signers_info()?;
 
         if let Some(gauge_vec) = SIGNER_BALANCE_GAUGES.get() {
             let mut balance_results = Vec::new();
 
-            // Batch fetch all signer balances
             for signer_info in &signers_info {
                 let pubkey = Pubkey::from_str(&signer_info.public_key).map_err(|e| {
                     KoraError::InternalServerError(format!(
@@ -89,7 +87,6 @@ impl BalanceTracker {
                 }
             }
 
-            // Update all gauge metrics
             for (signer_info, balance_lamports) in balance_results {
                 let gauge =
                     gauge_vec.with_label_values(&[&signer_info.name, &signer_info.public_key]);
@@ -129,17 +126,14 @@ impl BalanceTracker {
         let interval_seconds = config.metrics.fee_payer_balance.expiry_seconds;
         log::info!("Starting multi-signer balance tracking background task with {interval_seconds}s interval");
 
-        // Clone config to move into the spawned task
         let config = config.clone();
 
-        // Spawn a background task that runs forever
         let handle = tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(interval_seconds));
 
             loop {
                 interval.tick().await;
 
-                // Track all signer balances, but don't let errors crash the loop
                 if let Err(e) =
                     BalanceTracker::track_all_signer_balances(&config, &rpc_client).await
                 {

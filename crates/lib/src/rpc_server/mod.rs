@@ -9,7 +9,6 @@ pub mod recaptcha_util;
 pub mod rpc;
 pub mod server;
 
-// Re-export main types for CLI usage
 pub use args::RpcArgs;
 pub use recaptcha::RecaptchaLayer;
 pub use recaptcha_util::RecaptchaConfig;

@@ -234,7 +234,6 @@ impl<T> KoraResponse<T> {
     }
 }
 
-// Extension trait for Result<T, E> to convert to KoraResponse
 pub trait IntoKoraResponse<T> {
     fn into_response(self) -> KoraResponse<T>;
 }

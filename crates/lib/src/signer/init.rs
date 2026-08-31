@@ -13,7 +13,6 @@ pub async fn init_signers(args: &RpcArgs) -> Result<(), KoraError> {
     }
 
     if let Some(config_path) = &args.signers_config {
-        // Multi-signer mode: load and initialize signer pool
         log::info!("Initializing multi-signer mode from config: {}", config_path.display());
 
         let config = SignerPoolConfig::load_config(config_path)?;

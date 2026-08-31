@@ -9,7 +9,6 @@ pub trait TokenState: Any + Send + Sync {
     fn amount(&self) -> u64;
     fn decimals(&self) -> u8;
 
-    // Add method to support downcasting for Token2022 specific features
     fn as_any(&self) -> &dyn Any;
 }
 
@@ -22,7 +21,6 @@ pub trait TokenMint: Any + Send + Sync {
     fn is_initialized(&self) -> bool;
     fn get_token_program(&self) -> Box<dyn TokenInterface>;
 
-    // For downcasting to specific types
     fn as_any(&self) -> &dyn Any;
 }
 

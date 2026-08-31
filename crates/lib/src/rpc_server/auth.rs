@@ -71,7 +71,6 @@ where
                 }
             }
 
-            // Check for API key header
             let req = Request::from_parts(parts, Body::from(body_bytes));
             if let Some(provided_key) = req.headers().get(X_API_KEY) {
                 // Constant-time comparison prevents timing attacks
@@ -166,7 +165,6 @@ where
             let signature = signature.to_str().unwrap_or("");
             let timestamp = timestamp.to_str().unwrap_or("");
 
-            // Verify timestamp is within allowed age
             let ts = match timestamp.parse::<i64>() {
                 Ok(ts) => ts,
                 Err(_) => return Ok(unauthorized_response),
@@ -184,7 +182,6 @@ where
                 return Ok(unauthorized_response);
             }
 
-            // Verify HMAC signature using timestamp + body
             let body_str = match std::str::from_utf8(&body_bytes) {
                 Ok(s) => s,
                 Err(_) => {
@@ -217,7 +214,6 @@ where
                 return Ok(unauthorized_response);
             }
 
-            // Reconstruct the request with the consumed body
             let new_body = Body::from(body_bytes);
             let new_request = Request::from_parts(parts, new_body);
 
@@ -240,7 +236,6 @@ mod tests {
     };
     use tower::{Layer, Service, ServiceExt};
 
-    // Mock service that always returns OK
     #[derive(Clone)]
     struct MockService;
 
@@ -391,7 +386,6 @@ mod tests {
         let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
         let mut service = layer.layer(MockService);
 
-        // Timestamp from 10 minutes ago (expired)
         let expired_timestamp =
             (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
                 - 600)

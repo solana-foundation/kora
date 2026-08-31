@@ -65,10 +65,8 @@ pub async fn sign_and_send_bundle(
         return Err(BundleError::Jito(JitoError::NotEnabled).into());
     }
 
-    // Validate bundle size on ALL transactions first
     BundleValidator::validate_jito_bundle_size(&transactions)?;
 
-    // Extract only the transactions we need to process
     let (transactions_to_process, index_to_position) =
         BundleProcessor::extract_transactions_to_process(&transactions, sign_only_indices.clone())?;
 
@@ -111,13 +109,11 @@ pub async fn sign_and_send_bundle(
 
     let signed_resolved = processor.sign_all(&signer, &fee_payer, rpc_client, config, true).await?;
 
-    // Encode signed transactions
     let encoded_signed: Vec<String> = signed_resolved
         .iter()
         .map(|r| TransactionUtil::encode_versioned_transaction(&r.transaction))
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Merge signed transactions back into original positions
     let signed_transactions = BundleProcessor::merge_signed_transactions(
         &transactions,
         encoded_signed,
@@ -137,7 +133,6 @@ pub async fn sign_and_send_bundle(
         .await?;
     }
 
-    // Send the full merged bundle to Jito for atomic execution.
     let jito_client = JitoBundleClient::new(&config.kora.bundle.jito);
     let bundle_uuid = jito_client.send_bundle(&signed_transactions).await?;
 

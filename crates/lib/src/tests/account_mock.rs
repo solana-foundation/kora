@@ -24,7 +24,6 @@ use crate::token::{
     spl_token_2022_util::ParsedExtension,
 };
 
-// Common default values used across mock builders
 const DEFAULT_LAMPORTS: u64 = 1_000_000;
 const DEFAULT_TOKEN_AMOUNT: u64 = 100;
 const DEFAULT_MINT_SUPPLY: u64 = 1_000_000_000_000;
@@ -537,8 +536,6 @@ impl MintAccountMockBuilder {
     }
 }
 
-// Helper functions for test account creation
-
 pub fn create_mock_account() -> Account {
     AccountMockBuilder::new().build()
 }
@@ -610,8 +607,6 @@ pub fn create_mock_token2022_mint_with_extensions(
         .with_extensions(extensions)
         .build_token2022()
 }
-
-// ========== Token2022 Test Helpers ==========
 
 /// Helper to create Transfer Fee Config for testing
 pub fn create_transfer_fee_config(basis_points: u16, max_fee: u64) -> TransferFeeConfig {

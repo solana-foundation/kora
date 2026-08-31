@@ -82,7 +82,6 @@ macro_rules! validate_spl_multisig {
                 } else {
                     ($spl_policy, $name_spl)
                 };
-                // Check if fee payer is one of the signers
                 if $signers.contains(&$self.fee_payer_pubkey) && !allowed {
                     return Err(KoraError::InvalidTransaction(format!(
                         "Fee payer cannot be used for '{}'",

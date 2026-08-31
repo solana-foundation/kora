@@ -59,9 +59,7 @@ export function createKoraTransactionPlanExecutor(
             let finalTx: Base64EncodedWireTransaction;
 
             if (payment) {
-                // Fee estimation only reads the message and its signature count, so the
-                // estimation wire is compiled unsigned to avoid prompting the wallet for a
-                // signature that would be invalidated by the payment amount rewrite below.
+                // Compiled unsigned: fee estimation only reads the message and signature count, and signing here would be invalidated by the payment amount rewrite below.
                 const estimationTx = getBase64EncodedWireTransaction(compileTransaction(msgForEstimation));
 
                 const { sourceTokenAccount, destinationTokenAccount } = payment;
@@ -96,7 +94,6 @@ export function createKoraTransactionPlanExecutor(
                     );
                 }
 
-                // Replace placeholder with real fee amount, or strip it if fee is 0
                 const finalIxs =
                     feeInToken > 0
                         ? updatePaymentInstructionAmount(

@@ -12,8 +12,9 @@ use crate::{
 use std::path::PathBuf;
 use utoipa::{
     openapi::{
-        path::OperationBuilder, request_body::RequestBodyBuilder, ContentBuilder, PathItem,
-        PathItemType, Required, ResponseBuilder, ResponsesBuilder, ServerBuilder,
+        path::{HttpMethod, OperationBuilder},
+        request_body::RequestBodyBuilder,
+        ContentBuilder, PathItem, Required, ResponseBuilder, ResponsesBuilder, ServerBuilder,
     },
     OpenApi,
 };
@@ -84,15 +85,15 @@ pub fn update_docs() {
     let method_specs = KoraRpc::build_docs_spec();
     let mut combined_doc = ApiDoc::openapi();
 
-    // Get base components
     let components = combined_doc.components.unwrap_or_default();
 
     combined_doc.servers =
         Some(vec![ServerBuilder::new().url("https://api.example.com/v1".to_string()).build()]);
 
     for spec in method_specs {
-        let content =
-            ContentBuilder::new().schema(request_schema(&spec.name, spec.request.clone())).build();
+        let content = ContentBuilder::new()
+            .schema(Some(request_schema(&spec.name, spec.request.clone())))
+            .build();
 
         let request_body = RequestBodyBuilder::new()
             .content(JSON_CONTENT_TYPE, content)
@@ -104,7 +105,7 @@ pub fn update_docs() {
                 "200",
                 ResponseBuilder::new().description("Successful response").content(
                     JSON_CONTENT_TYPE,
-                    ContentBuilder::new().schema(spec.response.clone()).build(),
+                    ContentBuilder::new().schema(Some(spec.response.clone())).build(),
                 ),
             )
             .response("429", build_error_response("Exceeded rate limit."))
@@ -114,20 +115,18 @@ pub fn update_docs() {
         let operation =
             OperationBuilder::new().request_body(Some(request_body)).responses(responses).build();
 
-        let mut path_item = PathItem::new(PathItemType::Post, operation);
+        let mut path_item = PathItem::new(HttpMethod::Post, operation);
         path_item.summary = Some(spec.name.clone());
 
         combined_doc.paths.paths.insert(format!("/{}", spec.name), path_item);
     }
 
-    // Set the components
     combined_doc.components = Some(components);
 
     let json = serde_json::to_string_pretty(&combined_doc).unwrap();
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("src/rpc_server/openapi/spec/combined_api.json");
 
-    // Create parent directory if it doesn't exist
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).unwrap();
     }

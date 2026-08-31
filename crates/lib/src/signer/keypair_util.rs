@@ -17,18 +17,15 @@ impl KeypairUtil {
             return Self::from_json_keypair(&file_content);
         }
 
-        // Try to parse as U8Array format
         if private_key.trim().starts_with('[') && private_key.trim().ends_with(']') {
             return Self::from_u8_array_string(private_key);
         }
 
-        // Default to base58 format (with proper error handling)
         Self::from_base58_safe(private_key)
     }
 
     /// Creates a new keypair from a base58-encoded private key string with proper error handling
     pub fn from_base58_safe(private_key: &str) -> Result<Keypair, KoraError> {
-        // Try to decode as base58 first
         let decoded = bs58::decode(private_key).into_vec().map_err(|e| {
             KoraError::SigningError(format!("Invalid base58 string: {}", sanitize_error!(e)))
         })?;
@@ -89,7 +86,6 @@ impl KeypairUtil {
 
     /// Creates a new keypair from a JSON keypair file content
     pub fn from_json_keypair(json_content: &str) -> Result<Keypair, KoraError> {
-        // Try to parse as a simple JSON array first
         if let Ok(byte_array) = serde_json::from_str::<Vec<u8>>(json_content) {
             if byte_array.len() != 64 {
                 return Err(KoraError::SigningError(format!(
@@ -155,15 +151,12 @@ mod tests {
 
     #[test]
     fn test_invalid_formats() {
-        // Test invalid U8Array
         let result = KeypairUtil::from_private_key_string("[1, 2, 3]");
         assert!(result.is_err());
 
-        // Test invalid JSON
         let result = KeypairUtil::from_private_key_string("{invalid json}");
         assert!(result.is_err());
 
-        // Test nonexistent file
         let result = KeypairUtil::from_private_key_string("/nonexistent/file.json");
         assert!(result.is_err());
     }

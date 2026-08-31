@@ -215,7 +215,6 @@ pub fn set_environment_variables(
         if cached_keys.contains_key(account_file) {
             account_file.set_environment_variable_from_cache(cached_keys)?;
         } else {
-            // For accounts not in cache, fallback to file read
             let key = std::fs::read_to_string(account_file.local_key_path())?;
             std::env::set_var(account_file.local_key_env_var(), key.trim());
         }

@@ -152,14 +152,12 @@ impl VersionedTransactionResolved {
             parsed_token2022_security_instructions: None,
         };
 
-        // 1. Resolve lookup table addresses based on transaction type
         let resolved_addresses = match &transaction.message {
             VersionedMessage::Legacy(_) => {
                 // Legacy transactions don't have lookup tables
                 vec![]
             }
             VersionedMessage::V0(v0_message) => {
-                // V0 transactions may have lookup tables
                 LookupTableUtil::resolve_lookup_table_addresses(
                     config,
                     rpc_client,
@@ -174,12 +172,10 @@ impl VersionedTransactionResolved {
             }
         };
 
-        // Set all accout keys
         let mut all_account_keys = transaction.message.static_account_keys().to_vec();
         all_account_keys.extend(resolved_addresses.clone());
         resolved.all_account_keys = all_account_keys.clone();
 
-        // 2. Fetch all instructions
         let outer_instructions =
             IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys)?;
 
@@ -211,7 +207,6 @@ impl VersionedTransactionResolved {
         })
     }
 
-    /// Fetch inner instructions via simulation
     async fn fetch_inner_instructions(
         &mut self,
         rpc_client: &RpcClient,
@@ -361,7 +356,6 @@ impl VersionedTransactionResolved {
     }
 }
 
-// Implementation of the consolidated trait for VersionedTransactionResolved
 #[async_trait]
 impl VersionedTransactionOps for VersionedTransactionResolved {
     fn encode_b64_transaction(&self) -> Result<String, KoraError> {
@@ -405,7 +399,6 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let fee_payer = selected_signer.pubkey();
         let validator = TransactionValidator::new(config, fee_payer)?;
 
-        // Validate transaction and accounts (already resolved)
         validator.validate_transaction(config, self, rpc_client).await?;
 
         let plugin_context = if will_send {
@@ -417,7 +410,6 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             .run(self, config, rpc_client, &fee_payer, plugin_context)
             .await?;
 
-        // Calculate fee and validate payment if price model requires it
         let transfer_hook_validation_flow = if will_send {
             TransferHookValidationFlow::ImmediateSignAndSend
         } else {
@@ -445,13 +437,10 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         // otherwise a sub-lamport quote would skip the strictness check and sign for free.
         TransactionValidator::validate_strict_pricing_with_fee(config, &fee_calculation)?;
 
-        // Validate payment if price model is not Free
         if required_lamports > 0 {
             log::info!("Payment validation: required_lamports={}", required_lamports);
-            // Get the expected payment destination
             let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
-            // Validate token payment using the resolved transaction
             TransactionValidator::validate_token_payment(
                 config,
                 self,
@@ -462,7 +451,6 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             .await?;
         }
 
-        // Get latest blockhash and update transaction
         let mut transaction = self.transaction.clone();
 
         if transaction.signatures.is_empty() {
@@ -472,7 +460,6 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             transaction.message.set_recent_blockhash(blockhash.0);
         }
 
-        // Validate transaction fee using resolved transaction
         let estimated_fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, self).await?;
         validator.validate_lamport_fee(estimated_fee)?;
 
@@ -486,8 +473,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         )
         .await?;
 
-        // Sign transaction and report success/failure back to the global signer pool
-        // This telemetry ensures unhealthy remote signers are bypassed automatically.
+        // Reports success/failure to the signer pool so unhealthy remote signers are bypassed automatically.
         let message_bytes = transaction.message.serialize();
         let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
         let max_retries = config.kora.sign_max_retries;
@@ -502,7 +488,6 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             .await
             {
                 Ok(sig) => {
-                    // Report success to the pool for health tracking
                     match get_signer_pool() {
                         Ok(pool) => pool.record_signing_success(&signer),
                         Err(e) => log::warn!(
@@ -513,8 +498,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                     sig
                 }
                 Err(err) => {
-                    // Report failure to the pool to track signer health only after all retries are exhausted.
-                    // This prevents a single failing request from immediately blacklisting a signer.
+                    // Reported only after retries are exhausted, so one failing request doesn't blacklist a signer.
                     match get_signer_pool() {
                         Ok(pool) => pool.record_signing_failure(&signer),
                         Err(pool_err) => log::error!(
@@ -540,7 +524,6 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         };
         *signature_slot = signature;
 
-        // Serialize signed transaction
         let encoded = TransactionUtil::encode_versioned_transaction(&transaction)?;
 
         Ok((transaction, encoded))
@@ -970,14 +953,13 @@ mod tests {
 
     #[test]
     fn test_find_signer_position_empty_account_keys() {
-        // Create a transaction with minimal account keys
         let v0_message = v0::Message {
             header: solana_message::MessageHeader {
                 num_required_signatures: 0,
                 num_readonly_signed_accounts: 0,
                 num_readonly_unsigned_accounts: 0,
             },
-            account_keys: vec![], // Empty account keys
+            account_keys: vec![],
             recent_blockhash: Hash::default(),
             instructions: vec![],
             address_table_lookups: vec![],
@@ -1016,8 +998,8 @@ mod tests {
         assert_eq!(resolved.all_account_keys, transaction.message.static_account_keys());
         assert_eq!(resolved.all_instructions.len(), 1);
 
-        // Check instruction properties rather than direct equality since IxUtils::uncompile_instructions
-        // properly sets signer status based on the transaction message
+        // Compares individual fields, not the whole Instruction, since uncompile_instructions
+        // recomputes signer status rather than preserving the original struct.
         let resolved_instruction = &resolved.all_instructions[0];
         assert_eq!(resolved_instruction.program_id, instruction.program_id);
         assert_eq!(resolved_instruction.data, instruction.data);
@@ -1115,7 +1097,6 @@ mod tests {
         ));
         let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        // Mock RPC client that will be used for inner instructions
         let mut mocks = HashMap::new();
         mocks.insert(
             RpcRequest::SimulateTransaction,
@@ -1144,10 +1125,11 @@ mod tests {
 
         assert_eq!(resolved.transaction, transaction);
         assert_eq!(resolved.all_account_keys, transaction.message.static_account_keys());
-        assert_eq!(resolved.all_instructions.len(), 1); // Only outer instruction since no inner instructions in mock
+        // Only the outer instruction: the mock reports no inner instructions.
+        assert_eq!(resolved.all_instructions.len(), 1);
 
-        // Check instruction properties rather than direct equality since IxUtils::uncompile_instructions
-        // properly sets signer status based on the transaction message
+        // Compares individual fields, not the whole Instruction, since uncompile_instructions
+        // recomputes signer status rather than preserving the original struct.
         let resolved_instruction = &resolved.all_instructions[0];
         assert_eq!(resolved_instruction.program_id, instruction.program_id);
         assert_eq!(resolved_instruction.data, instruction.data);
@@ -1169,7 +1151,6 @@ mod tests {
         let lookup_table_account = Pubkey::new_unique();
         let resolved_address = Pubkey::new_unique();
 
-        // Create lookup table
         let lookup_table = AddressLookupTable {
             meta: LookupTableMeta {
                 deactivation_slot: u64::MAX,
@@ -1204,7 +1185,6 @@ mod tests {
         let message = VersionedMessage::V0(v0_message);
         let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        // Create mock RPC client with lookup table account and simulation
         let mut mocks = HashMap::new();
         let serialized_data = lookup_table.serialize_for_tests().unwrap();
         let encoded_data = STANDARD.encode(&serialized_data);
@@ -1253,7 +1233,6 @@ mod tests {
 
         assert_eq!(resolved.transaction, transaction);
 
-        // Should include both static accounts and resolved addresses
         assert_eq!(resolved.all_account_keys.len(), 3); // keypair, program_id, resolved_address
         assert_eq!(resolved.all_account_keys[0], keypair.pubkey());
         assert_eq!(resolved.all_account_keys[1], program_id);
@@ -1275,7 +1254,6 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        // Mock RPC client with simulation error
         let mut mocks = HashMap::new();
         mocks.insert(
             RpcRequest::SimulateTransaction,
@@ -1300,8 +1278,8 @@ mod tests {
         )
         .await;
 
-        // The simulation should fail, but the exact error type depends on mock implementation
-        // We expect either an RpcError (from mock deserialization) or InvalidTransaction (from simulation logic)
+        // Exact error type depends on mock implementation: RpcError (mock deserialization) or
+        // InvalidTransaction (simulation logic).
         assert!(result.is_err());
 
         match result {
@@ -1330,7 +1308,6 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        // Mock RPC client with inner instructions
         let inner_instruction_data = bs58::encode(&[10, 20, 30]).into_string();
         let mut mocks = HashMap::new();
         mocks.insert(
@@ -1383,7 +1360,6 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        // Mock RPC client with inner instructions
         let inner_instruction_data = bs58::encode(&[10, 20, 30]).into_string();
         let mut mocks = HashMap::new();
         mocks.insert(
@@ -1429,7 +1405,6 @@ mod tests {
         let keypair = Keypair::new();
         let recipient = Pubkey::new_unique();
 
-        // Create a system transfer instruction
         let instruction =
             solana_system_interface::instruction::transfer(&keypair.pubkey(), &recipient, 1000000);
         let message =
@@ -1439,18 +1414,15 @@ mod tests {
         let mut resolved =
             VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
 
-        // First call should parse and cache
         let parsed1_len = {
             let parsed1 = resolved.get_or_parse_system_instructions().unwrap();
             assert!(!parsed1.is_empty());
             parsed1.len()
         };
 
-        // Second call should return cached result
         let parsed2 = resolved.get_or_parse_system_instructions().unwrap();
         assert_eq!(parsed1_len, parsed2.len());
 
-        // Should contain transfer instruction
         assert!(
             parsed2.contains_key(&crate::transaction::ParsedSystemInstructionType::SystemTransfer)
         );
@@ -1618,7 +1590,6 @@ mod tests {
             })])
             .build();
 
-        // Try to access index 1 which doesn't exist
         let lookups = vec![solana_message::v0::MessageAddressTableLookup {
             account_key: lookup_account_key,
             writable_indexes: vec![1], // Invalid index

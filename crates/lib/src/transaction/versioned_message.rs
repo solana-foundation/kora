@@ -41,11 +41,9 @@ mod tests {
 
         let encoded = message.encode_b64_message().unwrap();
 
-        // Verify we can decode the base64 back to bytes
         let decoded_bytes = STANDARD.decode(&encoded).unwrap();
         assert!(!decoded_bytes.is_empty());
 
-        // Verify it matches the original serialized message
         let original_bytes = message.serialize();
         assert_eq!(decoded_bytes, original_bytes);
     }
@@ -76,11 +74,9 @@ mod tests {
 
         let encoded = message.encode_b64_message().unwrap();
 
-        // Verify we can decode the base64 back to bytes
         let decoded_bytes = STANDARD.decode(&encoded).unwrap();
         assert!(!decoded_bytes.is_empty());
 
-        // Verify it matches the original serialized message
         let original_bytes = message.serialize();
         assert_eq!(decoded_bytes, original_bytes);
     }
@@ -115,15 +111,12 @@ mod tests {
 
         let encoded = message.encode_b64_message().unwrap();
 
-        // Verify we can decode the base64 back to bytes
         let decoded_bytes = STANDARD.decode(&encoded).unwrap();
         assert!(!decoded_bytes.is_empty());
 
-        // Verify it matches the original serialized message
         let original_bytes = message.serialize();
         assert_eq!(decoded_bytes, original_bytes);
 
-        // Verify lookup table data is preserved in original message
         match message {
             VersionedMessage::V0(v0_msg) => {
                 assert_eq!(v0_msg.address_table_lookups.len(), 1);

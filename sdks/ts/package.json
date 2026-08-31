@@ -33,7 +33,7 @@
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "prepare": "pnpm run build",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.examples.json",
     "docs": "typedoc --readme none && node scripts/add-toc.js",
     "docs:html": "typedoc --options typedoc.html.json",
     "docs:watch": "typedoc --watch",

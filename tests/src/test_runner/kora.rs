@@ -32,7 +32,6 @@ pub async fn check_port_available(port: u16) -> bool {
 
 pub async fn find_available_port() -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     for port in PORT_RANGE_START..PORT_RANGE_END {
-        // Check if port is available and not recently used
         if check_port_available(port).await {
             let mut used_ports = USED_PORTS.lock().unwrap();
             if !used_ports.contains(&port) {
@@ -115,7 +114,6 @@ pub async fn start_kora_rpc_server(
     ])
     .env("KORA_PRIVATE_KEY", fee_payer_key.trim())
     .env("KORA_PRIVATE_KEY_2", signer_2.trim())
-    // Overrides the fixture's cache_url (usage_limit store) when set
     .env_remove("KORA_REDIS_URL")
     .stdout(std_out)
     .stderr(std_err);

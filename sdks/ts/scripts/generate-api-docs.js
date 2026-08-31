@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Generate JSON-RPC API documentation from TypeScript SDK
- * This script reads the generated TypeDoc output and creates
- * properly formatted JSON-RPC API documentation for Fumadocs
+ * Reads generated TypeDoc output and creates JSON-RPC API documentation for Fumadocs.
  */
 
 import fs from 'fs';
@@ -13,9 +11,6 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**
- * Parse the TypeDoc README to extract method information and response types
- */
 function parseTypeDocReadme() {
   const readmePath = path.join(__dirname, '../docs/README.md');
   
@@ -28,15 +23,13 @@ function parseTypeDocReadme() {
   const methods = {};
   const responseTypes = {};
 
-  // Parse response type interfaces
   const interfaceSections = content.split(/^### /m).slice(1);
   interfaceSections.forEach(section => {
     const nameMatch = section.match(/^(\w+)/);
     if (!nameMatch) return;
     
     const interfaceName = nameMatch[1];
-    
-    // Extract properties table
+
     const propsMatch = section.match(/\| Property \| Type \| Description \|\n\| ------ \| ------ \| ------ \|\n([\s\S]*?)(?:\n\n|\*\*\*|###)/);
     if (propsMatch) {
       const properties = {};
@@ -44,19 +37,15 @@ function parseTypeDocReadme() {
       propLines.forEach(line => {
         const parts = line.split('|').map(p => p.trim()).filter(p => p);
         if (parts.length >= 3) {
-          // Extract property name (remove HTML anchors and backticks)
           const propName = parts[0].replace(/<a id="[^"]*"><\/a>\s*/, '').replace(/`/g, '').replace(/\?$/, '');
           const rawType = parts[1].replace(/`/g, '').replace(/\s*\\\s*/g, '').trim();
           const description = parts[2];
-          
-          // Keep brackets for array detection, but clean escaped ones
+
+          // Unescape brackets after array detection already used the escaped form
           const type = rawType.replace(/\\</g, '<').replace(/\\>/g, '>').replace(/\\\\/g, '\\');
-          
-          
-          // Map TypeScript types to example values
+
           let exampleValue;
-          
-          // Handle array types first
+
           if (type.includes('string[]') || type.includes('string\\[\\]')) {
             if (propName.includes('token') || propName.includes('payer')) {
               exampleValue = ["3Z1Ef7YaxK8oUMoi6exf7wYZjZKWJJsrzJXSt1c3qrDE"];
@@ -68,7 +57,6 @@ function parseTypeDocReadme() {
               exampleValue = ["exampleValue"];
             }
           } else if (type.includes('[]')) {
-            // Generic array type
             exampleValue = [];
           } else if (type.includes('string')) {
             if (propName.includes('signature')) exampleValue = "base58Signature";
@@ -94,32 +82,25 @@ function parseTypeDocReadme() {
     }
   });
 
-  // Parse method sections
   const methodSections = content.split(/^##### /m).slice(1);
-  
+
   methodSections.forEach(section => {
-    // Get method name
     const nameMatch = section.match(/^(\w+)\(\)/);
     if (!nameMatch) return;
-    
+
     const methodName = nameMatch[1];
-    
-    // Skip constructor and private methods
+
     if (methodName === 'Constructor' || methodName.startsWith('_')) return;
-    
-    // Extract description (first paragraph after method signature)
+
     const descMatch = section.match(/```ts[\s\S]*?```\s*\n\n(.*?)(?:\n\n|#####|\n\s*#####)/);
     const description = descMatch ? descMatch[1].trim() : '';
-    
-    // Extract example if exists
+
     const exampleMatch = section.match(/```typescript\n([\s\S]*?)```/);
     const example = exampleMatch ? exampleMatch[1] : '';
-    
-    // Extract return type
+
     const returnMatch = section.match(/`Promise`\\<\[`(\w+)`\]/);
     const returnType = returnMatch ? returnMatch[1] : null;
-    
-    // Extract parameters
+
     const paramsMatch = section.match(/\| Parameter \| Type \| Description \|\n\| ------ \| ------ \| ------ \|\n([\s\S]*?)(?:\n\n|#####)/);
     const params = {};
     if (paramsMatch) {
@@ -148,19 +129,13 @@ function parseTypeDocReadme() {
   return { methods, responseTypes };
 }
 
-/**
- * Generate JSON-RPC examples based on method name and params
- */
 function generateJsonRpcExamples(methodName, methodInfo) {
-  // Map SDK method names to JSON-RPC method names
   const rpcMethodName = methodName;
-  
-  // Build params object from methodInfo.params
+
   const params = {};
   Object.entries(methodInfo.params || {}).forEach(([key, value]) => {
     if (key === 'request') {
-      // This is a request object - we need to expand its properties
-      // For now, use smart defaults based on method name
+      // request objects aren't destructured here; use per-method smart defaults instead
       if (methodName === 'estimateTransactionFee') {
         params.transaction = "base64EncodedTransaction";
         params.fee_token = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
@@ -173,7 +148,6 @@ function generateJsonRpcExamples(methodName, methodInfo) {
         params.transaction = "base64EncodedTransaction";
       }
     } else {
-      // Direct parameter
       if (value.type.includes('string')) {
         params[key] = key.includes('transaction') ? "base64EncodedTransaction" : "...";
       } else if (value.type.includes('number')) {
@@ -184,9 +158,8 @@ function generateJsonRpcExamples(methodName, methodInfo) {
     }
   });
 
-  // For methods with no params, use empty array
   const hasParams = Object.keys(params).length > 0;
-  
+
   const request = {
     jsonrpc: "2.0",
     id: 1,
@@ -194,7 +167,6 @@ function generateJsonRpcExamples(methodName, methodInfo) {
     params: hasParams ? params : []
   };
 
-  // Use actual response structure from TypeDoc if available
   const result = methodInfo.responseStructure || {};
 
   const response = {
@@ -206,17 +178,12 @@ function generateJsonRpcExamples(methodName, methodInfo) {
   return { request, response };
 }
 
-/**
- * Generate method documentation file
- */
 function generateMethodDoc(methodName, methodInfo) {
   const fileName = methodName.replace(/([A-Z])/g, '-$1').toLowerCase().replace(/^-/, '');
-  
-  // Client-side only methods (no actual JSON-RPC calls)
+
   const clientSideOnly = ['getPaymentInstruction'];
-  
+
   if (clientSideOnly.includes(methodName)) {
-    // Extract TypeScript example from docs
     const tsExample = methodInfo.example || `const result = await client.${methodName}({
   // See SDK documentation for parameters
 });`;
@@ -246,10 +213,8 @@ ${JSON.stringify(methodInfo.responseStructure || {}, null, 2)}
 `;
   }
 
-  // Regular RPC methods
   const { request, response } = generateJsonRpcExamples(methodName, methodInfo);
 
-  // Extract TypeScript example from docs
   const tsExample = methodInfo.example || `const result = await client.${methodName}({
   // See SDK documentation for parameters
 });`;
@@ -287,9 +252,6 @@ ${tsExample}
 `;
 }
 
-/**
- * Main function to generate API docs
- */
 function generateAPIDocs() {
   console.log('📖 Reading TypeDoc output...');
   const { methods, responseTypes } = parseTypeDocReadme();
@@ -298,7 +260,6 @@ function generateAPIDocs() {
   const outputDir = path.join(__dirname, '../../../docs/api-reference-generated');
   const methodsDir = path.join(outputDir, 'methods');
 
-  // Create directories
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
@@ -306,7 +267,6 @@ function generateAPIDocs() {
     fs.mkdirSync(methodsDir, { recursive: true });
   }
 
-  // Filter to only RPC methods (not utility methods)
   const rpcMethods = [
     'estimateTransactionFee',
     'getBlockhash',
@@ -319,7 +279,6 @@ function generateAPIDocs() {
     'transferTransaction'
   ];
 
-  // Generate method documentation
   rpcMethods.forEach(methodName => {
     if (methods[methodName]) {
       const fileName = `${methodName.replace(/([A-Z])/g, '-$1').toLowerCase().replace(/^-/, '')}.mdx`;
@@ -333,7 +292,6 @@ function generateAPIDocs() {
     }
   });
 
-  // Generate overview
   const overviewContent = `---
 title: JSON-RPC API Overview
 description: Kora implements a JSON-RPC 2.0 interface for gasless transaction processing on Solana.
@@ -403,5 +361,4 @@ Error responses:
   console.log(`📁 Output: ${outputDir}`);
 }
 
-// Run the generator
 generateAPIDocs();

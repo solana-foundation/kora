@@ -108,7 +108,6 @@ impl TransactionValidator {
         config: &Config,
         rpc_client: &RpcClient,
     ) -> Result<Box<dyn TokenMint + Send + Sync>, KoraError> {
-        // First check if the mint is in allowed tokens
         if !self.allowed_tokens.contains(mint) {
             return Err(KoraError::InvalidTransaction(format!(
                 "Mint {mint} is not a valid token mint"
@@ -339,7 +338,6 @@ impl TransactionValidator {
 
         let system_instructions = transaction_resolved.get_or_parse_system_instructions()?;
 
-        // Check for durable transactions (nonce-based) - reject if not allowed
         if !self.allow_durable_transactions
             && system_instructions
                 .contains_key(&ParsedSystemInstructionType::SystemAdvanceNonceAccount)
@@ -349,7 +347,6 @@ impl TransactionValidator {
             ));
         }
 
-        // Validate system program instructions
         validate_system!(self, system_instructions, SystemTransfer,
             ParsedSystemInstructionData::SystemTransfer { sender, .. } => sender,
             self.fee_payer_policy.system.allow_transfer, "System Transfer");
@@ -427,7 +424,6 @@ impl TransactionValidator {
             ParsedSystemInstructionData::SystemWithdrawNonceAccount { nonce_authority, .. } => nonce_authority,
             self.fee_payer_policy.system.nonce.allow_withdraw, "System Withdraw Nonce Account");
 
-        // Validate SPL instructions
         {
             let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
 
@@ -516,7 +512,6 @@ impl TransactionValidator {
                 "SPL Token UnwrapLamports", "Token2022 Token UnwrapLamports");
         }
 
-        // Validate ALT instructions
         let alt_instructions = transaction_resolved.get_or_parse_alt_instructions()?;
 
         validate_alt!(alt_instructions, AltCreateLookupTable,
@@ -1090,7 +1085,6 @@ mod tests {
         update_config(config).unwrap();
     }
 
-    // Helper functions to reduce test duplication and setup config
     fn setup_default_config() {
         let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
@@ -1214,7 +1208,6 @@ mod tests {
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
-        // Test transaction with amount over limit
         let instruction = transfer(&sender, &recipient, 2_000_000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1225,7 +1218,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test multiple transfers
         let instructions =
             vec![transfer(&sender, &recipient, 500_000), transfer(&sender, &recipient, 500_000)];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
@@ -1249,7 +1241,6 @@ mod tests {
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
-        // Test allowed program (system program)
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1259,14 +1250,8 @@ mod tests {
             .await
             .is_ok());
 
-        // Test disallowed program
         let fake_program = Pubkey::new_unique();
-        // Create a no-op instruction for the fake program
-        let instruction = Instruction::new_with_bincode(
-            fake_program,
-            &[0u8],
-            vec![], // no accounts needed for this test
-        );
+        let instruction = Instruction::new_with_bincode(fake_program, &[0u8], vec![]);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
@@ -1434,7 +1419,6 @@ mod tests {
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
-        // Only calls system program (one of two required) — should pass
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1643,7 +1627,6 @@ mod tests {
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
-        // Test too many signatures
         let instructions = vec![
             transfer(&sender, &recipient, 1000),
             transfer(&sender, &recipient, 1000),
@@ -1652,7 +1635,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        transaction.transaction.signatures = vec![Default::default(); 3]; // Add 3 dummy signatures
+        transaction.transaction.signatures = vec![Default::default(); 3];
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
@@ -1671,7 +1654,6 @@ mod tests {
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
-        // Test SignAndSend mode with fee payer already set should not error
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1681,9 +1663,8 @@ mod tests {
             .await
             .is_ok());
 
-        // Test SignAndSend mode without fee payer (should succeed)
         let instruction = transfer(&sender, &recipient, 1000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], None)); // No fee payer specified
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], None));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1702,7 +1683,6 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
-        // Create an empty message using Message::new with empty instructions
         let message = VersionedMessage::Legacy(Message::new(&[], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
@@ -2019,7 +1999,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
-        // Test with allow_sol_transfers = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.allow_transfer = true;
@@ -2038,7 +2017,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_sol_transfers = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.allow_transfer = false;
@@ -2064,8 +2042,6 @@ mod tests {
         // Owner must be in the allowed programs list; the test config allows the System program.
         let new_owner = SYSTEM_PROGRAM_ID;
 
-        // Test with allow_assign = true
-
         let rpc_client = RpcMockBuilder::new().build();
 
         let mut policy = FeePayerPolicy::default();
@@ -2083,8 +2059,6 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
-
-        // Test with allow_assign = false
 
         let rpc_client = RpcMockBuilder::new().build();
 
@@ -2225,7 +2199,7 @@ mod tests {
             TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
         let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
 
-        // Test with allow_spl_transfers = true (plain Transfer, mint resolved from source account)
+        // Plain Transfer; mint resolved from source account.
         let rpc_client = RpcMockBuilder::new()
             .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
 
@@ -2240,7 +2214,7 @@ mod tests {
             &spl_token_interface::id(),
             &fee_payer_token_account,
             &recipient_token_account,
-            &fee_payer, // fee payer is the signer
+            &fee_payer,
             &[],
             1000,
         )
@@ -2254,7 +2228,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_spl_transfers = false
         let rpc_client = RpcMockBuilder::new()
             .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
 
@@ -2269,7 +2242,7 @@ mod tests {
             &spl_token_interface::id(),
             &fee_payer_token_account,
             &recipient_token_account,
-            &fee_payer, // fee payer is the signer
+            &fee_payer,
             &[],
             1000,
         )
@@ -2283,14 +2256,13 @@ mod tests {
             .await
             .is_err());
 
-        // Test with other account as source - should always pass
         let rpc_client = RpcMockBuilder::new().build();
         let other_signer = Pubkey::new_unique();
         let transfer_ix = spl_token_interface::instruction::transfer(
             &spl_token_interface::id(),
             &fee_payer_token_account,
             &recipient_token_account,
-            &other_signer, // other account is the signer
+            &other_signer,
             &[],
             1000,
         )
@@ -2428,11 +2400,9 @@ mod tests {
         let recipient_token_account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        // Test with allow_token2022_transfers = true
         let rpc_client = RpcMockBuilder::new()
             .with_mint_account(2) // Mock mint with 2 decimals for SPL outflow calculation
             .build();
-        // Test with token_2022.allow_transfer = true
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_transfer = true;
         setup_token2022_config_with_policy(policy);
@@ -2445,7 +2415,7 @@ mod tests {
             &fee_payer_token_account,
             &mint,
             &recipient_token_account,
-            &fee_payer, // fee payer is the signer
+            &fee_payer,
             &[],
             1,
             2,
@@ -2460,7 +2430,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_token2022_transfers = false
         let rpc_client = RpcMockBuilder::new()
             .with_mint_account(2) // Mock mint with 2 decimals for SPL outflow calculation
             .build();
@@ -2476,7 +2445,7 @@ mod tests {
             &fee_payer_token_account,
             &mint,
             &recipient_token_account,
-            &fee_payer, // fee payer is the signer
+            &fee_payer,
             &[],
             1000,
             2,
@@ -2487,20 +2456,18 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        // Should fail because fee payer is not allowed to be source
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
 
-        // Test with other account as source - should always pass
         let other_signer = Pubkey::new_unique();
         let transfer_ix = spl_token_2022_interface::instruction::transfer_checked(
             &spl_token_2022_interface::id(),
             &fee_payer_token_account,
             &mint,
             &recipient_token_account,
-            &other_signer, // other account is the signer
+            &other_signer,
             &[],
             1000,
             2,
@@ -2511,7 +2478,6 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        // Should pass because fee payer is not the source
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
@@ -2524,7 +2490,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let lookup_table = Pubkey::new_unique();
 
-        // Test with allow_freeze = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.alt.allow_freeze = true;
@@ -2542,7 +2507,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_freeze = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.alt.allow_freeze = false;
@@ -2560,7 +2524,6 @@ mod tests {
             .await
             .is_err());
 
-        // Test with another authority - should pass even when fee payer freeze is disabled
         let rpc_client = RpcMockBuilder::new().build();
         let other_authority = Pubkey::new_unique();
         let freeze_ix = alt_instruction::freeze_lookup_table(lookup_table, other_authority);
@@ -2579,7 +2542,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let authority = Pubkey::new_unique();
 
-        // Test with allow_create = false and fee payer as payer -> should fail
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.alt.allow_create = false;
@@ -2598,7 +2560,6 @@ mod tests {
             .await
             .is_err());
 
-        // Test with allow_create = true and fee payer as payer -> should pass
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.alt.allow_create = true;
@@ -2624,7 +2585,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let lookup_table = Pubkey::new_unique();
 
-        // Test with allow_extend = false and fee payer as authority -> should fail
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.alt.allow_extend = false;
@@ -2647,7 +2607,6 @@ mod tests {
             .await
             .is_err());
 
-        // Test optional payer branch: allow_extend = false and fee payer as optional payer -> should fail
         let rpc_client = RpcMockBuilder::new().build();
         let other_authority = Pubkey::new_unique();
         let extend_ix = alt_instruction::extend_lookup_table(
@@ -2664,7 +2623,6 @@ mod tests {
             .await
             .is_err());
 
-        // Test with allow_extend = true and fee payer as optional payer -> should pass
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.alt.allow_extend = true;
@@ -2687,7 +2645,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with no fee payer involvement - should pass even when allow_extend is disabled
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.alt.allow_extend = false;
@@ -2717,7 +2674,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let lookup_table = Pubkey::new_unique();
 
-        // Test with allow_deactivate = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.alt.allow_deactivate = true;
@@ -2735,7 +2691,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_deactivate = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.alt.allow_deactivate = false;
@@ -2753,7 +2708,6 @@ mod tests {
             .await
             .is_err());
 
-        // Test with another authority - should pass when fee payer is not authority
         let rpc_client = RpcMockBuilder::new().build();
         let other_authority = Pubkey::new_unique();
         let deactivate_ix = alt_instruction::deactivate_lookup_table(lookup_table, other_authority);
@@ -2777,7 +2731,6 @@ mod tests {
             .with_lamports(500_000)
             .build();
 
-        // Test with allow_close = true
         let rpc_client = RpcMockBuilder::new().with_account_info(&alt_account).build();
         let mut policy = FeePayerPolicy::default();
         policy.alt.allow_close = true;
@@ -2795,7 +2748,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_close = false
         let rpc_client = RpcMockBuilder::new().with_account_info(&alt_account).build();
         let mut policy = FeePayerPolicy::default();
         policy.alt.allow_close = false;
@@ -2813,7 +2765,6 @@ mod tests {
             .await
             .is_err());
 
-        // Test with another authority - should pass when fee payer is not authority
         let rpc_client = RpcMockBuilder::new().build();
         let other_authority = Pubkey::new_unique();
         let close_ix =
@@ -2958,7 +2909,6 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
-        // Test 1: Fee payer as sender in Transfer - should add to outflow
         let recipient = Pubkey::new_unique();
         let transfer_instruction = transfer(&fee_payer, &recipient, 100_000);
         let message =
@@ -2969,7 +2919,6 @@ mod tests {
             validator.calculate_total_outflow(config, &mut transaction, &rpc_client).await.unwrap();
         assert_eq!(outflow, 100_000, "Transfer from fee payer should add to outflow");
 
-        // Test 2: Fee payer as recipient in Transfer - should subtract from outflow (account closure)
         let sender = Pubkey::new_unique();
         let transfer_instruction = transfer(&sender, &fee_payer, 50_000);
         let message =
@@ -2981,15 +2930,9 @@ mod tests {
             validator.calculate_total_outflow(config, &mut transaction, &rpc_client).await.unwrap();
         assert_eq!(outflow, 0, "Transfer to fee payer should subtract from outflow"); // 0 - 50_000 = 0 (saturating_sub)
 
-        // Test 3: Fee payer as funding account in CreateAccount - should add to outflow
         let new_account = Pubkey::new_unique();
-        let create_instruction = create_account(
-            &fee_payer,
-            &new_account,
-            200_000, // lamports
-            100,     // space
-            &SYSTEM_PROGRAM_ID,
-        );
+        let create_instruction =
+            create_account(&fee_payer, &new_account, 200_000, 100, &SYSTEM_PROGRAM_ID);
         let message =
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
         let mut transaction =
@@ -2998,14 +2941,13 @@ mod tests {
             validator.calculate_total_outflow(config, &mut transaction, &rpc_client).await.unwrap();
         assert_eq!(outflow, 200_000, "CreateAccount funded by fee payer should add to outflow");
 
-        // Test 4: Fee payer as funding account in CreateAccountWithSeed - should add to outflow
         let create_with_seed_instruction = create_account_with_seed(
             &fee_payer,
             &new_account,
             &fee_payer,
             "test_seed",
-            300_000, // lamports
-            100,     // space
+            300_000,
+            100,
             &SYSTEM_PROGRAM_ID,
         );
         let message = VersionedMessage::Legacy(Message::new(
@@ -3021,7 +2963,6 @@ mod tests {
             "CreateAccountWithSeed funded by fee payer should add to outflow"
         );
 
-        // Test 5: TransferWithSeed from fee payer - should add to outflow
         let transfer_with_seed_instruction = transfer_with_seed(
             &fee_payer,
             &fee_payer,
@@ -3040,7 +2981,6 @@ mod tests {
             validator.calculate_total_outflow(config, &mut transaction, &rpc_client).await.unwrap();
         assert_eq!(outflow, 150_000, "TransferWithSeed from fee payer should add to outflow");
 
-        // Test 6: Multiple instructions - should sum correctly
         let instructions = vec![
             transfer(&fee_payer, &recipient, 100_000), // +100_000
             transfer(&sender, &fee_payer, 30_000),     // -30_000
@@ -3056,7 +2996,6 @@ mod tests {
             "Multiple instructions should sum correctly: 100000 - 30000 + 50000 = 120000"
         );
 
-        // Test 7: Other account as sender - should not affect outflow
         let other_sender = Pubkey::new_unique();
         let transfer_instruction = transfer(&other_sender, &recipient, 500_000);
         let message =
@@ -3067,7 +3006,6 @@ mod tests {
             validator.calculate_total_outflow(config, &mut transaction, &rpc_client).await.unwrap();
         assert_eq!(outflow, 0, "Transfer from other account should not affect outflow");
 
-        // Test 8: Other account funding CreateAccount - should not affect outflow
         let other_funder = Pubkey::new_unique();
         let create_instruction =
             create_account(&other_funder, &new_account, 1_000_000, 100, &SYSTEM_PROGRAM_ID);
@@ -3079,7 +3017,7 @@ mod tests {
             validator.calculate_total_outflow(config, &mut transaction, &rpc_client).await.unwrap();
         assert_eq!(outflow, 0, "CreateAccount funded by other account should not affect outflow");
 
-        // Test 9: Self-withdraw from a fee-payer-controlled nonce account is neutral.
+        // Self-withdraw from a fee-payer-controlled nonce account is neutral.
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_withdraw = true;
         let config = ConfigMockBuilder::new()
@@ -3119,8 +3057,6 @@ mod tests {
         let fee_payer_token_account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        // Test with allow_burn = true
-
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_burn = true;
@@ -3142,13 +3078,10 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        // Should pass because allow_burn is true by default
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
-
-        // Test with allow_burn = false
 
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
@@ -3172,13 +3105,11 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        // Should fail because fee payer cannot burn tokens when allow_burn is false
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
 
-        // Test burn_checked instruction
         let burn_checked_ix = spl_token_interface::instruction::burn_checked(
             &spl_token_interface::id(),
             &fee_payer_token_account,
@@ -3194,7 +3125,6 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        // Should also fail for burn_checked
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
@@ -3207,8 +3137,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
         let destination = Pubkey::new_unique();
-
-        // Test with allow_close_account = true
 
         let closed_account = AccountMockBuilder::new().with_lamports(5_000).build();
         let rpc_client = RpcMockBuilder::new().with_account_info(&closed_account).build();
@@ -3231,13 +3159,11 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        // Should pass because allow_close_account is true and the rent is within max_allowed_lamports
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
 
-        // Test with allow_close_account = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_close_account = false;
@@ -3259,7 +3185,6 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        // Should fail because fee payer cannot close accounts when allow_close_account is false
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
@@ -3272,8 +3197,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
         let delegate = Pubkey::new_unique();
-
-        // Test with allow_approve = true
 
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
@@ -3296,13 +3219,11 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        // Should pass because allow_approve is true by default
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
 
-        // Test with allow_approve = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_approve = false;
@@ -3325,13 +3246,11 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        // Should fail because fee payer cannot approve when allow_approve is false
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
 
-        // Test approve_checked instruction
         let mint = Pubkey::new_unique();
         let approve_checked_ix = spl_token_interface::instruction::approve_checked(
             &spl_token_interface::id(),
@@ -3350,7 +3269,6 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        // Should also fail for approve_checked
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
@@ -3363,8 +3281,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
-
-        // Test with allow_burn = false for Token2022
 
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
@@ -3387,7 +3303,6 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        // Should fail for Token2022 burn
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
@@ -3400,8 +3315,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
         let destination = Pubkey::new_unique();
-
-        // Test with allow_close_account = false for Token2022
 
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
@@ -3423,7 +3336,6 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        // Should fail for Token2022 close account
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
@@ -3436,8 +3348,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
         let delegate = Pubkey::new_unique();
-
-        // Test with allow_approve = true
 
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
@@ -3460,13 +3370,10 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        // Should pass because allow_approve is true by default
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
-
-        // Test with allow_approve = false
 
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
@@ -3490,13 +3397,11 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        // Should fail because fee payer cannot approve when allow_approve is false
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
 
-        // Test approve_checked instruction
         let mint = Pubkey::new_unique();
         let approve_checked_ix = spl_token_2022_interface::instruction::approve_checked(
             &spl_token_2022_interface::id(),
@@ -3515,7 +3420,6 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        // Should also fail for approve_checked
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
@@ -3532,7 +3436,6 @@ mod tests {
         // Use System Program as owner since it's in allowed_programs
         let owner = SYSTEM_PROGRAM_ID;
 
-        // Test with allow_create_account = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.allow_create_account = true;
@@ -3549,7 +3452,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_create_account = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.allow_create_account = false;
@@ -4003,7 +3905,6 @@ mod tests {
 
         let fee_payer = Pubkey::new_unique();
 
-        // Test with allow_allocate = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.allow_allocate = true;
@@ -4020,7 +3921,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_allocate = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.allow_allocate = false;
@@ -4046,7 +3946,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let nonce_account = Pubkey::new_unique();
 
-        // Test with allow_initialize = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_initialize = true;
@@ -4065,7 +3964,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_initialize = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_initialize = false;
@@ -4092,7 +3990,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let nonce_account = Pubkey::new_unique();
 
-        // Test with allow_advance = true (must also enable durable transactions)
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_advance = true;
@@ -4116,7 +4013,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_advance = false (durable txs enabled but policy blocks it)
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_advance = false;
@@ -4150,7 +4046,6 @@ mod tests {
         let nonce_account = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
-        // Test with allow_withdraw = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_withdraw = true;
@@ -4167,7 +4062,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_withdraw = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_withdraw = false;
@@ -4236,7 +4130,6 @@ mod tests {
         let nonce_account = Pubkey::new_unique();
         let new_authority = Pubkey::new_unique();
 
-        // Test with allow_authorize = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_authorize = true;
@@ -4253,7 +4146,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_authorize = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_authorize = false;
@@ -4324,7 +4216,7 @@ mod tests {
         config.validation.price.model = PriceModel::Fixed {
             amount: 5000,
             token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
-            strict: false, // Disabled
+            strict: false,
         };
         let _ = update_config(config);
 
@@ -4413,7 +4305,6 @@ mod tests {
         let nonce_account = Pubkey::new_unique();
         let nonce_authority = Pubkey::new_unique(); // Different from fee payer
 
-        // Default config has allow_durable_transactions = false
         setup_default_config();
         let rpc_client = RpcMockBuilder::new().build();
 
@@ -4445,7 +4336,6 @@ mod tests {
         let nonce_account = Pubkey::new_unique();
         let nonce_authority = Pubkey::new_unique(); // Different from fee payer
 
-        // Enable durable transactions
         let mock_config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
@@ -4465,7 +4355,6 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        // Should pass because durable transactions are allowed
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
@@ -4479,20 +4368,17 @@ mod tests {
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
-        // Default config has allow_durable_transactions = false
         setup_default_config();
         let rpc_client = RpcMockBuilder::new().build();
 
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
-        // Regular transfer (no nonce instruction)
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        // Should pass - no AdvanceNonceAccount instruction
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
@@ -4505,7 +4391,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
 
-        // Test with allow_revoke = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_revoke = true;
@@ -4530,7 +4415,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_revoke = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_revoke = false;
@@ -4564,7 +4448,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
 
-        // Test with allow_revoke = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_revoke = true;
@@ -4589,7 +4472,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_revoke = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_revoke = false;
@@ -4624,7 +4506,6 @@ mod tests {
         let fee_payer_token_account = Pubkey::new_unique();
         let new_authority = Pubkey::new_unique();
 
-        // Test with allow_set_authority = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_set_authority = true;
@@ -4651,7 +4532,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_set_authority = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_set_authority = false;
@@ -4688,7 +4568,6 @@ mod tests {
         let fee_payer_token_account = Pubkey::new_unique();
         let new_authority = Pubkey::new_unique();
 
-        // Test with allow_set_authority = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_set_authority = true;
@@ -4715,7 +4594,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_set_authority = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_set_authority = false;
@@ -4752,7 +4630,6 @@ mod tests {
         let mint = Pubkey::new_unique();
         let destination_token_account = Pubkey::new_unique();
 
-        // Test with allow_mint_to = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_mint_to = true;
@@ -4779,7 +4656,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_mint_to = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_mint_to = false;
@@ -4816,7 +4692,6 @@ mod tests {
         let mint = Pubkey::new_unique();
         let destination_token_account = Pubkey::new_unique();
 
-        // Test with allow_mint_to = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_mint_to = true;
@@ -4843,7 +4718,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_mint_to = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_mint_to = false;
@@ -4879,7 +4753,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let mint_account = Pubkey::new_unique();
 
-        // Test with allow_initialize_mint = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_initialize_mint = true;
@@ -4906,7 +4779,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_initialize_mint = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_initialize_mint = false;
@@ -4941,7 +4813,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let mint_account = Pubkey::new_unique();
 
-        // Test with allow_initialize_mint = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_initialize_mint = true;
@@ -4967,7 +4838,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_initialize_mint = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_initialize_mint = false;
@@ -5003,7 +4873,6 @@ mod tests {
         let token_account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        // Test with allow_initialize_account = true
         // initialize_account puts owner at account index 2 (token_account, mint, owner, rent_sysvar)
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
@@ -5029,7 +4898,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_initialize_account = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_initialize_account = false;
@@ -5064,7 +4932,6 @@ mod tests {
         let token_account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        // Test with allow_initialize_account = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_initialize_account = true;
@@ -5089,7 +4956,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_initialize_account = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_initialize_account = false;
@@ -5124,7 +4990,6 @@ mod tests {
         let multisig_account = Pubkey::new_unique();
         let other_signer = Pubkey::new_unique();
 
-        // Test with allow_initialize_multisig = true
         // fee_payer is one of the signers (parsed from accounts[2..])
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
@@ -5150,7 +5015,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_initialize_multisig = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_initialize_multisig = false;
@@ -5185,7 +5049,6 @@ mod tests {
         let multisig_account = Pubkey::new_unique();
         let other_signer = Pubkey::new_unique();
 
-        // Test with allow_initialize_multisig = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_initialize_multisig = true;
@@ -5210,7 +5073,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_initialize_multisig = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_initialize_multisig = false;
@@ -5245,7 +5107,6 @@ mod tests {
         let token_account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        // Test with allow_freeze_account = true
         // freeze_account(program_id, account, mint, freeze_authority, signers) — freeze_authority at index 2
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
@@ -5272,7 +5133,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_freeze_account = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_freeze_account = false;
@@ -5308,7 +5168,6 @@ mod tests {
         let token_account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        // Test with allow_freeze_account = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_freeze_account = true;
@@ -5334,7 +5193,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_freeze_account = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_freeze_account = false;
@@ -5370,7 +5228,6 @@ mod tests {
         let token_account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        // Test with allow_thaw_account = true
         // thaw_account(program_id, account, mint, freeze_authority, signers) — freeze_authority at index 2
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
@@ -5397,7 +5254,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_thaw_account = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_thaw_account = false;
@@ -5433,7 +5289,6 @@ mod tests {
         let token_account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        // Test with allow_thaw_account = true
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_thaw_account = true;
@@ -5459,7 +5314,6 @@ mod tests {
             .await
             .is_ok());
 
-        // Test with allow_thaw_account = false
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_thaw_account = false;
@@ -6214,7 +6068,6 @@ mod tests {
         )
         .unwrap();
 
-        // --- Test 1: revoke=true, burn=true → is_ok() ---
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_revoke = true;
@@ -6235,7 +6088,6 @@ mod tests {
             "Both policies true should pass"
         );
 
-        // --- Test 2: revoke=true, burn=false → is_err() ---
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_revoke = true;
@@ -6258,7 +6110,6 @@ mod tests {
             panic!("Expected InvalidTransaction error for burn policy");
         }
 
-        // --- Test 3: revoke=false, burn=true → is_err() ---
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_revoke = false;
@@ -6282,10 +6133,6 @@ mod tests {
         }
     }
 
-    // ----------------------------------------------------------------------------
-    // Loader-v4 tests
-    // ----------------------------------------------------------------------------
-
     fn setup_loader_v4_config_with_policy(policy: FeePayerPolicy) {
         use crate::constant::LOADER_V4_PROGRAM_ID;
         let config = ConfigMockBuilder::new()
@@ -6307,7 +6154,6 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let program = Pubkey::new_unique();
 
-        // allow_write = true -> accepted
         let mut policy = FeePayerPolicy::default();
         policy.loader_v4.allow_write = true;
         setup_loader_v4_config_with_policy(policy);
@@ -6325,7 +6171,6 @@ mod tests {
             .await
             .is_ok());
 
-        // default (allow_write = false) -> rejected
         setup_loader_v4_config_with_policy(FeePayerPolicy::default());
         let rpc_client = RpcMockBuilder::new().build();
         let config = get_config().unwrap();
@@ -6365,7 +6210,6 @@ mod tests {
             .await
             .is_ok());
 
-        // disabled -> rejected
         setup_loader_v4_config_with_policy(FeePayerPolicy::default());
         let rpc_client = RpcMockBuilder::new().build();
         let config = get_config().unwrap();
@@ -6389,7 +6233,6 @@ mod tests {
         let destination = Pubkey::new_unique();
         let source = Pubkey::new_unique();
 
-        // allow_copy = true -> accepted
         let mut policy = FeePayerPolicy::default();
         policy.loader_v4.allow_copy = true;
         setup_loader_v4_config_with_policy(policy);
@@ -6407,7 +6250,6 @@ mod tests {
             .await
             .is_ok());
 
-        // default (allow_copy = false) -> rejected
         setup_loader_v4_config_with_policy(FeePayerPolicy::default());
         let rpc_client = RpcMockBuilder::new().build();
         let config = get_config().unwrap();
@@ -6608,10 +6450,6 @@ mod tests {
             .is_err());
     }
 
-    // ----------------------------------------------------------------------------
-    // BPF Loader Upgradeable (loader-v3) tests
-    // ----------------------------------------------------------------------------
-
     fn setup_bpf_v3_config_with_policy(policy: FeePayerPolicy) {
         use crate::constant::BPF_LOADER_UPGRADEABLE_PROGRAM_ID;
         let config = ConfigMockBuilder::new()
@@ -6649,7 +6487,6 @@ mod tests {
             .await
             .is_ok());
 
-        // default → rejected
         setup_bpf_v3_config_with_policy(FeePayerPolicy::default());
         let rpc_client = RpcMockBuilder::new().build();
         let config = get_config().unwrap();
@@ -6677,7 +6514,6 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
-        // Try to transfer authority away from Kora.
         let ix = loader_v3::set_buffer_authority(&buffer, &fee_payer, &user);
         let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
         let mut transaction =
@@ -6754,7 +6590,6 @@ mod tests {
         let user_authority = Pubkey::new_unique();
         let program = Pubkey::new_unique();
         let buffer = Pubkey::new_unique();
-        // allow_upgrade default = false.
         setup_bpf_v3_config_with_policy(FeePayerPolicy::default());
 
         let rpc_client = RpcMockBuilder::new().build();
@@ -6851,8 +6686,6 @@ mod tests {
             .await
             .is_err());
     }
-
-    // Token-2022 token-metadata / token-group interface instructions (end-to-end).
 
     #[tokio::test]
     #[serial]

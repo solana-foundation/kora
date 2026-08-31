@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn test_account_type_validate_mint_wrong_owner() {
         let account = AccountMockBuilder::new()
-            .with_owner(Pubkey::new_unique()) // Wrong owner, not a token program
+            .with_owner(Pubkey::new_unique())
             .with_executable(false)
             .build();
         let account_pubkey = Pubkey::new_unique();
@@ -196,7 +196,7 @@ mod tests {
     fn test_account_type_validate_mint_executable() {
         let account = AccountMockBuilder::new()
             .with_owner(SPL_TOKEN_PROGRAM_ID)
-            .with_executable(true) // Mints should not be executable
+            .with_executable(true)
             .with_data(MintAccountMockBuilder::new().build().data)
             .build();
         let account_pubkey = Pubkey::new_unique();
@@ -211,7 +211,7 @@ mod tests {
         let account = AccountMockBuilder::new()
             .with_owner(SPL_TOKEN_PROGRAM_ID)
             .with_executable(false)
-            .with_data(vec![0u8; 10]) // Too short for mint data
+            .with_data(vec![0u8; 10])
             .build();
         let account_pubkey = Pubkey::new_unique();
 
@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn test_account_type_validate_token_account_wrong_owner() {
         let account = AccountMockBuilder::new()
-            .with_owner(Pubkey::new_unique()) // Wrong owner, not a token program
+            .with_owner(Pubkey::new_unique())
             .with_executable(false)
             .build();
         let account_pubkey = Pubkey::new_unique();
@@ -262,7 +262,7 @@ mod tests {
     fn test_account_type_validate_token_account_executable() {
         let account = AccountMockBuilder::new()
             .with_owner(SPL_TOKEN_PROGRAM_ID)
-            .with_executable(true) // Token accounts should not be executable
+            .with_executable(true)
             .with_data(TokenAccountMockBuilder::new().build().data)
             .build();
         let account_pubkey = Pubkey::new_unique();
@@ -277,7 +277,7 @@ mod tests {
         let account = AccountMockBuilder::new()
             .with_owner(SPL_TOKEN_PROGRAM_ID)
             .with_executable(false)
-            .with_data(vec![0u8; 10]) // Too short for token account data
+            .with_data(vec![0u8; 10])
             .build();
         let account_pubkey = Pubkey::new_unique();
 
@@ -332,7 +332,7 @@ mod tests {
         let account = AccountMockBuilder::new()
             .with_owner(TOKEN_2022_PROGRAM_ID)
             .with_executable(false)
-            .with_data(vec![0u8; 10]) // Too short for Token2022 mint data
+            .with_data(vec![0u8; 10])
             .build();
         let account_pubkey = Pubkey::new_unique();
 
@@ -346,7 +346,7 @@ mod tests {
         let account = AccountMockBuilder::new()
             .with_owner(TOKEN_2022_PROGRAM_ID)
             .with_executable(false)
-            .with_data(vec![0u8; 10]) // Too short for Token2022 account data
+            .with_data(vec![0u8; 10])
             .build();
         let account_pubkey = Pubkey::new_unique();
 
@@ -405,7 +405,7 @@ mod tests {
     async fn test_validate_account_type_validation_failure() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
 
-        let account = create_mock_account_with_owner(Pubkey::new_unique()); // Wrong owner for system
+        let account = create_mock_account_with_owner(Pubkey::new_unique());
         let rpc_client = create_mock_rpc_client_with_account(&account);
         let account_pubkey = Pubkey::new_unique();
 

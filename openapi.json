@@ -1,5 +1,5 @@
 {
-  "openapi": "3.0.3",
+  "openapi": "3.1.0",
   "info": {
     "title": "kora-rpc",
     "description": "RPC server for Kora gasless relayer",
@@ -11,79 +11,273 @@
   "paths": {},
   "components": {
     "schemas": {
+      "AltInstructionPolicy": {
+        "type": "object",
+        "properties": {
+          "allow_close": {
+            "type": "boolean",
+            "description": "Allow fee payer to be authority in ALT CloseLookupTable instructions",
+            "default": false
+          },
+          "allow_create": {
+            "type": "boolean",
+            "description": "Allow fee payer to be authority/payer in ALT CreateLookupTable instructions",
+            "default": false
+          },
+          "allow_deactivate": {
+            "type": "boolean",
+            "description": "Allow fee payer to be authority in ALT DeactivateLookupTable instructions",
+            "default": false
+          },
+          "allow_extend": {
+            "type": "boolean",
+            "description": "Allow fee payer to be authority/payer in ALT ExtendLookupTable instructions",
+            "default": false
+          },
+          "allow_freeze": {
+            "type": "boolean",
+            "description": "Allow fee payer to be authority in ALT FreezeLookupTable instructions",
+            "default": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "BpfLoaderUpgradeableInstructionPolicy": {
+        "type": "object",
+        "properties": {
+          "allow_close": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in Close instructions. The recipient slot is not\nflag-gated: an unconditional drainage guard rejects a fee-payer authority paired with a\nforeign recipient",
+            "default": false
+          },
+          "allow_deploy_with_max_data_len": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the payer or upgrade authority in DeployWithMaxDataLen",
+            "default": false
+          },
+          "allow_extend_program": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the payer in ExtendProgram instructions",
+            "default": false
+          },
+          "allow_extend_program_checked": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority or payer in ExtendProgramChecked\n(variant of ExtendProgram that also requires the authority's signature)",
+            "default": false
+          },
+          "allow_initialize_buffer": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the buffer authority in InitializeBuffer instructions",
+            "default": false
+          },
+          "allow_migrate": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current authority in Migrate instructions\n(moves the program to loader-v4)",
+            "default": false
+          },
+          "allow_set_authority": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current or the new authority in SetAuthority (drainage vector\n— hands program control to a new authority that can then close + drain)",
+            "default": false
+          },
+          "allow_set_authority_checked": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current or the new authority in SetAuthorityChecked",
+            "default": false
+          },
+          "allow_upgrade": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the upgrade authority in Upgrade instructions",
+            "default": false
+          },
+          "allow_write": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the buffer authority in Write instructions",
+            "default": false
+          }
+        },
+        "additionalProperties": false
+      },
       "EnabledMethods": {
         "type": "object",
-        "required": [
-          "liveness",
-          "estimate_transaction_fee",
-          "get_supported_tokens",
-          "sign_transaction",
-          "sign_and_send_transaction",
-          "transfer_transaction",
-          "get_blockhash",
-          "get_config"
-        ],
         "properties": {
+          "estimate_bundle_fee": {
+            "type": "boolean",
+            "description": "Bundle methods (require bundle.enabled = true)",
+            "default": false
+          },
           "estimate_transaction_fee": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           },
           "get_blockhash": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           },
           "get_config": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
+          },
+          "get_payer_signer": {
+            "type": "boolean",
+            "default": true
           },
           "get_supported_tokens": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
+          },
+          "get_version": {
+            "type": "boolean",
+            "default": true
           },
           "liveness": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
+          },
+          "sign_and_send_bundle": {
+            "type": "boolean",
+            "default": false
           },
           "sign_and_send_transaction": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
+          },
+          "sign_bundle": {
+            "type": "boolean",
+            "default": false
           },
           "sign_transaction": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           },
           "transfer_transaction": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           }
-        }
+        },
+        "additionalProperties": false
       },
       "FeePayerPolicy": {
         "type": "object",
-        "required": [
-          "allow_sol_transfers",
-          "allow_spl_transfers",
-          "allow_token2022_transfers",
-          "allow_assign",
-          "allow_burn",
-          "allow_close_account",
-          "allow_approve"
-        ],
         "properties": {
-          "allow_approve": {
-            "type": "boolean"
+          "alt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AltInstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_close": false,
+              "allow_create": false,
+              "allow_deactivate": false,
+              "allow_extend": false,
+              "allow_freeze": false
+            }
           },
-          "allow_assign": {
-            "type": "boolean"
+          "bpf_loader_upgradeable": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BpfLoaderUpgradeableInstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_close": false,
+              "allow_deploy_with_max_data_len": false,
+              "allow_extend_program": false,
+              "allow_extend_program_checked": false,
+              "allow_initialize_buffer": false,
+              "allow_migrate": false,
+              "allow_set_authority": false,
+              "allow_set_authority_checked": false,
+              "allow_upgrade": false,
+              "allow_write": false
+            }
           },
-          "allow_burn": {
-            "type": "boolean"
+          "loader_v4": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LoaderV4InstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_copy": false,
+              "allow_deploy": false,
+              "allow_finalize": false,
+              "allow_retract": false,
+              "allow_set_program_length": false,
+              "allow_transfer_authority": false,
+              "allow_write": false
+            }
           },
-          "allow_close_account": {
-            "type": "boolean"
+          "spl_token": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SplTokenInstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_approve": false,
+              "allow_burn": false,
+              "allow_close_account": false,
+              "allow_freeze_account": false,
+              "allow_initialize_account": false,
+              "allow_initialize_mint": false,
+              "allow_initialize_multisig": false,
+              "allow_mint_to": false,
+              "allow_revoke": false,
+              "allow_set_authority": false,
+              "allow_thaw_account": false,
+              "allow_transfer": false,
+              "allow_unwrap_lamports": false,
+              "allow_withdraw_excess_lamports": false
+            }
           },
-          "allow_sol_transfers": {
-            "type": "boolean"
+          "system": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SystemInstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_allocate": false,
+              "allow_assign": false,
+              "allow_create_account": false,
+              "allow_transfer": false,
+              "nonce": {
+                "allow_advance": false,
+                "allow_authorize": false,
+                "allow_initialize": false,
+                "allow_withdraw": false
+              }
+            }
           },
-          "allow_spl_transfers": {
-            "type": "boolean"
-          },
-          "allow_token2022_transfers": {
-            "type": "boolean"
+          "token_2022": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Token2022InstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_approve": false,
+              "allow_burn": false,
+              "allow_close_account": false,
+              "allow_freeze_account": false,
+              "allow_initialize_account": false,
+              "allow_initialize_extension_authority": false,
+              "allow_initialize_mint": false,
+              "allow_initialize_multisig": false,
+              "allow_mint_to": false,
+              "allow_revoke": false,
+              "allow_set_authority": false,
+              "allow_thaw_account": false,
+              "allow_transfer": false,
+              "allow_unwrap_lamports": false,
+              "allow_update_extension_authority": false,
+              "allow_withdraw_excess_lamports": false
+            }
           }
-        }
+        },
+        "additionalProperties": false
       },
       "GetBlockhashResponse": {
         "type": "object",
@@ -99,7 +293,7 @@
       "GetConfigResponse": {
         "type": "object",
         "required": [
-          "fee_payer",
+          "fee_payers",
           "validation_config",
           "enabled_methods"
         ],
@@ -107,11 +301,31 @@
           "enabled_methods": {
             "$ref": "#/components/schemas/EnabledMethods"
           },
-          "fee_payer": {
-            "type": "string"
+          "fee_payers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "validation_config": {
             "$ref": "#/components/schemas/ValidationConfig"
+          }
+        }
+      },
+      "GetPayerSignerResponse": {
+        "type": "object",
+        "required": [
+          "signer_address",
+          "payment_address"
+        ],
+        "properties": {
+          "payment_address": {
+            "type": "string",
+            "description": "The payment destination owner address (same as signer if no separate paymaster is configured)"
+          },
+          "signer_address": {
+            "type": "string",
+            "description": "The recommended signer's public key"
           }
         }
       },
@@ -129,13 +343,90 @@
           }
         }
       },
+      "GetVersionResponse": {
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "LoaderV4InstructionPolicy": {
+        "type": "object",
+        "properties": {
+          "allow_copy": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in Copy instructions",
+            "default": false
+          },
+          "allow_deploy": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in Deploy instructions",
+            "default": false
+          },
+          "allow_finalize": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current authority in Finalize instructions",
+            "default": false
+          },
+          "allow_retract": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in Retract instructions",
+            "default": false
+          },
+          "allow_set_program_length": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority or the recipient in SetProgramLength instructions. An\nunconditional drainage guard additionally requires the recipient to be the fee payer\nwhenever the fee payer is the authority",
+            "default": false
+          },
+          "allow_transfer_authority": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current or the new authority in TransferAuthority instructions",
+            "default": false
+          },
+          "allow_write": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in Write instructions",
+            "default": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "NonceInstructionPolicy": {
+        "type": "object",
+        "required": [
+          "allow_initialize",
+          "allow_advance",
+          "allow_withdraw",
+          "allow_authorize"
+        ],
+        "properties": {
+          "allow_advance": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the nonce authority in AdvanceNonceAccount instructions"
+          },
+          "allow_authorize": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current nonce authority in AuthorizeNonceAccount instructions"
+          },
+          "allow_initialize": {
+            "type": "boolean",
+            "description": "Allow fee payer to be set as the nonce authority in InitializeNonceAccount instructions"
+          },
+          "allow_withdraw": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the nonce authority in WithdrawNonceAccount instructions"
+          }
+        },
+        "additionalProperties": false
+      },
       "PriceConfig": {
         "allOf": [
           {
             "$ref": "#/components/schemas/PriceModel"
-          },
-          {
-            "type": "object"
           }
         ]
       },
@@ -165,6 +456,7 @@
             "required": [
               "amount",
               "token",
+              "strict",
               "type"
             ],
             "properties": {
@@ -172,6 +464,9 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
+              },
+              "strict": {
+                "type": "boolean"
               },
               "token": {
                 "type": "string"
@@ -198,10 +493,7 @@
               }
             }
           }
-        ],
-        "discriminator": {
-          "propertyName": "type"
-        }
+        ]
       },
       "PriceSource": {
         "type": "string",
@@ -210,57 +502,399 @@
           "Mock"
         ]
       },
+      "ProgramsConfig": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "All"
+            ]
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "RespondAfter": {
+        "type": "string",
+        "description": "The transaction lifecycle milestone `signAndSendTransaction` waits for before\nresponding, ordered by increasing assurance: `Signed` < `Sent` < `Confirmed`.\n\nAll modes share the immediate sign-and-send validation flow (`will_send = true`)",
+        "enum": [
+          "confirmed",
+          "sent",
+          "signed"
+        ]
+      },
       "SignAndSendTransactionRequest": {
         "type": "object",
         "required": [
           "transaction"
         ],
         "properties": {
+          "respond_after": {
+            "$ref": "#/components/schemas/RespondAfter",
+            "description": "The lifecycle milestone to wait for before responding (defaults to \"confirmed\"):\n\"confirmed\" waits for on-chain confirmation, \"sent\" returns once the RPC node\naccepts the transaction, \"signed\" returns as soon as signing completes and\nbroadcasts in the background."
+          },
+          "sig_verify": {
+            "type": "boolean",
+            "description": "Whether to verify signatures during simulation (defaults to false)"
+          },
+          "signer_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional signer signer_key to ensure consistency across related RPC calls"
+          },
           "transaction": {
             "type": "string"
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)"
           }
         }
       },
       "SignAndSendTransactionResponse": {
         "type": "object",
         "required": [
-          "signature",
-          "signed_transaction"
+          "signed_transaction",
+          "signer_pubkey",
+          "signature"
         ],
         "properties": {
           "signature": {
-            "type": "string"
+            "type": "string",
+            "description": "Transaction signature"
           },
           "signed_transaction": {
             "type": "string"
+          },
+          "signer_pubkey": {
+            "type": "string",
+            "description": "Public key of the signer used (for client consistency)"
           }
         }
       },
       "SignTransactionRequest": {
         "type": "object",
+        "description": "Request payload for signing a transaction.\n\nThis endpoint accepts a base64-encoded Solana transaction, validates it against\nthe configured fee payer policies, and if successful, signs it using Kora's\nconfigured signer policy\nbut not broadcasted to the network.",
         "required": [
           "transaction"
         ],
         "properties": {
+          "sig_verify": {
+            "type": "boolean",
+            "description": "Whether to verify signatures during simulation (defaults to false)"
+          },
+          "signer_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional public key of the signer to ensure consistency"
+          },
           "transaction": {
-            "type": "string"
+            "type": "string",
+            "description": "Base64-encoded Solana transaction"
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional user ID for usage tracking (required when pricing is Free and usage tracking is enabled)"
           }
         }
       },
       "SignTransactionResponse": {
         "type": "object",
+        "description": "Response payload containing the signed transaction.",
         "required": [
-          "signature",
-          "signed_transaction"
+          "signed_transaction",
+          "signer_pubkey"
         ],
         "properties": {
-          "signature": {
-            "type": "string"
-          },
           "signed_transaction": {
-            "type": "string"
+            "type": "string",
+            "description": "Base64-encoded transaction signed by the Kora fee payer"
+          },
+          "signer_pubkey": {
+            "type": "string",
+            "description": "Public key of the signer used (for client consistency)"
           }
         }
+      },
+      "SplTokenConfig": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "All"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "Allowlist"
+            ],
+            "properties": {
+              "Allowlist": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "SplTokenInstructionPolicy": {
+        "type": "object",
+        "required": [
+          "allow_transfer",
+          "allow_burn",
+          "allow_close_account",
+          "allow_approve",
+          "allow_revoke",
+          "allow_set_authority",
+          "allow_mint_to",
+          "allow_initialize_mint",
+          "allow_initialize_account",
+          "allow_initialize_multisig",
+          "allow_freeze_account",
+          "allow_thaw_account"
+        ],
+        "properties": {
+          "allow_approve": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in SPL Token Approve/ApproveChecked instructions"
+          },
+          "allow_burn": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in SPL Token Burn/BurnChecked instructions"
+          },
+          "allow_close_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in SPL Token CloseAccount instructions"
+          },
+          "allow_freeze_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the freeze authority in SPL Token FreezeAccount instructions"
+          },
+          "allow_initialize_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be set as the owner in SPL Token InitializeAccount instructions"
+          },
+          "allow_initialize_mint": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the mint authority in SPL Token InitializeMint/InitializeMint2 instructions"
+          },
+          "allow_initialize_multisig": {
+            "type": "boolean",
+            "description": "Allow fee payer to be a signer in SPL Token InitializeMultisig instructions"
+          },
+          "allow_mint_to": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the mint authority in SPL Token MintTo/MintToChecked instructions"
+          },
+          "allow_revoke": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in SPL Token Revoke instructions"
+          },
+          "allow_set_authority": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current authority in SPL Token SetAuthority instructions"
+          },
+          "allow_thaw_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the freeze authority in SPL Token ThawAccount instructions"
+          },
+          "allow_transfer": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in SPL Token Transfer/TransferChecked instructions"
+          },
+          "allow_unwrap_lamports": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in SPL Token UnwrapLamports instructions"
+          },
+          "allow_withdraw_excess_lamports": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in SPL Token WithdrawExcessLamports instructions"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SystemInstructionPolicy": {
+        "type": "object",
+        "properties": {
+          "allow_allocate": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the account in System Allocate/AllocateWithSeed instructions",
+            "default": false
+          },
+          "allow_assign": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in System Assign/AssignWithSeed instructions",
+            "default": false
+          },
+          "allow_create_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the funder, the seeded base signer, or the account being created, in\nSystem CreateAccount/CreateAccountWithSeed/CreateAccountAllowPrefund instructions",
+            "default": false
+          },
+          "allow_transfer": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the sender in System Transfer/TransferWithSeed instructions",
+            "default": false
+          },
+          "nonce": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NonceInstructionPolicy",
+                "description": "Nested policy for nonce account operations"
+              }
+            ],
+            "default": {
+              "allow_advance": false,
+              "allow_authorize": false,
+              "allow_initialize": false,
+              "allow_withdraw": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "Token2022Config": {
+        "type": "object",
+        "properties": {
+          "allow_confidential_transfers": {
+            "type": "boolean",
+            "default": false
+          },
+          "allow_token_group_instructions": {
+            "type": "boolean",
+            "default": false
+          },
+          "allow_token_metadata_instructions": {
+            "type": "boolean",
+            "default": false
+          },
+          "blocked_account_extensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "blocked_mint_extensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "transfer_hook_policy": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TransferHookPolicy"
+              }
+            ],
+            "default": "deny_all"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Token2022InstructionPolicy": {
+        "type": "object",
+        "properties": {
+          "allow_approve": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in Token2022 Approve/ApproveChecked instructions",
+            "default": false
+          },
+          "allow_burn": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in Token2022 Burn/BurnChecked instructions",
+            "default": false
+          },
+          "allow_close_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in Token2022 CloseAccount instructions",
+            "default": false
+          },
+          "allow_freeze_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the freeze authority in Token2022 FreezeAccount instructions",
+            "default": false
+          },
+          "allow_initialize_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be set as the owner in Token2022 InitializeAccount instructions",
+            "default": false
+          },
+          "allow_initialize_extension_authority": {
+            "type": "boolean",
+            "description": "Allow fee payer to be planted as a future Token2022 extension authority/delegate during\nextension initialization.",
+            "default": false
+          },
+          "allow_initialize_mint": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the mint authority in Token2022 InitializeMint/InitializeMint2 instructions",
+            "default": false
+          },
+          "allow_initialize_multisig": {
+            "type": "boolean",
+            "description": "Allow fee payer to be a signer in Token2022 InitializeMultisig instructions",
+            "default": false
+          },
+          "allow_mint_to": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the mint authority in Token2022 MintTo/MintToChecked instructions",
+            "default": false
+          },
+          "allow_revoke": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in Token2022 Revoke instructions",
+            "default": false
+          },
+          "allow_set_authority": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current authority in Token2022 SetAuthority instructions",
+            "default": false
+          },
+          "allow_thaw_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the freeze authority in Token2022 ThawAccount instructions",
+            "default": false
+          },
+          "allow_transfer": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in Token2022 Transfer/TransferChecked instructions",
+            "default": false
+          },
+          "allow_unwrap_lamports": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in Token2022 UnwrapLamports instructions",
+            "default": false
+          },
+          "allow_update_extension_authority": {
+            "type": "boolean",
+            "description": "Allow fee payer to be used as the current authority for Token2022 extension update/admin\ninstructions.",
+            "default": false
+          },
+          "allow_withdraw_excess_lamports": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in Token2022 WithdrawExcessLamports instructions",
+            "default": false
+          }
+        },
+        "additionalProperties": false
       },
       "TokenPrice": {
         "type": "object",
@@ -270,21 +904,37 @@
           "source"
         ],
         "properties": {
+          "block_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
           "confidence": {
             "type": "number",
             "format": "double"
           },
           "price": {
-            "type": "number",
-            "format": "double"
+            "type": "string"
           },
           "source": {
             "$ref": "#/components/schemas/PriceSource"
           }
         }
       },
+      "TransferHookPolicy": {
+        "type": "string",
+        "enum": [
+          "deny_all",
+          "deny_mutable_for_delayed_signing",
+          "allow_all"
+        ]
+      },
       "TransferTransactionRequest": {
         "type": "object",
+        "description": "**DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.\nThis endpoint will be removed in a future version.\n\nRequest payload for creating a simple token or SOL transfer transaction.\nThis endpoint constructs an unsigned transfer where Kora acts as the fee payer,\nbut the user must still sign the transaction before it can be submitted.",
         "required": [
           "amount",
           "token",
@@ -295,35 +945,55 @@
           "amount": {
             "type": "integer",
             "format": "int64",
+            "description": "Amount to transfer (in the token's smallest unit, e.g. lamports for SOL)",
             "minimum": 0
           },
           "destination": {
-            "type": "string"
+            "type": "string",
+            "description": "The destination wallet address that will receive the tokens"
+          },
+          "signer_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional public key of the signer to ensure consistency"
           },
           "source": {
-            "type": "string"
+            "type": "string",
+            "description": "The source wallet address that will send the tokens"
           },
           "token": {
-            "type": "string"
+            "type": "string",
+            "description": "Token mint address to transfer (use native SOL address for SOL transfers)"
           }
         }
       },
       "TransferTransactionResponse": {
         "type": "object",
+        "description": "**DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.\n\nResponse payload containing the constructed transfer transaction.",
         "required": [
           "transaction",
           "message",
-          "blockhash"
+          "blockhash",
+          "signer_pubkey"
         ],
         "properties": {
           "blockhash": {
-            "type": "string"
+            "type": "string",
+            "description": "The blockhash used when constructing the transaction"
           },
           "message": {
-            "type": "string"
+            "type": "string",
+            "description": "Unsigned base64-encoded message"
+          },
+          "signer_pubkey": {
+            "type": "string",
+            "description": "Public key of the Kora signer used as the fee payer (for client consistency)"
           },
           "transaction": {
-            "type": "string"
+            "type": "string",
+            "description": "Unsigned base64-encoded transaction ready for the user to sign"
           }
         }
       },
@@ -339,19 +1009,27 @@
           "price_source"
         ],
         "properties": {
+          "allow_durable_transactions": {
+            "type": "boolean",
+            "description": "Allow durable transactions (nonce-based). Default: false.\nWhen false, rejects any transaction containing AdvanceNonceAccount instruction.\nWARNING: Enabling with dynamic pricing creates price arbitrage risk."
+          },
           "allowed_programs": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "$ref": "#/components/schemas/ProgramsConfig"
           },
           "allowed_spl_paid_tokens": {
+            "$ref": "#/components/schemas/SplTokenConfig"
+          },
+          "allowed_tokens": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "allowed_tokens": {
+          "cross_cluster_check": {
+            "type": "boolean",
+            "description": "When true, checks configured mint addresses against other known clusters\nand warns if a mint is found on a different cluster than the one connected.\nDisabled by default: the check contacts public RPC endpoints, which may be undesirable\nfor operators who want to keep their mint addresses private."
+          },
+          "cross_cluster_endpoints": {
             "type": "array",
             "items": {
               "type": "string"
@@ -371,6 +1049,21 @@
             "format": "int64",
             "minimum": 0
           },
+          "max_price_staleness_slots": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximum allowed age of oracle price data in slots. 0 = disabled (default).\nWhen >0, prices with a block_id older than `current_slot - max_price_staleness_slots` are rejected.",
+            "minimum": 0
+          },
+          "max_priority_fee_lamports": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Maximum priority fee in lamports a transaction may request.\nUnset = unlimited, 0 = not allowed.",
+            "minimum": 0
+          },
           "max_signatures": {
             "type": "integer",
             "format": "int64",
@@ -381,8 +1074,19 @@
           },
           "price_source": {
             "$ref": "#/components/schemas/PriceSource"
+          },
+          "require_one_of_programs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Programs where at least one must be called by the transaction (OR semantics).\nEach required program must also be listed in `allowed_programs`.\nDefault: empty (no restriction)."
+          },
+          "token_2022": {
+            "$ref": "#/components/schemas/Token2022Config"
           }
-        }
+        },
+        "additionalProperties": false
       }
     }
   }

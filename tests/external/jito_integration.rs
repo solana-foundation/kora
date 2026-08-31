@@ -11,7 +11,6 @@ async fn test_jito_mainnet_connection() {
     };
     let client = JitoClient::new(&config);
 
-    // Query status of non-existent bundle to test connectivity
     let result =
         client.get_bundle_statuses(vec!["00000000-0000-0000-0000-000000000000".to_string()]).await;
 
@@ -32,7 +31,6 @@ async fn test_jito_testnet_connection() {
     };
     let client = JitoClient::new(&config);
 
-    // Query status of non-existent bundle to test connectivity
     let result =
         client.get_bundle_statuses(vec!["00000000-0000-0000-0000-000000000000".to_string()]).await;
 
@@ -69,7 +67,5 @@ async fn test_jito_send_bundle() {
         if error_str.contains("404") {
             panic!("Jito send bundle test failed with 404 error: {error_str:?}");
         }
-
-        // Only test that the endpoint is a valid Jito endpoint
     }
 }

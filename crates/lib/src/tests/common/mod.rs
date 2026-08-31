@@ -14,7 +14,6 @@ use crate::{
 };
 use solana_sdk::{pubkey::Pubkey, signature::Keypair};
 
-// Re-export mock utilities for centralized access
 pub use account_mock::*;
 pub use rpc_mock::*;
 use solana_keychain::{Signer, SolanaSigner};
@@ -94,8 +93,6 @@ pub async fn setup_or_get_test_usage_limiter() -> Result<(), KoraError> {
     match UsageTracker::init_usage_limiter().await {
         Ok(()) => Ok(()),
         Err(KoraError::InternalServerError(ref msg)) if msg.contains("already initialized") => {
-            // In tests, ignore the already initialized error
-            // The limiter is already set up from a previous test
             Ok(())
         }
         Err(e) => Err(e),

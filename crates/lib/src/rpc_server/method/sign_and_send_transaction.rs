@@ -70,7 +70,6 @@ pub async fn sign_and_send_transaction(
     )
     .await?;
 
-    // Check usage limit for transaction sender
     UsageTracker::check_transaction_usage_limit(
         config,
         &mut resolved_transaction,

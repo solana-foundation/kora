@@ -9,7 +9,6 @@ pub const MIN_BALANCE_FOR_RENT_EXEMPTION: u64 = 2_039_280;
 pub const DEFAULT_INTEREST_MULTIPLIER: u128 = 100 * 24 * 60 * 60 / 10000 / (365 * 24 * 60 * 60);
 pub const MAX_TRANSACTION_SIZE: usize = 1232;
 
-// HTTP Headers
 pub const X_RECAPTCHA_TOKEN: &str = "x-recaptcha-token";
 pub const X_API_KEY: &str = "x-api-key";
 pub const X_HMAC_SIGNATURE: &str = "x-hmac-signature";
@@ -21,12 +20,10 @@ pub const DEFAULT_RECAPTCHA_SCORE_THRESHOLD: f64 = 0.5;
 pub const DEFAULT_PROTECTED_METHODS: &[&str] =
     &["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"];
 
-// External Services
 pub const JUPITER_API_URL: &str = "https://api.jup.ag";
 pub const RECAPTCHA_VERIFY_URL: &str = "https://www.google.com/recaptcha/api/siteverify";
 pub const RECAPTCHA_TIMEOUT_SECS: u64 = 5;
 
-// Lighthouse Program ID
 pub const LIGHTHOUSE_PROGRAM_ID: Pubkey = pubkey!("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
 
 // High-risk native programs that have no fee-payer instruction parser in Kora.
@@ -61,11 +58,8 @@ pub const DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS: u64 = 30; // 30 seco
 pub const DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS: u64 = 0; // 0 = unlimited
 pub const DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE: bool = false;
 
-// Request body size limit
 pub const DEFAULT_MAX_REQUEST_BODY_SIZE: usize = 2 * 1024 * 1024; // 2 MB
 
-// Account Indexes within instructions
-// Instruction indexes for the instructions that we support to parse from the transaction
 pub mod instruction_indexes {
     pub mod system_create_account {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;

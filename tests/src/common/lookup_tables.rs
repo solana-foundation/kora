@@ -12,11 +12,6 @@ use crate::common::{constants::*, SenderTestHelper, USDCMintTestHelper};
 pub struct LookupTableHelper;
 
 impl LookupTableHelper {
-    // ============================================================================
-    // Fixtures Management
-    // ============================================================================
-
-    /// Create all standard lookup tables and save addresses to fixtures
     pub async fn setup_and_save_lookup_tables(
         rpc_client: Arc<RpcClient>,
     ) -> Result<(Pubkey, Pubkey, Pubkey)> {
@@ -67,11 +62,6 @@ impl LookupTableHelper {
         Pubkey::from_str(&transaction_lookup_table_address).map_err(Into::into)
     }
 
-    // ============================================================================
-    // Core Lookup Table Creation
-    // ============================================================================
-
-    /// Create a lookup table with specified addresses
     pub async fn create_lookup_table(
         rpc_client: Arc<RpcClient>,
         authority: &Keypair,
@@ -114,10 +104,6 @@ impl LookupTableHelper {
         Ok(lookup_table_key)
     }
 
-    // ============================================================================
-    // Allowed / Disallowed addresses in lookup tables
-    // ============================================================================
-
     pub async fn create_allowed_lookup_table(
         rpc_client: Arc<RpcClient>,
         authority: &Keypair,
@@ -142,9 +128,6 @@ impl LookupTableHelper {
             .await
     }
 
-    // ============================================================================
-    // Transaction-Specific Lookup Tables (for SPL transfers with mint)
-    // ============================================================================
     pub async fn create_transaction_lookup_table(
         rpc_client: Arc<RpcClient>,
         authority: &Keypair,

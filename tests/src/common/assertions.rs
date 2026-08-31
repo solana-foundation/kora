@@ -6,19 +6,10 @@ use std::str::FromStr;
 
 /// Trait for common RPC response assertions
 pub trait RpcAssertions {
-    /// Assert the response indicates success
     fn assert_success(&self);
-
-    /// Assert the response contains an error with the given code
     fn assert_error(&self, expected_code: i32);
-
-    /// Assert the response has a valid signature
     fn assert_has_signature(&self) -> Signature;
-
-    /// Assert the response has a specific field
     fn assert_has_field(&self, field: &str);
-
-    /// Get a field value from the response
     fn get_field(&self, field: &str) -> Option<&Value>;
 }
 
@@ -85,7 +76,6 @@ impl RpcAssertions for Value {
 
 /// Assertions for transaction responses
 pub trait TransactionAssertions {
-    /// Assert the transaction blockhash is valid (43-44 chars base58)
     fn assert_valid_blockhash(&self);
 }
 
@@ -113,13 +103,8 @@ impl JsonRpcErrorCodes {
 
 /// Trait for RPC error assertions
 pub trait RpcErrorAssertions {
-    /// Assert the RPC error contains a specific message
     fn assert_contains_message(&self, expected_message: &str);
-
-    /// Assert the RPC error is of a specific type (e.g., "InvalidTransaction", "ValidationError")
     fn assert_error_type(&self, expected_type: &str);
-
-    /// Assert both error type and message
     fn assert_error_type_and_message(&self, expected_type: &str, expected_message: &str);
 }
 

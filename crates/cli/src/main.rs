@@ -147,99 +147,92 @@ async fn main() -> Result<(), KoraError> {
                 Err(_) => std::process::exit(1),
             }
         }
-        Some(Commands::Rpc { rpc_command }) => {
-            match rpc_command {
-                RpcCommands::Start { rpc_args } => {
-                    rpc_args.auth_args.apply_to_env();
+        Some(Commands::Rpc { rpc_command }) => match rpc_command {
+            RpcCommands::Start { rpc_args } => {
+                rpc_args.auth_args.apply_to_env();
 
-                    // Validate config and signers before starting server
-                    match ConfigValidator::validate_with_result_and_signers(
-                        rpc_client.as_ref(),
-                        true,
-                        rpc_args.signers_config.as_ref(),
-                    )
-                    .await
-                    {
-                        Err(errors) => {
-                            for e in errors {
-                                print_error(&format!("Validation error: {e}"));
-                            }
-                            std::process::exit(1);
+                match ConfigValidator::validate_with_result_and_signers(
+                    rpc_client.as_ref(),
+                    true,
+                    rpc_args.signers_config.as_ref(),
+                )
+                .await
+                {
+                    Err(errors) => {
+                        for e in errors {
+                            print_error(&format!("Validation error: {e}"));
                         }
-                        Ok(warnings) => {
-                            for w in warnings {
-                                println!("Warning: {w}");
-                            }
-                        }
-                    }
-
-                    setup_logging(&rpc_args.logging_format);
-
-                    // Initialize signer(s) - supports both single and multi-signer modes
-                    if !rpc_args.skip_signer {
-                        init_signers(&rpc_args).await.unwrap_or_else(|e| {
-                            print_error(&format!("Failed to initialize signer(s): {e}"));
-                            std::process::exit(1);
-                        });
-                    }
-
-                    // Initialize cache
-                    if let Err(e) = CacheUtil::init().await {
-                        print_error(&format!("Failed to initialize cache: {e}"));
                         std::process::exit(1);
                     }
-
-                    let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
-
-                    let kora_rpc = KoraRpc::new(rpc_client);
-
-                    let handles = run_rpc_server(kora_rpc, rpc_args.port).await?;
-
-                    wait_for_shutdown_signal().await;
-                    println!("Shutting down server...");
-
-                    handles.shutdown(rpc_args.port).await;
+                    Ok(warnings) => {
+                        for w in warnings {
+                            println!("Warning: {w}");
+                        }
+                    }
                 }
-                RpcCommands::InitializeAtas {
-                    rpc_args,
-                    fee_payer_key,
+
+                setup_logging(&rpc_args.logging_format);
+
+                if !rpc_args.skip_signer {
+                    init_signers(&rpc_args).await.unwrap_or_else(|e| {
+                        print_error(&format!("Failed to initialize signer(s): {e}"));
+                        std::process::exit(1);
+                    });
+                }
+
+                if let Err(e) = CacheUtil::init().await {
+                    print_error(&format!("Failed to initialize cache: {e}"));
+                    std::process::exit(1);
+                }
+
+                let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
+
+                let kora_rpc = KoraRpc::new(rpc_client);
+
+                let handles = run_rpc_server(kora_rpc, rpc_args.port).await?;
+
+                wait_for_shutdown_signal().await;
+                println!("Shutting down server...");
+
+                handles.shutdown(rpc_args.port).await;
+            }
+            RpcCommands::InitializeAtas {
+                rpc_args,
+                fee_payer_key,
+                compute_unit_price,
+                compute_unit_limit,
+                chunk_size,
+            } => {
+                if !rpc_args.skip_signer {
+                    init_signers(&rpc_args).await.unwrap_or_else(|e| {
+                        print_error(&format!("Failed to initialize signer(s): {e}"));
+                        std::process::exit(1);
+                    });
+                } else {
+                    print_error("Cannot initialize ATAs without a signer.");
+                    std::process::exit(1);
+                }
+
+                if let Err(e) = CacheUtil::init().await {
+                    print_error(&format!("Failed to initialize cache: {e}"));
+                    std::process::exit(1);
+                }
+
+                if let Err(e) = initialize_atas(
+                    rpc_client.as_ref(),
                     compute_unit_price,
                     compute_unit_limit,
                     chunk_size,
-                } => {
-                    if !rpc_args.skip_signer {
-                        init_signers(&rpc_args).await.unwrap_or_else(|e| {
-                            print_error(&format!("Failed to initialize signer(s): {e}"));
-                            std::process::exit(1);
-                        });
-                    } else {
-                        print_error("Cannot initialize ATAs without a signer.");
-                        std::process::exit(1);
-                    }
-
-                    // Initialize cache
-                    if let Err(e) = CacheUtil::init().await {
-                        print_error(&format!("Failed to initialize cache: {e}"));
-                        std::process::exit(1);
-                    }
-
-                    // Initialize ATAs
-                    if let Err(e) = initialize_atas(
-                        rpc_client.as_ref(),
-                        compute_unit_price,
-                        compute_unit_limit,
-                        chunk_size,
-                        fee_payer_key,
-                    )
-                    .await
-                    {
-                        print_error(&format!("Failed to initialize ATAs: {e}"));
-                        std::process::exit(1);
-                    }
-                    println!("Successfully initialized all payment ATAs");
+                    fee_payer_key,
+                )
+                .await
+                {
+                    print_error(&format!("Failed to initialize ATAs: {e}"));
+                    std::process::exit(1);
                 }
+                println!("Successfully initialized all payment ATAs");
             }
-        }
+        },
 
         #[cfg(feature = "docs")]
         Some(Commands::Openapi { output }) => {

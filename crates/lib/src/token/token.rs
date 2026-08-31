@@ -1553,12 +1553,7 @@ mod tests_token {
         let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
 
-        // Explanation (i.e. for case 1)
-        // With USDC price = 0.0075 SOL/USDC:
-        // 1. Lamports → SOL: 5,000 / 1,000,000,000 = 0.000005 SOL
-        // 2. SOL → USDC: 0.000005 SOL / 0.0075 SOL/USDC = 0.000666... USDC
-        // 3. USDC → Base units: 0.000666... USDC × 10^6 = 666.666... base units, ceil to 667
-
+        // Formula: ceil((lamports / LAMPORTS_PER_SOL) / price * 10^decimals)
         let test_cases = vec![
             // Low priority fees
             (5_000u64, 667u64, "low priority base case"),
@@ -1732,7 +1727,6 @@ mod tests_token {
         let destination_address = Pubkey::new_unique();
         let mint_address = Pubkey::new_unique();
 
-        // Create accounts without any blocked extensions - test source account first
         let source_account = TokenAccountMockBuilder::new().build_token2022();
 
         let rpc_client = RpcMockBuilder::new().with_account_info(&source_account).build();
@@ -1951,13 +1945,12 @@ mod tests_token {
                 &mint,
             );
 
-        // Create a mock ATA creation instruction for a different address
         let different_ata = Pubkey::new_unique();
         let ata_instruction = Instruction {
             program_id: ata_program_id,
             accounts: vec![
                 AccountMeta::new(funding_account, true),
-                AccountMeta::new(different_ata, false), // Different ATA
+                AccountMeta::new(different_ata, false),
                 AccountMeta::new_readonly(wallet_owner, false),
                 AccountMeta::new_readonly(mint, false),
                 AccountMeta::new_readonly(solana_system_interface::program::ID, false),
@@ -1990,9 +1983,8 @@ mod tests_token {
         let wallet_owner = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        // Create an instruction with the wrong program ID
         let wrong_program_instruction = Instruction {
-            program_id: Pubkey::new_unique(), // Not the ATA program
+            program_id: Pubkey::new_unique(),
             accounts: vec![
                 AccountMeta::new(Pubkey::new_unique(), true),
                 AccountMeta::new(target_address, false),

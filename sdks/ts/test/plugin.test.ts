@@ -18,7 +18,6 @@ import type {
     KoraPluginConfig,
 } from '../src/types/index.js';
 
-// Mock fetch globally
 const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
@@ -28,7 +27,6 @@ describe('Kora Kit Plugin', () => {
         endpoint: mockEndpoint,
     };
 
-    // Helper to mock successful RPC response
     const mockSuccessfulResponse = (result: unknown) => {
         mockFetch.mockResolvedValueOnce({
             json: jest.fn().mockResolvedValueOnce({
@@ -39,7 +37,6 @@ describe('Kora Kit Plugin', () => {
         });
     };
 
-    // Helper to mock error response
     const mockErrorResponse = (error: { code: number; message: string }) => {
         mockFetch.mockResolvedValueOnce({
             json: jest.fn().mockResolvedValueOnce({
@@ -176,7 +173,6 @@ describe('Kora Kit Plugin', () => {
 
                 const result: KitConfigResponse = await kora.getConfig();
 
-                // Verify type casting - these should be Address types
                 expect(result.fee_payers).toHaveLength(1);
                 expect(result.fee_payers[0]).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
 
@@ -238,7 +234,6 @@ describe('Kora Kit Plugin', () => {
 
                 const result: KitPayerSignerResponse = await kora.getPayerSigner();
 
-                // Type assertion - these should be Address types
                 const signerAddr: Address = result.signer_address;
                 const paymentAddr: Address = result.payment_address;
 
@@ -257,7 +252,6 @@ describe('Kora Kit Plugin', () => {
 
                 const result: KitBlockhashResponse = await kora.getBlockhash();
 
-                // Type assertion - should be Blockhash type
                 const hash: Blockhash = result.blockhash;
                 expect(hash).toBe('4NxM2D4kQcipkzMWBWQME5YSVnj5kT8QKA7rvb3rKLvE');
             });
@@ -290,7 +284,6 @@ describe('Kora Kit Plugin', () => {
 
                 const result: KitSupportedTokensResponse = await kora.getSupportedTokens();
 
-                // Type assertion - these should be Address types
                 expect(result.tokens).toHaveLength(2);
                 const token0: Address = result.tokens[0];
                 const token1: Address = result.tokens[1];
@@ -316,7 +309,6 @@ describe('Kora Kit Plugin', () => {
                     transaction: 'base64EncodedTransaction',
                 });
 
-                // Type assertions
                 const signerPubkey: Address = result.signer_pubkey;
                 const paymentAddr: Address = result.payment_address;
 
@@ -343,7 +335,6 @@ describe('Kora Kit Plugin', () => {
                     transactions: ['base64Tx1', 'base64Tx2', 'base64Tx3'],
                 });
 
-                // Type assertions
                 const signerPubkey: Address = result.signer_pubkey;
                 const paymentAddr: Address = result.payment_address;
 
@@ -367,7 +358,6 @@ describe('Kora Kit Plugin', () => {
                     transaction: 'base64EncodedTransaction',
                 });
 
-                // Type assertions - verify Kit types
                 const signedTx: Base64EncodedWireTransaction = result.signed_transaction;
                 const signerPubkey: Address = result.signer_pubkey;
 
@@ -393,7 +383,6 @@ describe('Kora Kit Plugin', () => {
                     transaction: 'base64EncodedTransaction',
                 });
 
-                // Type assertions - verify Kit types
                 const sig: Signature = result.signature;
                 const signedTx: Base64EncodedWireTransaction = result.signed_transaction;
                 const signerPubkey: Address = result.signer_pubkey;
@@ -417,7 +406,6 @@ describe('Kora Kit Plugin', () => {
                     transactions: ['base64Tx1', 'base64Tx2'],
                 });
 
-                // Type assertions - verify Kit types
                 const signedTxs: Base64EncodedWireTransaction[] = result.signed_transactions;
                 const signerPubkey: Address = result.signer_pubkey;
 
@@ -442,7 +430,6 @@ describe('Kora Kit Plugin', () => {
                     transactions: ['base64Tx1', 'base64Tx2'],
                 });
 
-                // Type assertions - verify Kit types
                 const signedTxs: Base64EncodedWireTransaction[] = result.signed_transactions;
                 const signerPubkey: Address = result.signer_pubkey;
 
@@ -475,7 +462,6 @@ describe('Kora Kit Plugin', () => {
                     transaction: testTx,
                 });
 
-                // Type assertions - verify Kit types
                 const originalTx: Base64EncodedWireTransaction = result.original_transaction;
                 const paymentToken: Address = result.payment_token;
                 const paymentAddr: Address = result.payment_address;
@@ -514,11 +500,9 @@ describe('Kora Kit Plugin', () => {
 
     describe('KoraApi Type Export', () => {
         it('should export KoraApi type correctly', () => {
-            // This test verifies the KoraApi type is correctly exported
             const plugin = koraPlugin(mockConfig);
             const client = plugin({});
 
-            // Type check - assign to KoraApi type
             const api: KoraApi = client.kora;
             expect(api).toBeDefined();
         });
@@ -563,7 +547,6 @@ describe('Kora Kit Plugin', () => {
         });
 
         it('should compose with other plugins', () => {
-            // Simulate another plugin that adds a different property
             const otherPlugin = <T extends object>(c: T) => ({
                 ...c,
                 other: { foo: () => 'bar' },
@@ -571,7 +554,6 @@ describe('Kora Kit Plugin', () => {
 
             const client = createClient().use(koraPlugin(mockConfig)).use(otherPlugin);
 
-            // Both plugins should be available
             expect(client.kora).toBeDefined();
             expect(client.other).toBeDefined();
             expect(typeof client.kora.getConfig).toBe('function');

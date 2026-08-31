@@ -1,10 +1,6 @@
 import { Instruction, type MicroLamports, type TransactionSigner } from '@solana/kit';
 
 /**
- * Request Types
- */
-
-/**
  * Parameters for signing a transaction.
  */
 export interface SignTransactionRequest {
@@ -125,10 +121,6 @@ export interface GetPaymentInstructionRequest {
     /** Base64-encoded transaction to estimate fees for */
     transaction: string;
 }
-
-/**
- * Response Types
- */
 
 /**
  * Response from signing a transaction.
@@ -257,10 +249,6 @@ export interface GetPaymentInstructionResponse {
     /** Public key of the payer signer */
     signer_address: string;
 }
-
-/**
- * Configuration Types
- */
 
 export type PriceSource = 'Jupiter' | 'Mock';
 
@@ -465,10 +453,6 @@ export interface FeePayerPolicy {
 }
 
 /**
- * RPC Types
- */
-
-/**
  * JSON-RPC error object.
  */
 export interface RpcError {
@@ -528,10 +512,6 @@ export interface KoraClientOptions {
     /** URL of the Kora RPC server */
     rpcUrl: string;
 }
-
-/**
- * Plugin Types - Kit-typed responses for the Kora plugin
- */
 
 import type {
     Address,
@@ -691,10 +671,6 @@ export interface KitValidationConfig {
     /** Token2022 configuration */
     token2022: Token2022Config;
 }
-
-/**
- * Kit Client Types
- */
 
 /**
  * Configuration for the {@link kora} bundle plugin.

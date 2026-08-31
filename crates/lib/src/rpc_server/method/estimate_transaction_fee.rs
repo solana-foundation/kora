@@ -90,7 +90,6 @@ pub async fn estimate_transaction_fee(
     let fee_in_lamports = fee_calculation.total_fee_lamports;
 
     #[allow(clippy::needless_borrow)]
-    // Calculate fee in token if requested
     let fee_in_token = FeeConfigUtil::calculate_fee_in_token(
         fee_in_lamports,
         request.fee_token.as_deref(),

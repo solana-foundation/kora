@@ -54,10 +54,8 @@ where
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
-        // Check if this is a metrics request
         let endpoint = self.endpoint.clone();
         if req.uri().path() == endpoint && req.method() == http::Method::GET {
-            // Return metrics directly
             Box::pin(async move {
                 match crate::metrics::gather() {
                     Ok(metrics) => Ok(build_response_with_graceful_error(
@@ -76,7 +74,6 @@ where
                 }
             })
         } else {
-            // Pass through to inner service
             let mut inner = self.inner.clone();
             Box::pin(async move { inner.call(req).await })
         }

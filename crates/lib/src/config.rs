@@ -24,7 +24,6 @@ use crate::{
     },
 };
 
-// Re-export usage limit configs
 pub use crate::usage_limit::{UsageLimitConfig, UsageLimitRuleConfig};
 
 #[derive(Clone, Deserialize)]
@@ -464,8 +463,7 @@ pub enum TransferHookPolicy {
 }
 
 impl Token2022Config {
-    /// Initialize and parse extension strings into ExtensionTypes
-    /// This should be called after deserialization to populate the cached fields
+    /// Must be called after deserialization to populate the cached extension fields.
     pub fn initialize(&mut self) -> Result<(), String> {
         let mut mint_extensions = Vec::new();
         for name in &self.blocked_mint_extensions {
@@ -504,17 +502,14 @@ impl Token2022Config {
         Ok(())
     }
 
-    /// Get all blocked mint extensions as ExtensionType
     pub fn get_blocked_mint_extensions(&self) -> &[ExtensionType] {
         self.parsed_blocked_mint_extensions.as_deref().unwrap_or(&[])
     }
 
-    /// Get all blocked account extensions as ExtensionType
     pub fn get_blocked_account_extensions(&self) -> &[ExtensionType] {
         self.parsed_blocked_account_extensions.as_deref().unwrap_or(&[])
     }
 
-    /// Check if a mint extension is blocked
     pub fn is_mint_extension_blocked(&self, ext: ExtensionType) -> bool {
         match &self.parsed_blocked_mint_extensions {
             Some(exts) => exts.contains(&ext),
@@ -525,7 +520,6 @@ impl Token2022Config {
         }
     }
 
-    /// Check if an account extension is blocked
     pub fn is_account_extension_blocked(&self, ext: ExtensionType) -> bool {
         match &self.parsed_blocked_account_extensions {
             Some(exts) => exts.contains(&ext),
@@ -576,7 +570,6 @@ impl EnabledMethods {
         .into_iter()
     }
 
-    /// Returns a Vec of enabled JSON-RPC method names
     pub fn get_enabled_method_names(&self) -> Vec<String> {
         let mut methods = Vec::new();
         if self.liveness {
@@ -886,7 +879,6 @@ impl Config {
             ))
         })?;
 
-        // Initialize Token2022Config to parse and cache extensions
         config.validation.token_2022.initialize().map_err(|e| {
             KoraError::InternalServerError(format!(
                 "Failed to initialize Token2022 config: {}",
@@ -1071,9 +1063,7 @@ mod tests {
         let config = ConfigBuilder::new().with_free_price().build_config().unwrap();
 
         match &config.validation.price.model {
-            PriceModel::Free => {
-                // Test passed
-            }
+            PriceModel::Free => {}
             _ => panic!("Expected Free price model"),
         }
     }
@@ -1082,7 +1072,6 @@ mod tests {
     fn test_parse_missing_price_config() {
         let config = ConfigBuilder::new().build_config().unwrap();
 
-        // Should default to Margin with 0.0 margin
         match &config.validation.price.model {
             PriceModel::Margin { margin } => {
                 assert_eq!(*margin, 0.0);
@@ -1216,7 +1205,6 @@ rate_limit = 1
             .build_config()
             .unwrap();
 
-        // Test mint extension blocking
         assert!(config
             .validation
             .token_2022
@@ -1227,7 +1215,6 @@ rate_limit = 1
             .token_2022
             .is_mint_extension_blocked(ExtensionType::NonTransferable));
 
-        // Test account extension blocking
         assert!(config
             .validation
             .token_2022
@@ -1331,9 +1318,7 @@ allow_create = true
 
     #[test]
     fn test_signing_config_with_cache_and_methods() {
-        // This test ensures that signing configuration fields are correctly parsed
-        // even when other sub-sections (cache, enabled_methods) are present.
-        // This acts as a regression test for TOML serialization ordering.
+        // Regression test: signing fields must parse correctly regardless of TOML section ordering.
         let config = ConfigBuilder::new()
             .with_signing_config(15, 5)
             .with_cache_config(Some("http://localhost:6379"), true, 60, 3600)
@@ -1344,7 +1329,6 @@ allow_create = true
         assert_eq!(config.kora.sign_timeout_seconds, 15);
         assert_eq!(config.kora.sign_max_retries, 5);
 
-        // Verify other sections to ensure they were also parsed correctly
         assert_eq!(config.kora.cache.url, Some("http://localhost:6379".to_string()));
         assert!(config.kora.cache.enabled);
 

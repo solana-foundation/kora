@@ -114,7 +114,6 @@ async fn test_transaction_lifetime_limit() {
     let user_id = sender.pubkey().to_string();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
 
-    // Send first 4 transactions (windowed limit)
     for i in 1..=4 {
         let tx_b64 = ctx
             .transaction_builder()
@@ -136,10 +135,9 @@ async fn test_transaction_lifetime_limit() {
         response.assert_success();
     }
 
-    // Wait for windowed limit to reset (30 seconds + buffer)
+    // Wait for the windowed limit to reset (30s window plus buffer).
     tokio::time::sleep(tokio::time::Duration::from_secs(31)).await;
 
-    // Send 5th transaction - should succeed (within lifetime limit of 5)
     let tx_b64 = ctx
         .transaction_builder()
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())

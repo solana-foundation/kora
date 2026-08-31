@@ -47,7 +47,6 @@ pub async fn make_auth_request(headers: Option<Vec<(&str, &str)>>) -> reqwest::R
     request.send().await.expect("Request should complete")
 }
 
-/// Helper to make JSON-RPC request with custom headers and custom body to test server
 pub async fn make_auth_request_with_body(
     body: &Value,
     headers: Option<Vec<(&str, &str)>>,
@@ -76,7 +75,6 @@ pub fn get_timestamp() -> String {
         .to_string()
 }
 
-/// Helper to create HMAC signature
 pub fn create_hmac_signature(secret: &str, timestamp: &str, body: &str) -> String {
     let message = format!("{timestamp}{body}");
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();

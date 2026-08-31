@@ -192,10 +192,6 @@ async fn test_sign_transaction_with_lighthouse_v0() {
     );
 }
 
-// **************************************************************************************
-// Bundle Tests
-// **************************************************************************************
-
 #[tokio::test]
 async fn test_sign_bundle_with_lighthouse() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
@@ -264,11 +260,6 @@ async fn test_sign_bundle_with_lighthouse() {
     }
 }
 
-// **************************************************************************************
-// End-to-End Tests (Full Flow with Client Re-signing)
-// **************************************************************************************
-
-/// End-to-end test: client signs → Kora adds lighthouse → client re-signs → simulate succeeds
 #[tokio::test]
 async fn test_lighthouse_end_to_end_with_client_resign() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
@@ -279,7 +270,6 @@ async fn test_lighthouse_end_to_end_with_client_resign() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    // Step 1: Build transaction with sender signature
     let base64_transaction = ctx
         .transaction_builder()
         .with_fee_payer(fee_payer)
@@ -299,7 +289,6 @@ async fn test_lighthouse_end_to_end_with_client_resign() {
         .expect("Failed to decode original transaction");
     let original_ix_count = original_tx.message.instructions().len();
 
-    // Step 2: Call signTransaction (Kora adds lighthouse and signs as fee payer)
     let response: serde_json::Value = ctx
         .rpc_call("signTransaction", rpc_params![base64_transaction])
         .await
@@ -311,7 +300,6 @@ async fn test_lighthouse_end_to_end_with_client_resign() {
     let mut signed_tx = TransactionUtil::decode_b64_transaction(signed_tx_b64)
         .expect("Failed to decode signed transaction");
 
-    // Verify lighthouse assertion was added
     assert_eq!(
         signed_tx.message.instructions().len(),
         original_ix_count + 1,
@@ -322,10 +310,8 @@ async fn test_lighthouse_end_to_end_with_client_resign() {
         "Last instruction should be lighthouse program"
     );
 
-    // Step 3: Client re-signs (required because message changed)
     resign_transaction(&mut signed_tx, &sender).expect("Failed to re-sign transaction");
 
-    // Step 4: Simulate with sig_verify=true to verify both signatures are valid
     let sim_result = rpc_client
         .simulate_transaction_with_config(
             &signed_tx,
@@ -356,7 +342,6 @@ async fn test_lighthouse_end_to_end_v0_with_client_resign() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    // Step 1: Build V0 transaction with sender signature
     let base64_transaction = ctx
         .v0_transaction_builder()
         .with_fee_payer(fee_payer)
@@ -383,7 +368,6 @@ async fn test_lighthouse_end_to_end_v0_with_client_resign() {
         .expect("Failed to decode original V0 transaction");
     let original_ix_count = original_tx.message.instructions().len();
 
-    // Step 2: Call signTransaction (Kora adds lighthouse and signs as fee payer)
     let response: serde_json::Value = ctx
         .rpc_call("signTransaction", rpc_params![base64_transaction])
         .await
@@ -395,7 +379,6 @@ async fn test_lighthouse_end_to_end_v0_with_client_resign() {
     let mut signed_tx = TransactionUtil::decode_b64_transaction(signed_tx_b64)
         .expect("Failed to decode signed V0 transaction");
 
-    // Verify lighthouse assertion was added
     assert_eq!(
         signed_tx.message.instructions().len(),
         original_ix_count + 1,
@@ -406,10 +389,8 @@ async fn test_lighthouse_end_to_end_v0_with_client_resign() {
         "Last instruction should be lighthouse program for V0"
     );
 
-    // Step 3: Client re-signs (required because message changed)
     resign_transaction(&mut signed_tx, &sender).expect("Failed to re-sign V0 transaction");
 
-    // Step 4: Simulate with sig_verify=true to verify both signatures are valid
     let sim_result = rpc_client
         .simulate_transaction_with_config(
             &signed_tx,
@@ -487,7 +468,6 @@ async fn test_sign_and_send_transaction_no_lighthouse_assertion() {
     );
 }
 
-/// Verify that signAndSendBundle does NOT add lighthouse assertion
 #[tokio::test]
 async fn test_sign_and_send_bundle_no_lighthouse_assertion() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
