@@ -1,3 +1,7 @@
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+#[cfg(not(unix))]
+use std::os::windows::fs::OpenOptionsExt;
 use std::{fs, io::Write, path::Path};
 
 use anyhow::{Context, Result};
@@ -33,7 +37,6 @@ impl DeployState {
 
         #[cfg(unix)]
         {
-            use std::os::unix::fs::OpenOptionsExt;
             let mut options = fs::OpenOptions::new();
             options.write(true).create(true).truncate(true).mode(0o600);
             let mut file = options.open(&temp_path).with_context(|| {
@@ -48,7 +51,6 @@ impl DeployState {
         {
             // share_mode(0) limits concurrent access, but does not enforce
             // file-level ACL restrictions (unlike Unix 0o600).
-            use std::os::windows::fs::OpenOptionsExt;
             let mut file = fs::OpenOptions::new()
                 .write(true)
                 .create(true)
