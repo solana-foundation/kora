@@ -10,7 +10,7 @@ runs:
       run: echo "week=$(date +'%Y-W%U')" >> $GITHUB_OUTPUT
 
     - name: Cache Solana CLI installation
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.local/share/solana
         key: solana-cli-v4.2.1-${{ runner.os }}-${{ steps.week.outputs.week }}
