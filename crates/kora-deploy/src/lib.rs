@@ -482,6 +482,7 @@ async fn finalize_deploy(
     Ok(())
 }
 
+// TODO: upgrade() has no state persistence, resume support, or buffer cleanup on failure.
 pub async fn upgrade(cfg: &UpgradeConfig<'_>) -> Result<Signature> {
     let http = reqwest::Client::builder().timeout(Duration::from_secs(60)).build()?;
     let rpc = Arc::new(RpcClient::new_with_commitment(
