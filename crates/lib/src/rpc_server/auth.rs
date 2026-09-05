@@ -7,30 +7,51 @@ use crate::{
 use hmac::{Hmac, KeyInit, Mac};
 use http::{Request, Response, StatusCode};
 use jsonrpsee::server::logger::Body;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
+
+fn hash_key(key: &[u8]) -> [u8; 32] {
+    Sha256::digest(key).into()
+}
+
+#[derive(Clone)]
+pub struct ClientIdentity(pub String);
+
+impl std::fmt::Debug for ClientIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some((prefix, rest)) = self.0.split_once(':') {
+            if rest.is_empty() {
+                write!(f, "ClientIdentity({}:)", prefix)
+            } else {
+                write!(f, "ClientIdentity({}:***)", prefix)
+            }
+        } else {
+            write!(f, "ClientIdentity(***)")
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct ApiKeyAuthLayer {
-    api_key: String,
+    api_keys: Vec<String>,
 }
 
 impl ApiKeyAuthLayer {
-    pub fn new(api_key: String) -> Self {
-        Self { api_key }
+    pub fn new(api_keys: Vec<String>) -> Self {
+        Self { api_keys }
     }
 }
 
 #[derive(Clone)]
 pub struct ApiKeyAuthService<S> {
     inner: S,
-    api_key: String,
+    api_keys: Vec<String>,
 }
 
 impl<S> tower::Layer<S> for ApiKeyAuthLayer {
     type Service = ApiKeyAuthService<S>;
     fn layer(&self, inner: S) -> Self::Service {
-        ApiKeyAuthService { inner, api_key: self.api_key.clone() }
+        ApiKeyAuthService { inner, api_keys: self.api_keys.clone() }
     }
 }
 
@@ -53,7 +74,7 @@ where
     }
 
     fn call(&mut self, request: Request<Body>) -> Self::Future {
-        let api_key = self.api_key.clone();
+        let api_keys = self.api_keys.clone();
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
@@ -71,10 +92,24 @@ where
                 }
             }
 
-            let req = Request::from_parts(parts, Body::from(body_bytes));
+            let mut req = Request::from_parts(parts, Body::from(body_bytes));
             if let Some(provided_key) = req.headers().get(X_API_KEY) {
-                // Constant-time comparison prevents timing attacks
-                if provided_key.as_bytes().ct_eq(api_key.as_bytes()).into() {
+                let mut is_valid = false;
+                let mut matched_id = String::new();
+                let provided_hash = hash_key(provided_key.as_bytes());
+
+                for configured_key in api_keys.iter() {
+                    let configured_hash = hash_key(configured_key.as_bytes());
+                    let matches: bool = provided_hash.ct_eq(&configured_hash).into();
+
+                    if matches {
+                        is_valid = true;
+                        matched_id = hex::encode(&configured_hash[..4]);
+                    }
+                }
+
+                if is_valid {
+                    req.extensions_mut().insert(ClientIdentity(format!("apikey:{}", matched_id)));
                     return inner.call(req).await;
                 }
             }
@@ -231,7 +266,7 @@ mod tests {
     use jsonrpsee::server::logger::Body;
     use sha2::Sha256;
     use std::{
-        future::Ready,
+        future::{self, Ready},
         task::{Context, Poll},
     };
     use tower::{Layer, Service, ServiceExt};
@@ -248,14 +283,18 @@ mod tests {
             Poll::Ready(Ok(()))
         }
 
-        fn call(&mut self, _: Request<Body>) -> Self::Future {
-            std::future::ready(Ok(Response::builder().status(200).body(Body::empty()).unwrap()))
+        fn call(&mut self, req: Request<Body>) -> Self::Future {
+            let mut res = Response::builder().status(200).body(Body::empty()).unwrap();
+            if let Some(id) = req.extensions().get::<ClientIdentity>() {
+                res.extensions_mut().insert(id.clone());
+            }
+            future::ready(Ok(res))
         }
     }
 
     #[tokio::test]
     async fn test_api_key_auth_valid_key() {
-        let layer = ApiKeyAuthLayer::new("test-key".to_string());
+        let layer = ApiKeyAuthLayer::new(vec!["test-key".to_string()]);
         let mut service = layer.layer(MockService);
         let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
         let request = Request::builder()
@@ -266,11 +305,16 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+        let id = response
+            .extensions()
+            .get::<ClientIdentity>()
+            .expect("ClientIdentity should be present");
+        assert_eq!(id.0, "apikey:62af8704");
     }
 
     #[tokio::test]
     async fn test_api_key_auth_invalid_key() {
-        let layer = ApiKeyAuthLayer::new("test-key".to_string());
+        let layer = ApiKeyAuthLayer::new(vec!["test-key".to_string()]);
         let mut service = layer.layer(MockService);
         let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
         let request = Request::builder()
@@ -285,7 +329,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_api_key_auth_missing_header() {
-        let layer = ApiKeyAuthLayer::new("test-key".to_string());
+        let layer = ApiKeyAuthLayer::new(vec!["test-key".to_string()]);
         let mut service = layer.layer(MockService);
         let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
         let request = Request::builder().uri("/test").body(Body::from(body)).unwrap();
@@ -296,7 +340,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_api_key_auth_liveness_bypass() {
-        let layer = ApiKeyAuthLayer::new("test-key".to_string());
+        let layer = ApiKeyAuthLayer::new(vec!["test-key".to_string()]);
         let mut service = layer.layer(MockService);
         let liveness_body = r#"{"jsonrpc":"2.0","method":"liveness","params":[],"id":1}"#;
         let request = Request::builder()
@@ -445,5 +489,41 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_api_key_auth_variable_lengths() {
+        let keys = vec![
+            "short".to_string(),
+            "medium-length-key-20".to_string(),
+            "very-long-key-50-characters-.......................".to_string(),
+        ];
+        let layer = ApiKeyAuthLayer::new(keys);
+        let mut service = layer.layer(MockService);
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/test")
+            .header(X_API_KEY, "medium-length-key-20")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = service.ready().await.unwrap().call(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let id = response
+            .extensions()
+            .get::<ClientIdentity>()
+            .expect("ClientIdentity should be present");
+        assert_eq!(id.0, "apikey:091f676a");
+
+        let request2 = Request::builder()
+            .method(Method::POST)
+            .uri("/test")
+            .header(X_API_KEY, "invalid-key-that-is-somewhat-long-but-wrong")
+            .body(Body::empty())
+            .unwrap();
+
+        let response2 = service.ready().await.unwrap().call(request2).await.unwrap();
+        assert_eq!(response2.status(), StatusCode::UNAUTHORIZED);
     }
 }

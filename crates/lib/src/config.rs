@@ -1,8 +1,8 @@
 use http::HeaderValue;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use solana_sdk::pubkey::Pubkey;
 use spl_token_2022_interface::extension::ExtensionType;
-use std::{fs, path::Path, str::FromStr};
+use std::{env, fs, path::Path, str::FromStr};
 use toml;
 use url::Url;
 use utoipa::ToSchema;
@@ -859,10 +859,55 @@ impl Default for LighthouseConfig {
     }
 }
 
+fn deserialize_api_keys<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum ApiKeys {
+        String(String),
+        Vec(Vec<String>),
+    }
+
+    let opt = Option::<ApiKeys>::deserialize(deserializer)?;
+    match opt {
+        Some(ApiKeys::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                Ok(None)
+            } else {
+                log::warn!("DEPRECATION WARNING: 'api_key' as a single string is deprecated. Please migrate to using 'api_keys' as an array in your configuration.");
+                Ok(Some(vec![trimmed.to_string()]))
+            }
+        }
+        Some(ApiKeys::Vec(v)) => {
+            let filtered: Vec<String> = v
+                .into_iter()
+                .filter_map(|s| {
+                    let trimmed = s.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+                .collect();
+            if filtered.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(filtered))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct AuthConfig {
-    pub api_key: Option<String>,
+    #[serde(alias = "api_key", deserialize_with = "deserialize_api_keys")]
+    pub api_keys: Option<Vec<String>>,
     pub hmac_secret: Option<String>,
     pub recaptcha_secret: Option<String>,
     pub recaptcha_score_threshold: f64,
@@ -873,7 +918,7 @@ pub struct AuthConfig {
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            api_key: None,
+            api_keys: None,
             hmac_secret: None,
             recaptcha_secret: None,
             recaptcha_score_threshold: DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
@@ -899,8 +944,12 @@ impl AuthConfig {
             .or_else(|| Self::normalize_optional_secret(config_value.map(str::to_string)))
     }
 
-    pub(crate) fn resolved_api_key(&self) -> Option<String> {
-        Self::resolve_secret(Self::API_KEY_ENV, self.api_key.as_deref())
+    pub(crate) fn resolved_api_keys(&self) -> Option<Vec<String>> {
+        if let Some(env_key) = Self::normalize_optional_secret(env::var(Self::API_KEY_ENV).ok()) {
+            Some(vec![env_key])
+        } else {
+            self.api_keys.clone()
+        }
     }
 
     pub(crate) fn resolved_hmac_secret(&self) -> Option<String> {
@@ -913,29 +962,56 @@ impl AuthConfig {
 
     /// Whether API-key or HMAC auth is in effect after env-first resolution (what the server enforces).
     pub(crate) fn has_resolved_auth(&self) -> bool {
-        self.resolved_api_key().is_some() || self.resolved_hmac_secret().is_some()
+        self.resolved_api_keys().is_some() || self.resolved_hmac_secret().is_some()
     }
 
     /// Auth fields where a non-empty environment variable overrides a *different* non-empty
-    /// kora.toml value. Returns `(env_var, config_field_label)`; never returns secret contents.
-    pub(crate) fn env_overridden_fields(&self) -> Vec<(&'static str, &'static str)> {
-        [
-            (Self::API_KEY_ENV, "[kora.auth].api_key", self.api_key.as_deref()),
+    /// kora.toml value. Returns fully-formed warning messages.
+    pub(crate) fn env_overridden_fields(&self) -> Vec<String> {
+        let mut warnings = Vec::new();
+
+        let standard_warning = |env_var: &str, field: &str| {
+            format!(
+                "⚠️  SECURITY: environment variable {} overrides {}. The environment \
+                 value takes precedence at runtime; if you rotated the secret in kora.toml, the \
+                 stale environment value is still in effect. Unset {} or align it with the config.",
+                env_var, field, env_var
+            )
+        };
+
+        if let Some(env_val) = Self::normalize_optional_secret(env::var(Self::API_KEY_ENV).ok()) {
+            if let Some(cfg_keys) = &self.api_keys {
+                if cfg_keys.len() > 1 {
+                    warnings.push(format!(
+                        "⚠️  SECURITY: environment variable {} overrides ALL {} configured keys \
+                         in [kora.auth].api_keys. The environment value takes precedence at runtime. \
+                         Unset {} to use the multiple configured keys.",
+                        Self::API_KEY_ENV,
+                        cfg_keys.len(),
+                        Self::API_KEY_ENV
+                    ));
+                } else if cfg_keys.len() == 1 && cfg_keys[0] != env_val {
+                    warnings.push(standard_warning(Self::API_KEY_ENV, "[kora.auth].api_keys"));
+                }
+            }
+        }
+
+        for (env_var, label, config_value) in [
             (Self::HMAC_SECRET_ENV, "[kora.auth].hmac_secret", self.hmac_secret.as_deref()),
             (
                 Self::RECAPTCHA_SECRET_ENV,
                 "[kora.auth].recaptcha_secret",
                 self.recaptcha_secret.as_deref(),
             ),
-        ]
-        .into_iter()
-        .filter(|(env_var, _, config_value)| {
+        ] {
             let env_value = Self::normalize_optional_secret(std::env::var(env_var).ok());
             let config_value = Self::normalize_optional_secret(config_value.map(str::to_string));
-            matches!((env_value, config_value), (Some(env), Some(cfg)) if env != cfg)
-        })
-        .map(|(env_var, label, _)| (env_var, label))
-        .collect()
+            if matches!((env_value, config_value), (Some(env), Some(cfg)) if env != cfg) {
+                warnings.push(standard_warning(env_var, label));
+            }
+        }
+
+        warnings
     }
 }
 
@@ -1565,5 +1641,47 @@ allow_create = true
             )
             .build_config();
         assert_unknown_field_error(result, "unknown_rule_field");
+    }
+
+    #[test]
+    fn test_legacy_api_key_backward_compatibility() {
+        let toml_str = r#"
+        api_key = "single-key"
+        "#;
+        let auth: AuthConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(auth.api_keys, Some(vec!["single-key".to_string()]));
+    }
+
+    #[test]
+    fn test_api_keys_with_empty_strings_filtered() {
+        let toml_str = r#"
+        api_keys = ["valid-key", "  ", ""]
+        "#;
+        let auth: AuthConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(auth.api_keys, Some(vec!["valid-key".to_string()]));
+    }
+
+    #[test]
+    fn test_api_keys_all_empty_strings_filtered() {
+        let toml_str = r#"
+        api_keys = ["", "  "]
+        "#;
+        let auth: AuthConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(auth.api_keys, None);
+        assert_eq!(auth.has_resolved_auth(), false);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_env_overridden_fields_multiple_keys_backup_dropped() {
+        let mut auth = AuthConfig::default();
+        auth.api_keys = Some(vec!["key1".to_string(), "key2".to_string()]);
+
+        env::set_var("KORA_API_KEY", "env-key");
+
+        let warnings = auth.env_overridden_fields();
+        assert!(warnings.iter().any(|w| w.contains("overrides ALL 2 configured keys")));
+
+        env::remove_var("KORA_API_KEY");
     }
 }
