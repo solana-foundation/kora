@@ -202,7 +202,9 @@ impl ConfigMockBuilder {
     }
 
     pub fn with_api_key_auth(mut self, api_key: String) -> Self {
-        self.config.kora.auth.api_key = Some(api_key);
+        let mut keys = self.config.kora.auth.api_keys.unwrap_or_default();
+        keys.push(api_key);
+        self.config.kora.auth.api_keys = Some(keys);
         self
     }
 
@@ -531,7 +533,7 @@ impl AuthConfigBuilder {
     pub fn new() -> Self {
         Self {
             config: AuthConfig {
-                api_key: None,
+                api_keys: None,
                 hmac_secret: None,
                 recaptcha_secret: None,
                 recaptcha_score_threshold: crate::constant::DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
@@ -548,8 +550,15 @@ impl AuthConfigBuilder {
         self.config
     }
 
+    pub fn with_api_keys(mut self, api_keys: Vec<String>) -> Self {
+        self.config.api_keys = Some(api_keys);
+        self
+    }
+
     pub fn with_api_key(mut self, api_key: String) -> Self {
-        self.config.api_key = Some(api_key);
+        let mut keys = self.config.api_keys.unwrap_or_default();
+        keys.push(api_key);
+        self.config.api_keys = Some(keys);
         self
     }
 
@@ -559,7 +568,9 @@ impl AuthConfigBuilder {
     }
 
     pub fn with_both_auth(mut self, api_key: String, hmac_secret: String) -> Self {
-        self.config.api_key = Some(api_key);
+        let mut keys = self.config.api_keys.unwrap_or_default();
+        keys.push(api_key);
+        self.config.api_keys = Some(keys);
         self.config.hmac_secret = Some(hmac_secret);
         self
     }
