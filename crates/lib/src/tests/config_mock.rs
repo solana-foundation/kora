@@ -5,7 +5,7 @@ use crate::{
         FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, LighthouseConfig, MetricsConfig,
         NonceInstructionPolicy, PluginsConfig, ProgramsConfig, SplTokenConfig,
         SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
-        Token2022InstructionPolicy, ValidationConfig,
+        Token2022InstructionPolicy, ValidationConfig, CORS_WILDCARD,
     },
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
     fee::price::{PriceConfig, PriceModel},
@@ -101,6 +101,7 @@ impl ConfigMockBuilder {
                 },
                 kora: KoraConfig {
                     rate_limit: 100,
+                    cors_allow_origins: vec![CORS_WILDCARD.to_string()],
                     max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                     enabled_methods: EnabledMethods::default(),
                     auth: AuthConfig::default(),
@@ -393,6 +394,7 @@ impl KoraConfigBuilder {
         Self {
             config: KoraConfig {
                 rate_limit: 100,
+                cors_allow_origins: vec![CORS_WILDCARD.to_string()],
                 max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
@@ -417,6 +419,11 @@ impl KoraConfigBuilder {
 
     pub fn build(self) -> KoraConfig {
         self.config
+    }
+
+    pub fn with_cors_allow_origins(mut self, origins: Vec<String>) -> Self {
+        self.config.cors_allow_origins = origins;
+        self
     }
 
     pub fn with_rate_limit(mut self, rate_limit: u64) -> Self {

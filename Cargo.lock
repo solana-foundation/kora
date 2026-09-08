@@ -4021,6 +4021,7 @@ dependencies = [
  "tower-http 0.3.5",
  "tracing",
  "tracing-subscriber",
+ "url",
  "utoipa",
  "vaultrs",
  "wincode",

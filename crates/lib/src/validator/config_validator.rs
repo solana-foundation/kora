@@ -3,7 +3,8 @@ use std::{collections::HashSet, path::Path, str::FromStr};
 use crate::{
     admin::token_util::find_missing_atas,
     config::{
-        FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy, ValidationConfig,
+        classify_cors_origins, CorsOriginsClassification, FeePayerPolicy, SplTokenConfig,
+        Token2022Config, TransferHookPolicy, ValidationConfig,
     },
     constant::{
         BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_ID, LOADER_V4_PROGRAM_ID,
@@ -423,6 +424,28 @@ impl ConfigValidator {
 
         if config.kora.rate_limit == 0 {
             warnings.push("Rate limit is set to 0 - this will block all requests".to_string());
+        }
+
+        // Validate CORS origins
+        match classify_cors_origins(&config.kora.cors_allow_origins) {
+            CorsOriginsClassification::Empty => {
+                warnings.push(
+                    "cors_allow_origins is empty - all cross-origin requests will be blocked"
+                        .to_string(),
+                );
+            }
+            CorsOriginsClassification::Wildcard { has_redundant } => {
+                if has_redundant {
+                    warnings.push("cors_allow_origins contains '*' alongside specific origin(s). The specific origin(s) are redundant and will be silently ignored.".to_string());
+                }
+            }
+            CorsOriginsClassification::AllInvalid => {
+                warnings.push("cors_allow_origins contains no valid origin(s) (must be e.g., 'https://your-app.com') - all cross-origin requests will be blocked".to_string());
+            }
+            CorsOriginsClassification::ValidWithSomeInvalid { invalid_origins, .. } => {
+                warnings.push(format!("cors_allow_origins contains {} invalid origin(s) that will be silently filtered out at runtime", invalid_origins.len()));
+            }
+            CorsOriginsClassification::AllValid { .. } => {}
         }
 
         if let Some(payment_address) = &config.kora.payment_address {
@@ -949,7 +972,7 @@ mod tests {
             KoraConfig, LighthouseConfig, MetricsConfig, NonceInstructionPolicy, PluginsConfig,
             ProgramsConfig, SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
             Token2022InstructionPolicy, TransactionPluginType, TransferHookPolicy,
-            UsageLimitConfig, ValidationConfig,
+            UsageLimitConfig, ValidationConfig, CORS_WILDCARD,
         },
         constant::{DEFAULT_MAX_REQUEST_BODY_SIZE, LIGHTHOUSE_PROGRAM_ID},
         fee::price::PriceConfig,
@@ -1370,6 +1393,7 @@ mod tests {
             },
             kora: KoraConfig {
                 rate_limit: 0,
+                cors_allow_origins: vec![],
                 max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods {
                     liveness: false,
@@ -1400,7 +1424,7 @@ mod tests {
             metrics: MetricsConfig::default(),
         };
 
-        let _ = update_config(config);
+        let _ = update_config(config.clone());
 
         let rpc_client = RpcClient::new_with_commitment(
             "http://localhost:8899".to_string(),
@@ -1412,11 +1436,55 @@ mod tests {
 
         assert!(!warnings.is_empty());
         assert!(warnings.iter().any(|w| w.contains("Rate limit is set to 0")));
+        assert!(warnings.iter().any(|w| w
+            .contains("cors_allow_origins is empty - all cross-origin requests will be blocked")));
         assert!(warnings.iter().any(|w| w.contains("All rpc methods are disabled")));
         assert!(warnings.iter().any(|w| w.contains("Max allowed lamports is 0")));
         assert!(warnings.iter().any(|w| w.contains("Max signatures is 0")));
         assert!(warnings.iter().any(|w| w.contains("Using Mock price source")));
         assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
+
+        // Test partially invalid CORS origins
+        let mut config_cors = config.clone();
+        config_cors.kora.cors_allow_origins =
+            vec!["https://valid.com".to_string(), "invalid\norigin".to_string()];
+        let _ = update_config(config_cors);
+
+        let result_cors = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        let warnings_cors = result_cors.unwrap();
+        assert!(warnings_cors.iter().any(|w| w.contains(
+            "cors_allow_origins contains 1 invalid origin(s) that will be silently filtered out"
+        )));
+
+        // Test wildcard with redundant specific origin(s)
+        let mut config_cors_wildcard = config.clone();
+        config_cors_wildcard.kora.cors_allow_origins =
+            vec![CORS_WILDCARD.to_string(), "https://redundant.com".to_string()];
+        let _ = update_config(config_cors_wildcard);
+
+        let result_cors_wildcard = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        let warnings_cors_wildcard = result_cors_wildcard.unwrap();
+        assert!(warnings_cors_wildcard
+            .iter()
+            .any(|w| w.contains("cors_allow_origins contains '*' alongside specific origin(s)")));
+
+        // Test all invalid CORS origins
+        let mut config_cors_all_invalid = config.clone();
+        config_cors_all_invalid.kora.cors_allow_origins = vec![
+            "invalid\n1".to_string(),
+            "https://your-app.com/".to_string(),
+            "https://example.com:badport".to_string(),
+            "https://user:pass@example.com".to_string(),
+            "https://[not-ipv6]".to_string(),
+        ];
+        let _ = update_config(config_cors_all_invalid);
+
+        let result_cors_all_invalid =
+            ConfigValidator::validate_with_result(&rpc_client, true).await;
+        let warnings_cors_all_invalid = result_cors_all_invalid.unwrap();
+        assert!(warnings_cors_all_invalid
+            .iter()
+            .any(|w| w.contains("cors_allow_origins contains no valid origin(s) (must be e.g., 'https://your-app.com') - all cross-origin requests will be blocked")));
     }
 
     #[tokio::test]

@@ -17,6 +17,7 @@ name = "update-config"
 path = "src/metrics/bin/update-config.rs"
 
 [dependencies]
+url = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

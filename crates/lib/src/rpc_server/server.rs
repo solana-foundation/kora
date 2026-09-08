@@ -1,5 +1,5 @@
 use crate::{
-    config::AuthConfig,
+    config::{classify_cors_origins, AuthConfig, CorsOriginsClassification},
     constant::{X_API_KEY, X_HMAC_SIGNATURE, X_RECAPTCHA_TOKEN, X_TIMESTAMP},
     metrics::run_metrics_server_if_required,
     rpc_server::{
@@ -19,15 +19,15 @@ use crate::state::get_config;
 
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
-use http::{header, Method};
+use http::{header, HeaderValue, Method};
 use jsonrpsee::{
     server::{middleware::proxy_get_request::ProxyGetRequestLayer, ServerBuilder, ServerHandle},
     RpcModule,
 };
-use std::{net::SocketAddr, time::Duration};
+use std::{iter::empty, net::SocketAddr, time::Duration};
 use tokio::task::JoinHandle;
 use tower::limit::RateLimitLayer;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 pub struct ServerHandles {
     pub rpc_handle: ServerHandle,
@@ -109,6 +109,32 @@ fn get_value_by_priority(env_var: &str, config_value: Option<String>) -> Option<
     AuthConfig::resolve_secret(env_var, config_value.as_deref())
 }
 
+fn build_allow_origin(origins: &[String]) -> AllowOrigin {
+    match classify_cors_origins(origins) {
+        CorsOriginsClassification::Empty => {
+            log::warn!("cors_allow_origins is empty. All cross-origin requests will be blocked.");
+            AllowOrigin::list(empty::<HeaderValue>())
+        }
+        CorsOriginsClassification::Wildcard { has_redundant } => {
+            if has_redundant {
+                log::warn!("cors_allow_origins contains '*' alongside specific origin(s). The specific origin(s) are redundant and will be silently ignored.");
+            }
+            AllowOrigin::any()
+        }
+        CorsOriginsClassification::AllInvalid => {
+            log::warn!("cors_allow_origins contains no valid origin(s) (must be e.g., 'https://your-app.com'). All cross-origin requests will be blocked.");
+            AllowOrigin::list(empty::<HeaderValue>())
+        }
+        CorsOriginsClassification::ValidWithSomeInvalid { valid_origins, invalid_origins } => {
+            for o in invalid_origins {
+                log::warn!("Invalid CORS origin '{}': Must be a valid web origin (e.g., 'https://your-app.com').", o);
+            }
+            AllowOrigin::list(valid_origins)
+        }
+        CorsOriginsClassification::AllValid { valid_origins } => AllowOrigin::list(valid_origins),
+    }
+}
+
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     log::info!("RPC server started on {addr}, port {port}");
@@ -118,8 +144,13 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         return Err(anyhow::anyhow!("Usage limiter initialization failed: {e}"));
     }
 
+    let config = get_config()?;
+
+    let allow_origins = build_allow_origin(&config.kora.cors_allow_origins);
+
+    // Build middleware stack with tracing and CORS
     let cors = CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
+        .allow_origin(allow_origins)
         .allow_methods([Method::POST, Method::GET])
         .allow_headers([
             header::CONTENT_TYPE,
@@ -129,8 +160,6 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
             header::HeaderName::from_static(X_TIMESTAMP),
         ])
         .max_age(Duration::from_secs(3600));
-
-    let config = get_config()?;
 
     let rpc_client = rpc.get_rpc_client().clone();
 
@@ -305,14 +334,37 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
 mod tests {
     use super::*;
     use crate::{
-        config::EnabledMethods,
+        config::{EnabledMethods, CORS_WILDCARD},
         tests::{
             common::setup_or_get_test_signer,
             config_mock::{ConfigMockBuilder, KoraConfigBuilder},
             rpc_mock::RpcMockBuilder,
         },
     };
-    use std::env;
+    use serial_test::serial;
+    use std::{env, net::TcpListener};
+
+    #[tokio::test]
+    #[serial]
+    async fn test_empty_cors_origins_does_not_panic() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let kora_config = KoraConfigBuilder::new().with_cors_allow_origins(vec![]).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+
+        // This should not panic and should start successfully
+        let result = run_rpc_server(KoraRpc::new(rpc_client), port).await;
+        match result {
+            Ok(_) => (),
+            Err(e) if e.to_string().contains("already initialized") => (),
+            Err(e) => panic!("Server failed to start: {:?}", e),
+        }
+    }
 
     #[test]
     fn test_get_value_by_priority_env_var_takes_precedence() {
@@ -456,5 +508,80 @@ mod tests {
         assert!(method_names.contains(&"liveness"));
         assert!(method_names.contains(&"getConfig"));
         assert!(method_names.contains(&"getSupportedTokens"));
+    }
+
+    #[test]
+    fn test_malformed_origins_rejected() {
+        let origins = vec![
+            "https://your-app.com/".to_string(),
+            "https://your-app.com/path".to_string(),
+            "https://your-app.com?q=1".to_string(),
+            "https://example.com#frag".to_string(),
+            "https://example.com:badport".to_string(),
+            "https://user:pass@example.com".to_string(),
+            "https://example.com:99999".to_string(),
+        ];
+        let allow_origin = build_allow_origin(&origins);
+
+        let debug_str = format!("{:?}", allow_origin);
+        // None of these origins should be in the AllowOrigin list
+        assert!(!debug_str.contains("https://your-app.com/"));
+        assert!(!debug_str.contains("https://your-app.com/path"));
+        assert!(!debug_str.contains("https://your-app.com?q=1"));
+        assert!(!debug_str.contains("https://example.com#frag"));
+        assert!(!debug_str.contains("https://example.com:badport"));
+        assert!(!debug_str.contains("https://user:pass@example.com"));
+        assert!(!debug_str.contains("https://example.com:99999"));
+        assert!(debug_str.contains("[]") || debug_str.contains("List([])"));
+
+        // Valid ones should be accepted
+        let valid_origins = vec![
+            "https://your-app.com".to_string(),
+            "https://your-app.com:8080".to_string(),
+            "https://[::1]:8080".to_string(),
+            "https://[::1]".to_string(),
+        ];
+        let allow_origin_valid = build_allow_origin(&valid_origins);
+        let valid_debug_str = format!("{:?}", allow_origin_valid);
+        assert!(valid_debug_str.contains("https://your-app.com"));
+        assert!(valid_debug_str.contains("https://your-app.com:8080"));
+        assert!(valid_debug_str.contains("https://[::1]:8080"));
+        assert!(valid_debug_str.contains("https://[::1]"));
+    }
+
+    #[test]
+    fn test_empty_host_rejected() {
+        // These should be rejected because the host part is empty or malformed
+        let origins = vec![
+            "https://:8080".to_string(),
+            "https://[]:8080".to_string(),
+            "https://example.com:".to_string(),
+            "https://[::1]garbage".to_string(),
+            "https://[::1]garbage:8080".to_string(),
+            "https://[not-ipv6]".to_string(),
+        ];
+        let allow_origin = build_allow_origin(&origins);
+
+        let debug_str = format!("{:?}", allow_origin);
+        assert!(!debug_str.contains("https://:8080"));
+        assert!(!debug_str.contains("https://[]:8080"));
+        assert!(!debug_str.contains("https://example.com:"));
+        assert!(!debug_str.contains("https://[::1]garbage"));
+        assert!(!debug_str.contains("https://[::1]garbage:8080"));
+        assert!(!debug_str.contains("https://[not-ipv6]"));
+        assert!(debug_str.contains("[]") || debug_str.contains("List([])"));
+    }
+
+    #[test]
+    fn test_cors_wildcard_handling() {
+        let wildcard_only = vec![CORS_WILDCARD.to_string()];
+        let allow_origin = build_allow_origin(&wildcard_only);
+        let debug_str = format!("{:?}", allow_origin);
+        assert!(debug_str.contains(r#"Const("*")"#));
+
+        let mixed = vec![CORS_WILDCARD.to_string(), "https://example.com".to_string()];
+        let allow_origin_mixed = build_allow_origin(&mixed);
+        let mixed_debug_str = format!("{:?}", allow_origin_mixed);
+        assert!(mixed_debug_str.contains(r#"Const("*")"#));
     }
 }
