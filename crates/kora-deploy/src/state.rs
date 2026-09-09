@@ -7,6 +7,7 @@ use std::{fs, io::Write, path::Path};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+// NOTE: keypairs are raw bytes in JSON; file security relies on OS-level permissions (see save()).
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeployState {
     pub program_keypair: Vec<u8>,
@@ -77,7 +78,8 @@ impl DeployState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{env::temp_dir, process};
+    use solana_sdk::pubkey::Pubkey;
+    use std::env::temp_dir;
 
     #[test]
     fn test_deploy_state_save_and_load() -> Result<()> {
@@ -90,7 +92,8 @@ mod tests {
             program_hash: "dummyhash123".to_string(),
         };
 
-        let temp_file = temp_dir().join(format!("kora-deploy-state-test-{}.json", process::id()));
+        let temp_file =
+            temp_dir().join(format!("kora-deploy-state-test-{}.json", Pubkey::new_unique()));
 
         let _ = fs::remove_file(&temp_file);
         assert!(DeployState::load(&temp_file)?.is_none());
