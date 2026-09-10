@@ -60,7 +60,7 @@ Kora is a paymaster: it signs transactions with a funded fee payer that it does 
 
 ## Pull requests
 
-Write a clear title and description that explain the problem, the approach, and how you tested it. Link related issues and call out behavior changes, compatibility concerns, or follow-up work. See [AI use](#ai-use) for how to disclose AI use in your PRs.
+Fill in every section of the pull request template: the problem, the approach, how you tested it, and the [AI disclosure](#disclosure). Link related issues and call out behavior changes, compatibility concerns, or follow-up work. CI fails the PR until the disclosure is declared.
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) for commit and PR titles — the CHANGELOG is generated from them, and the type determines the version bump (`feat:` minor, `fix:` patch, `BREAKING CHANGE:` major).
 
@@ -74,7 +74,7 @@ Maintainers may ask you to rebase, split a broad change, add tests, or revise do
 
 You may use AI-assisted tools, but you should review the generated code, understand its behavior, and run the same checks expected of any other contribution.
 
-If you are building with AI on Solana, check out the [Solana Dev Skill](https://github.com/solana-foundation/solana-dev-skill) or the [Solana MCP](https://mcp.solana.com/) to aid in your work. This repository also ships [`CLAUDE.md`](./CLAUDE.md) and skills under [`.claude/skills/`](./.claude/skills/) that carry the repo's conventions and gotchas — point your tooling at them rather than rediscovering the codebase from scratch.
+If you are building with AI on Solana, check out the [Solana Dev Skill](https://github.com/solana-foundation/solana-dev-skill) or the [Solana MCP](https://mcp.solana.com/) to aid in your work. This repository also ships [`CLAUDE.md`](./CLAUDE.md), [`AGENTS.md`](./AGENTS.md), and skills under [`.claude/skills/`](./.claude/skills/) that carry the repo's conventions and gotchas — point your tooling at them rather than rediscovering the codebase from scratch.
 
 Ensure that the generated code adheres to the project's coding standards and best practices. Maintainers can close PRs if they appear to be low-effort AI slop. In particular, audit your changes for the following AI code smells that increase maintenance burden:
 
@@ -84,9 +84,13 @@ Ensure that the generated code adheres to the project's coding standards and bes
 
 Be especially careful with AI-generated tests here. A test that asserts a validator rejects something is worthless if it would pass against a validator that rejects everything — assert the allowed case too, and make sure the test would actually fail if the policy flag it covers were flipped.
 
+You must be able to explain every line of your diff without an LLM. Reviewers may ask you a pointed question about any part of the change; if the answer is pasted from a model or does not come, the PR is closed.
+
+Tool attribution left in a PR (a `Generated with Claude Code` footer, a `Co-Authored-By: Claude` trailer, a `cursor/` or `codex/` branch, and the like) tells us the submission was opened without being read. CI labels these `ai-unreviewed`, fails the check, and explains what to fix. PRs left in that state are closed.
+
 ### Disclosure
 
-It can be helpful to note the extent to which AI was used in the change. For example, adding
+Disclosure is required. The pull request template has two boxes; check exactly one. If AI tooling was used, name the tool and the extent, for example:
 
 > I wrote all of the code for this feature, and had Claude update the documentation and create tests accordingly
 
@@ -94,7 +98,7 @@ or
 
 > I architected the change and handed all implementation over to Codex
 
-to the pull request description can be helpful context for reviewers.
+Editor autocomplete of single keywords or short phrases does not count as AI tooling.
 
 ### Communication
 
