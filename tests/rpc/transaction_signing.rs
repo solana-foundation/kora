@@ -12,7 +12,7 @@ use std::str::FromStr;
 /// Test sign V0 transaction with valid lookup table
 #[tokio::test]
 async fn test_sign_transaction_v0_with_valid_lookup_table() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let rpc_client = ctx.rpc_client();
 
@@ -71,7 +71,7 @@ async fn test_sign_transaction_v0_with_valid_lookup_table() {
 /// Test sign V0 transaction with invalid lookup table
 #[tokio::test]
 async fn test_sign_transaction_v0_with_invalid_lookup_table() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     // Create a V0 transaction using the disallowed lookup table (index 1)
     let disallowed_lookup_table_address =
@@ -99,7 +99,7 @@ async fn test_sign_transaction_v0_with_invalid_lookup_table() {
 
 #[tokio::test]
 async fn test_sign_transaction_invalid_transaction() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let invalid_tx = "invalid_base64_transaction";
 
     let result: Result<serde_json::Value, _> =
@@ -111,7 +111,7 @@ async fn test_sign_transaction_invalid_transaction() {
 /// Sign a v1 transaction through Kora
 #[tokio::test]
 async fn test_sign_transaction_v1() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -167,7 +167,7 @@ async fn test_sign_transaction_v1() {
 /// validation.
 #[tokio::test]
 async fn test_sign_transaction_v1_rejects_priority_fee_above_max_allowed_lamports() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -200,7 +200,7 @@ async fn test_sign_transaction_v1_rejects_priority_fee_above_max_allowed_lamport
 /// payer has been charged. Kora must reject it before signing.
 #[tokio::test]
 async fn test_sign_transaction_v1_rejects_unset_resource_limits() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -241,7 +241,7 @@ async fn test_sign_and_send_transaction_v1() {
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let test_tx = ctx
         .v1_transaction_builder()
@@ -278,7 +278,7 @@ async fn test_sign_and_send_transaction_legacy() {
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let test_tx = ctx
         .transaction_builder()
@@ -298,7 +298,7 @@ async fn test_sign_and_send_transaction_legacy() {
     let result: Result<serde_json::Value, _> =
         ctx.rpc_call("signAndSendTransaction", rpc_params![test_tx]).await;
 
-    assert!(result.is_ok(), "Expected signAndSendTransaction to succeed");
+    assert!(result.is_ok(), "Expected signAndSendTransaction to succeed: {result:?}");
     let response = result.unwrap();
 
     assert!(
@@ -314,7 +314,7 @@ async fn test_sign_and_send_transaction_respond_after_sent() {
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let test_tx = ctx
         .transaction_builder()
@@ -326,7 +326,9 @@ async fn test_sign_and_send_transaction_respond_after_sent() {
             &fee_payer,
             tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
         )
-        .with_transfer(&sender.pubkey(), &recipient, 10)
+        // Distinct amount: the respond_after variants would otherwise build a
+        // transaction byte-identical to the plain signAndSend test and collide.
+        .with_transfer(&sender.pubkey(), &recipient, 12)
         .build()
         .await
         .expect("Failed to create signed test transaction");
@@ -339,7 +341,10 @@ async fn test_sign_and_send_transaction_respond_after_sent() {
         )
         .await;
 
-    assert!(result.is_ok(), "Expected signAndSendTransaction with respond_after=sent to succeed");
+    assert!(
+        result.is_ok(),
+        "Expected signAndSendTransaction with respond_after=sent to succeed: {result:?}"
+    );
     let response = result.unwrap();
 
     assert!(response["signature"].as_str().is_some(), "Expected signature in response");
@@ -356,7 +361,7 @@ async fn test_sign_and_send_transaction_respond_after_sent_rejects_missing_signa
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     // The sender is a required signer but never signs, leaving a default
     // signature slot. With sig_verify=false nothing upstream catches it, and
@@ -397,7 +402,7 @@ async fn test_sign_and_send_transaction_respond_after_signed() {
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let test_tx = ctx
         .transaction_builder()
@@ -409,7 +414,9 @@ async fn test_sign_and_send_transaction_respond_after_signed() {
             &fee_payer,
             tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
         )
-        .with_transfer(&sender.pubkey(), &recipient, 10)
+        // Distinct amount: the respond_after variants would otherwise build a
+        // transaction byte-identical to the plain signAndSend test and collide.
+        .with_transfer(&sender.pubkey(), &recipient, 11)
         .build()
         .await
         .expect("Failed to create signed test transaction");
@@ -466,7 +473,7 @@ async fn test_sign_and_send_transaction_v0() {
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let test_tx = ctx
         .v0_transaction_builder()
@@ -493,7 +500,7 @@ async fn test_sign_and_send_transaction_v0() {
     let result: Result<serde_json::Value, _> =
         ctx.rpc_call("signAndSendTransaction", rpc_params![test_tx]).await;
 
-    assert!(result.is_ok(), "Expected signAndSendTransaction to succeed");
+    assert!(result.is_ok(), "Expected signAndSendTransaction to succeed: {result:?}");
     let response = result.unwrap();
 
     assert!(
@@ -509,7 +516,7 @@ async fn test_sign_and_send_transaction_v0_with_lookup() {
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
@@ -539,7 +546,7 @@ async fn test_sign_and_send_transaction_v0_with_lookup() {
     let result: Result<serde_json::Value, _> =
         ctx.rpc_call("signAndSendTransaction", rpc_params![test_tx]).await;
 
-    assert!(result.is_ok(), "Expected signAndSendTransaction to succeed");
+    assert!(result.is_ok(), "Expected signAndSendTransaction to succeed: {result:?}");
     let response = result.unwrap();
 
     assert!(
@@ -554,7 +561,7 @@ async fn test_sign_and_send_transaction_v0_with_lookup() {
 
 #[tokio::test]
 async fn test_sign_transaction_with_payment_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let rpc_client = ctx.rpc_client();
 
     let response: serde_json::Value =
@@ -608,7 +615,7 @@ async fn test_sign_transaction_with_payment_legacy() {
 
 #[tokio::test]
 async fn test_sign_transaction_with_payment_v0() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let rpc_client = ctx.rpc_client();
 
     let response: serde_json::Value =
@@ -669,7 +676,7 @@ async fn test_sign_transaction_with_payment_v0() {
 
 #[tokio::test]
 async fn test_sign_transaction_with_payment_v0_with_lookup() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let rpc_client = ctx.rpc_client();
 
     let response: serde_json::Value =

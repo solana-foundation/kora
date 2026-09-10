@@ -5,7 +5,7 @@ use serde_json::json;
 /// Test getSupportedTokens endpoint
 #[tokio::test]
 async fn test_get_supported_tokens() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let response: serde_json::Value = ctx
         .rpc_call("getSupportedTokens", rpc_params![])
@@ -34,7 +34,7 @@ async fn test_get_supported_tokens() {
 /// Test getBlockhash endpoint
 #[tokio::test]
 async fn test_get_blockhash() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let response: serde_json::Value =
         ctx.rpc_call("getBlockhash", rpc_params![]).await.expect("Failed to get blockhash");
@@ -47,7 +47,7 @@ async fn test_get_blockhash() {
 /// Test getConfig endpoint
 #[tokio::test]
 async fn test_get_config() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let response: serde_json::Value =
         ctx.rpc_call("getConfig", rpc_params![]).await.expect("Failed to get config");
@@ -75,7 +75,7 @@ async fn test_get_config() {
 /// Test getPayerSigner endpoint
 #[tokio::test]
 async fn test_get_payer_signer() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let response: serde_json::Value =
         ctx.rpc_call("getPayerSigner", rpc_params![]).await.expect("Failed to get payer signer");
@@ -103,7 +103,7 @@ async fn test_get_payer_signer() {
 /// Test fee payer policy is present in config
 #[tokio::test]
 async fn test_fee_payer_policy_is_present() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let config_response: serde_json::Value =
         ctx.rpc_call("getConfig", rpc_params![]).await.expect("Failed to get config");
@@ -210,7 +210,7 @@ async fn test_fee_payer_policy_is_present() {
 /// Test that liveness endpoint is disabled (returns error)
 #[tokio::test]
 async fn test_liveness_is_disabled() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     // With MethodValidationLayer, disabled methods return 405 METHOD_NOT_ALLOWED at middleware level
     // before reaching jsonrpsee's method dispatcher

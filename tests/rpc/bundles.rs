@@ -21,7 +21,7 @@ use std::str::FromStr;
 /// Test signing a single legacy transaction bundle
 #[tokio::test]
 async fn test_sign_bundle_single_legacy_transaction() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -65,7 +65,7 @@ async fn test_sign_bundle_single_legacy_transaction() {
 /// Test signing multiple legacy transactions in a bundle
 #[tokio::test]
 async fn test_sign_bundle_multiple_legacy_transactions() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -104,7 +104,7 @@ async fn test_sign_bundle_multiple_legacy_transactions() {
 /// Test signing max size bundle (5 transactions)
 #[tokio::test]
 async fn test_sign_bundle_max_size() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -145,7 +145,7 @@ async fn test_sign_bundle_max_size() {
 /// Test signing V0 transactions in bundle
 #[tokio::test]
 async fn test_sign_bundle_v0_transactions() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -188,7 +188,7 @@ async fn test_sign_bundle_v0_transactions() {
 /// Test empty bundle returns error
 #[tokio::test]
 async fn test_sign_bundle_empty_error() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let transactions: Vec<String> = vec![];
     let result: Result<serde_json::Value, _> =
@@ -200,7 +200,7 @@ async fn test_sign_bundle_empty_error() {
 /// Test bundle too large (>5 transactions) returns error
 #[tokio::test]
 async fn test_sign_bundle_too_large_error() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -236,7 +236,7 @@ async fn test_sign_bundle_too_large_error() {
 /// Test invalid transaction in bundle returns error
 #[tokio::test]
 async fn test_sign_bundle_invalid_transaction_error() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let transactions = vec!["invalid_base64_transaction".to_string()];
     let result: Result<serde_json::Value, _> =
@@ -248,7 +248,7 @@ async fn test_sign_bundle_invalid_transaction_error() {
 /// Test response structure has all required fields
 #[tokio::test]
 async fn test_sign_bundle_response_structure() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -299,7 +299,7 @@ async fn test_sign_bundle_response_structure() {
 /// Test estimating bundle fee for single transaction
 #[tokio::test]
 async fn test_estimate_bundle_fee_single_transaction() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -349,7 +349,7 @@ async fn test_estimate_bundle_fee_single_transaction() {
 /// Test estimating bundle fee for multiple transactions
 #[tokio::test]
 async fn test_estimate_bundle_fee_multiple_transactions() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -399,7 +399,7 @@ async fn test_estimate_bundle_fee_multiple_transactions() {
 /// Test estimating bundle fee with fee_token parameter
 #[tokio::test]
 async fn test_estimate_bundle_fee_with_fee_token() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -456,7 +456,7 @@ async fn test_estimate_bundle_fee_with_fee_token() {
 /// Test estimateBundleFee empty bundle error
 #[tokio::test]
 async fn test_estimate_bundle_fee_empty_error() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let transactions: Vec<String> = vec![];
     let result: Result<serde_json::Value, _> =
@@ -468,7 +468,7 @@ async fn test_estimate_bundle_fee_empty_error() {
 /// Test estimateBundleFee too large error
 #[tokio::test]
 async fn test_estimate_bundle_fee_too_large_error() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -508,7 +508,7 @@ async fn test_estimate_bundle_fee_too_large_error() {
 /// Test sign and send bundle to Jito
 #[tokio::test]
 async fn test_sign_and_send_bundle_success() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -525,7 +525,9 @@ async fn test_sign_and_send_bundle_success() {
             &fee_payer,
             tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
         )
-        .with_transfer(&sender.pubkey(), &recipient, 10)
+        // Distinct amount: the only bundle test that lands on chain, so it must
+        // not duplicate the signAndSendTransaction test transaction.
+        .with_transfer(&sender.pubkey(), &recipient, 13)
         .build()
         .await
         .expect("Failed to create transaction");
@@ -546,7 +548,7 @@ async fn test_sign_and_send_bundle_success() {
 /// Test signAndSendBundle empty bundle error
 #[tokio::test]
 async fn test_sign_and_send_bundle_empty_error() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let transactions: Vec<String> = vec![];
     let result: Result<serde_json::Value, _> =
@@ -558,7 +560,7 @@ async fn test_sign_and_send_bundle_empty_error() {
 /// Test signAndSendBundle too large error
 #[tokio::test]
 async fn test_sign_and_send_bundle_too_large_error() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -599,7 +601,7 @@ async fn test_sign_and_send_bundle_too_large_error() {
 /// This validates the fix for overestimation - should only add payment instruction fee once
 #[tokio::test]
 async fn test_estimate_bundle_fee_no_payment_instructions() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -644,7 +646,7 @@ async fn test_estimate_bundle_fee_no_payment_instructions() {
 /// Test signing bundle fails when payment is required but insufficient
 #[tokio::test]
 async fn test_sign_bundle_insufficient_payment_error() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -674,7 +676,7 @@ async fn test_sign_bundle_insufficient_payment_error() {
 
 #[tokio::test]
 async fn test_sign_bundle_rejects_net_zero_token_loop_across_transactions() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let setup = TestAccountSetup::new().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
@@ -760,7 +762,7 @@ async fn test_sign_bundle_rejects_net_zero_token_loop_across_transactions() {
 /// Response should contain ALL transactions in original order, with only specified ones signed.
 #[tokio::test]
 async fn test_sign_bundle_with_sign_only_indices_filter() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -829,7 +831,7 @@ async fn test_sign_bundle_with_sign_only_indices_filter() {
 /// Test that out-of-bounds sign_only_indices index fails validation
 #[tokio::test]
 async fn test_sign_bundle_out_of_bounds_sign_only_indices_fails() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
