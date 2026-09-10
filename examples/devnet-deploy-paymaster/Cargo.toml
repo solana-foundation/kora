@@ -17,18 +17,14 @@ path = "src/bin/reaper.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-async-trait = { workspace = true }
 base64 = { workspace = true }
 bincode = { workspace = true }
-chrono = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 dotenv = { workspace = true }
-futures = { workspace = true }
 kora-deploy = { workspace = true }
 kora-lib = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 solana-account-decoder-client-types = "4.1"
 solana-client = { workspace = true }
@@ -39,6 +35,5 @@ solana-loader-v3-interface = { workspace = true }
 solana-loader-v4-interface = { workspace = true }
 solana-sdk = { workspace = true }
 solana-system-interface = { workspace = true }
-solana-transaction-status-client-types = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -22,7 +22,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
 solana-sdk = { workspace = true }
 solana-commitment-config = { workspace = true }
 solana-message = { workspace = true }
@@ -56,7 +55,6 @@ solana-keychain = { version = "1.4.0", default-features = false, features = [
     "all",
     "sdk-v4",
 ] }
-vaultrs = { workspace = true }
 deadpool-redis = { workspace = true }
 jsonrpsee = { workspace = true }
 once_cell = { workspace = true }
@@ -67,28 +65,18 @@ log = { workspace = true }
 clap = { workspace = true }
 rand = "0.10.1"
 utoipa = { workspace = true }
-dirs = "6.0.0"
-mockall = "0.15.0"
 spl-pod = "0.7.3"
-p256 = { version = "0.13", features = ["ecdsa"] }
 chrono = { workspace = true }
 hex = { workspace = true }
 # RPC server dependencies
-tracing-subscriber = { workspace = true }
-jsonrpsee-core = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
-hyper = { workspace = true }
 http = { workspace = true }
-env_logger = { workspace = true }
 config = { workspace = true }
-dotenv = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
-http-body = "1.0.1"
-http-body-util = "0.1.3"
 prometheus = { workspace = true }
 regex = "1.11.1"
 subtle = { workspace = true }
@@ -103,8 +91,12 @@ docs = []
 unsafe-debug = []
 
 [dev-dependencies]
+mockall = "0.15.0"
 tempfile = "3.27"
 tokio = { version = "1.50", features = ["macros", "rt-multi-thread"] }
 mockito = "1.7.2"
 serial_test = "3.4.0"
 proptest = "1.11.0"
+
+[package.metadata.cargo-machete]
+ignored = ["solana-transaction"]
