@@ -59,7 +59,7 @@ jobs:
 
             To proceed: read the full diff, remove the tool attribution from the description and commits, fill in the AI disclosure section, and make sure you can explain every line without an LLM. This check re-runs when you edit the description or push. PRs left in this state are closed.
         run: |
-          permission=$(gh api "repos/$GH_REPO/collaborators/$AUTHOR/permission" --jq .permission 2>/dev/null || echo none)
+          permission=$(gh api "repos/$GH_REPO/collaborators/$AUTHOR/permission" 2>/dev/null | jq -r '.permission // "none"')
           if [[ "$permission" == "admin" || "$permission" == "write" ]]; then
             echo "Author has $permission access; skipping."
             exit 0
