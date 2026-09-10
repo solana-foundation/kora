@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use mockall::automock;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use std::any::Any;
 
@@ -25,7 +24,6 @@ pub trait TokenMint: Any + Send + Sync {
 }
 
 #[async_trait]
-#[automock]
 pub trait TokenInterface: Send + Sync {
     fn program_id(&self) -> Pubkey;
 

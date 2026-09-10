@@ -1,4 +1,9 @@
-use crate::oracle::{MockPriceOracle, PriceOracle, PriceSource, TokenPrice};
+use crate::{
+    error::KoraError,
+    oracle::{PriceOracle, PriceSource, TokenPrice},
+};
+use async_trait::async_trait;
+use reqwest::Client;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::{collections::HashMap, sync::Arc};
@@ -10,41 +15,43 @@ pub const DEFAULT_MOCKED_WSOL_PRICE: Decimal = dec!(1.0);
 pub const USDC_DEVNET_MINT: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 pub const WSOL_DEVNET_MINT: &str = "So11111111111111111111111111111111111111112";
 
+pub struct MockedPriceOracle;
+
+impl MockedPriceOracle {
+    fn price_for(mint_address: &str) -> TokenPrice {
+        let price = match mint_address {
+            USDC_DEVNET_MINT => DEFAULT_MOCKED_USDC_PRICE,
+            WSOL_DEVNET_MINT => DEFAULT_MOCKED_WSOL_PRICE,
+            _ => DEFAULT_MOCKED_PRICE,
+        };
+        TokenPrice { price, confidence: 1.0, source: PriceSource::Mock, block_id: None }
+    }
+}
+
+#[async_trait]
+impl PriceOracle for MockedPriceOracle {
+    async fn get_price(
+        &self,
+        _client: &Client,
+        mint_address: &str,
+    ) -> Result<TokenPrice, KoraError> {
+        Ok(Self::price_for(mint_address))
+    }
+
+    async fn get_prices(
+        &self,
+        _client: &Client,
+        mint_addresses: &[String],
+    ) -> Result<HashMap<String, TokenPrice>, KoraError> {
+        Ok(mint_addresses.iter().map(|mint| (mint.clone(), Self::price_for(mint))).collect())
+    }
+}
+
 pub struct OracleUtil {}
 
 impl OracleUtil {
     pub fn get_mock_oracle_price() -> Arc<dyn PriceOracle + Send + Sync> {
-        let mut mock = MockPriceOracle::new();
-        mock.expect_get_price().times(..).returning(|_, mint_address| {
-            let price = match mint_address {
-                USDC_DEVNET_MINT => DEFAULT_MOCKED_USDC_PRICE,
-                WSOL_DEVNET_MINT => DEFAULT_MOCKED_WSOL_PRICE,
-                _ => DEFAULT_MOCKED_PRICE,
-            };
-            Ok(TokenPrice { price, confidence: 1.0, source: PriceSource::Mock, block_id: None })
-        });
-
-        mock.expect_get_prices().times(..).returning(|_, mint_addresses| {
-            let mut result = HashMap::new();
-            for mint_address in mint_addresses {
-                let price = match mint_address.as_str() {
-                    USDC_DEVNET_MINT => DEFAULT_MOCKED_USDC_PRICE,
-                    WSOL_DEVNET_MINT => DEFAULT_MOCKED_WSOL_PRICE,
-                    _ => DEFAULT_MOCKED_PRICE,
-                };
-                result.insert(
-                    mint_address.clone(),
-                    TokenPrice {
-                        price,
-                        confidence: 1.0,
-                        source: PriceSource::Mock,
-                        block_id: None,
-                    },
-                );
-            }
-            Ok(result)
-        });
-        Arc::new(mock)
+        Arc::new(MockedPriceOracle)
     }
 }
 

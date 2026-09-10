@@ -2,6 +2,7 @@ use crate::{
     error::KoraError,
     oracle::{jupiter::JupiterPriceOracle, utils::OracleUtil},
 };
+#[cfg(test)]
 use mockall::automock;
 use reqwest::Client;
 use rust_decimal::Decimal;
@@ -36,7 +37,7 @@ impl PriceSource {
     }
 }
 
-#[automock]
+#[cfg_attr(test, automock)]
 #[async_trait::async_trait]
 pub trait PriceOracle {
     async fn get_price(&self, client: &Client, mint_address: &str)

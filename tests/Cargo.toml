@@ -71,7 +71,6 @@ spl-token-2022-interface = { workspace = true }
 spl-associated-token-account-interface = { workspace = true }
 spl-transfer-hook-interface = { version = "2.1.0" }
 bincode = { workspace = true }
-bs58 = { workspace = true }
 dotenv = { workspace = true }
 jsonrpsee = { workspace = true }
 serde_json = { workspace = true }
@@ -87,7 +86,6 @@ clap = { workspace = true, features = ["derive"] }
 toml = { workspace = true }
 solana-address-lookup-table-interface = { workspace = true }
 solana-loader-v3-interface = { workspace = true }
-colored = "3.1"
 serde = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
