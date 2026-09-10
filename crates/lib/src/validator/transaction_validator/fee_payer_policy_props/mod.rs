@@ -3,6 +3,7 @@ mod bpf_loader_upgradeable;
 mod loader_v4;
 mod spl_token;
 mod system;
+mod token_2022;
 
 use super::*;
 use crate::{
