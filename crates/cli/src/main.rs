@@ -7,7 +7,7 @@ use kora_lib::{
     admin::token_util::initialize_atas,
     error::KoraError,
     log::LoggingFormat,
-    rpc::get_rpc_client,
+    rpc::{get_failover_rpc_client, RpcClientEnum},
     rpc_server::{run_rpc_server, KoraRpc, RpcArgs},
     signer::init::init_signers,
     state::init_config,
@@ -120,14 +120,24 @@ async fn main() -> Result<(), KoraError> {
         std::process::exit(1);
     });
 
-    let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
+    let endpoints = cli.global_args.get_rpc_endpoints().unwrap_or_else(|e| {
+        print_error(&e);
+        std::process::exit(1);
+    });
+
+    let rpc_client = get_failover_rpc_client(endpoints).unwrap_or_else(|e| {
+        print_error(&e);
+        std::process::exit(1);
+    });
+
+    let rpc_client_arc = rpc_client.get_client();
 
     match cli.command {
         Some(Commands::Config { config_command }) => {
             let validation_result = match config_command {
                 ConfigCommands::Validate { signers_config } => {
                     ConfigValidator::validate_with_result_and_signers(
-                        rpc_client.as_ref(),
+                        rpc_client_arc.as_ref(),
                         true,
                         signers_config.as_ref(),
                     )
@@ -135,7 +145,7 @@ async fn main() -> Result<(), KoraError> {
                 }
                 ConfigCommands::ValidateWithRpc { signers_config } => {
                     ConfigValidator::validate_with_result_and_signers(
-                        rpc_client.as_ref(),
+                        rpc_client_arc.as_ref(),
                         false,
                         signers_config.as_ref(),
                     )
@@ -152,7 +162,7 @@ async fn main() -> Result<(), KoraError> {
                 rpc_args.auth_args.apply_to_env();
 
                 match ConfigValidator::validate_with_result_and_signers(
-                    rpc_client.as_ref(),
+                    rpc_client_arc.as_ref(),
                     true,
                     rpc_args.signers_config.as_ref(),
                 )
@@ -185,9 +195,7 @@ async fn main() -> Result<(), KoraError> {
                     std::process::exit(1);
                 }
 
-                let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
-
-                let kora_rpc = KoraRpc::new(rpc_client);
+                let kora_rpc = KoraRpc::new(rpc_client_arc);
 
                 let handles = run_rpc_server(kora_rpc, rpc_args.port).await?;
 
@@ -219,7 +227,7 @@ async fn main() -> Result<(), KoraError> {
                 }
 
                 if let Err(e) = initialize_atas(
-                    rpc_client.as_ref(),
+                    rpc_client_arc.as_ref(),
                     compute_unit_price,
                     compute_unit_limit,
                     chunk_size,
