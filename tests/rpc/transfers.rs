@@ -6,7 +6,7 @@ use solana_sdk::signature::Signer;
 /// Test transferTransaction with SPL token transfer (DEPRECATED endpoint)
 #[tokio::test]
 async fn test_transfer_transaction_spl_token_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
@@ -38,7 +38,7 @@ async fn test_transfer_transaction_spl_token_legacy() {
 /// Note: ATA creation for destination is handled automatically by Kora
 #[tokio::test]
 async fn test_transfer_transaction_with_ata_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();

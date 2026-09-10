@@ -4,7 +4,7 @@ use solana_sdk::signer::Signer;
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
 
@@ -35,7 +35,7 @@ async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_compute_budget_v0() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
@@ -69,7 +69,7 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0() {
 /// getFeeForMessage, so the estimate must include it exactly.
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_v1_config_priority_fee() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
@@ -118,7 +118,7 @@ async fn test_estimate_transaction_fee_with_v1_config_priority_fee() {
 /// transaction built without them.
 #[tokio::test]
 async fn test_estimate_transaction_fee_v1_ignores_compute_budget_instructions() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
@@ -148,7 +148,7 @@ async fn test_estimate_transaction_fee_v1_ignores_compute_budget_instructions() 
 /// instructions, only the config counts.
 #[tokio::test]
 async fn test_estimate_transaction_fee_v1_config_priority_fee_wins_over_compute_budget() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
@@ -179,7 +179,7 @@ async fn test_estimate_transaction_fee_v1_config_priority_fee_wins_over_compute_
 /// fee above it must be rejected before signing.
 #[tokio::test]
 async fn test_sign_transaction_v1_rejects_priority_fee_above_config_cap() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
 
@@ -206,7 +206,7 @@ async fn test_sign_transaction_v1_rejects_priority_fee_above_config_cap() {
 /// 1_400_000 CU * 5_000_000 micro-lamports = 7_000_000 lamports, over the cap.
 #[tokio::test]
 async fn test_sign_transaction_legacy_rejects_priority_fee_above_config_cap() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
 
@@ -234,7 +234,7 @@ async fn test_sign_transaction_legacy_rejects_priority_fee_above_config_cap() {
 /// base fee plus priority fee.
 #[tokio::test]
 async fn test_sign_transaction_v1_accepts_priority_fee_under_config_cap() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -270,7 +270,7 @@ async fn test_sign_transaction_v1_accepts_priority_fee_under_config_cap() {
 // NOTE: Lookup table is properly tested via mint address (not in transaction accounts, only ATAs)
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_compute_budget_v0_with_lookup() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
