@@ -52,6 +52,7 @@ jobs:
         with:
           workspaces: fuzz
           shared-key: "fuzz"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build fuzz targets
         run: cargo fuzz build --target x86_64-unknown-linux-gnu
       - name: Smoke each target
@@ -93,6 +94,7 @@ jobs:
         with:
           workspaces: fuzz
           shared-key: "fuzz"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Fuzz ${{ matrix.target }}
         run: cargo fuzz run ${{ matrix.target }} --target x86_64-unknown-linux-gnu -- -max_total_time=600
       - name: Upload corpus and crashes
