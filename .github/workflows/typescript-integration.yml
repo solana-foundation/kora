@@ -39,7 +39,7 @@ jobs:
     name: Build Rust Backend
     uses: ./.github/workflows/build-rust.yml
     with:
-      cache-key: "typescript-integration-build"
+      cache-key: "rust-dev"
       artifact-name: "rust-binaries-ts"
 
   typescript-integration:

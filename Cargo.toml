@@ -3,6 +3,9 @@ members = ["crates/lib", "crates/cli", "crates/kora-deploy", "tests", "examples/
 default-members = ["crates/lib", "crates/cli", "tests"]
 resolver = "2"
 
+[profile.dev]
+debug = "line-tables-only"
+
 [workspace.lints.rust]
 unused_imports = "deny"
 dead_code = "warn"
