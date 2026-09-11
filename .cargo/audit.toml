@@ -15,4 +15,11 @@ ignore = [
     # the optional hyper-014 path in aws-smithy-http-client. h2 0.4.x is on the patched
     # 0.4.16; drop this once jsonrpsee moves to hyper 1.x.
     "RUSTSEC-2026-0258",
+    # ed25519-dalek 1.0.1 and curve25519-dalek 3.2.0 come from agave-precompiles, which
+    # only the tests crate pulls in via surfpool-sdk; neither reaches the kora binary.
+    "RUSTSEC-2022-0093",
+    "RUSTSEC-2024-0344",
+    # idna 0.1.5 comes from jsonrpc-core-client, reached only by the tests crate via
+    # surfpool-sdk.
+    "RUSTSEC-2024-0421",
 ]
