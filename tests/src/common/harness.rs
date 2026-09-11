@@ -28,7 +28,8 @@ use crate::common::{
         TEST_USDC_MINT_2022_KEYPAIR_ENV, TEST_USDC_MINT_KEYPAIR_ENV, TRANSFER_HOOK_PROGRAM_ID,
         TRANSFER_HOOK_PROGRAM_PATH,
     },
-    setup::TestAccountSetup,
+    seed::seed_accounts,
+    setup::TestAccountInfo,
 };
 
 /// Mirrors `AccountFile::required_test_accounts_env_vars`, which lives in
@@ -71,15 +72,14 @@ pub struct KoraHarness {
 
 impl KoraHarness {
     pub async fn start(spec: KoraSpec) -> Result<Self> {
-        let surfnet = tokio::task::spawn_blocking(|| std::thread::spawn(start_surfnet).join())
-            .await?
-            .map_err(|_| anyhow!("surfnet startup thread panicked"))??;
+        let (surfnet, accounts) =
+            tokio::task::spawn_blocking(|| std::thread::spawn(start_surfnet).join())
+                .await?
+                .map_err(|_| anyhow!("surfnet startup thread panicked"))??;
 
         let rpc_url = surfnet.rpc_url().to_string();
         std::env::set_var(RPC_URL_ENV, &rpc_url);
 
-        let mut setup = TestAccountSetup::new_with_rpc_url(&rpc_url).await;
-        let accounts = setup.setup_all_accounts(None).await?;
         for (env_var, address) in [
             (TEST_ALLOWED_LOOKUP_TABLE_ADDRESS_ENV, accounts.allowed_lookup_table),
             (TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS_ENV, accounts.disallowed_lookup_table),
@@ -126,7 +126,7 @@ fn set_local_key_env_vars() {
 
 /// The surfpool SDK and its cheatcodes drive the blocking Solana RPC client,
 /// which cannot run under the current-thread runtime `#[tokio::test]` builds.
-fn start_surfnet() -> Result<Surfnet> {
+fn start_surfnet() -> Result<(Surfnet, TestAccountInfo)> {
     let runtime =
         tokio::runtime::Builder::new_multi_thread().worker_threads(1).enable_all().build()?;
     runtime.block_on(async {
@@ -138,7 +138,8 @@ fn start_surfnet() -> Result<Surfnet> {
             .await
             .map_err(|e| anyhow!("failed to start surfnet: {e}"))?;
         deploy_test_programs(&surfnet)?;
-        Ok(surfnet)
+        let accounts = seed_accounts(&surfnet)?;
+        Ok((surfnet, accounts))
     })
 }
 

@@ -97,6 +97,4 @@ libc = "0.2"
 ctor = "0.6"
 
 [dev-dependencies]
-# Pinned to the getFeeForMessage prioritization-fee fix; switch to a crates.io
-# version once surfpool tags a release containing it.
 surfpool-sdk = { git = "https://github.com/solana-foundation/surfpool", rev = "30242a4fe3b87557f3d6f1629f548e2515718242" }

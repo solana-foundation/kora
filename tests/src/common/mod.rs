@@ -6,6 +6,7 @@ pub mod extension_helpers;
 pub mod harness;
 pub mod helpers;
 pub mod lookup_tables;
+pub mod seed;
 pub mod setup;
 pub mod transaction;
 
