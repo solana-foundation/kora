@@ -726,7 +726,7 @@ impl ConfigValidator {
                     warnings.push(
                         "⚠️  SECURITY: Fixed pricing with NO authentication enabled. \
                         Without authentication, anyone can spam transactions at your expense. \
-                        Consider enabling api_key or hmac_secret in [kora.auth]."
+                        Consider enabling api_keys or hmac_secret in [kora.auth]."
                             .to_string(),
                     );
                 }
@@ -752,21 +752,17 @@ impl ConfigValidator {
         let has_auth = config.kora.auth.has_resolved_auth();
         if !has_auth {
             warnings.push(
-                "⚠️  SECURITY: No authentication configured (neither api_key nor hmac_secret). \
+                "⚠️  SECURITY: No authentication configured (neither api_keys nor hmac_secret). \
                 Authentication is strongly recommended for production deployments. \
-                Consider enabling api_key or hmac_secret in [kora.auth]."
+                Consider enabling api_keys or hmac_secret in [kora.auth]."
                     .to_string(),
             );
         }
 
         // The running server resolves auth env-first, so a stale KORA_* environment variable
         // silently overrides a rotated kora.toml secret and keeps the retired credential valid.
-        for (env_var, field) in config.kora.auth.env_overridden_fields() {
-            warnings.push(format!(
-                "⚠️  SECURITY: environment variable {env_var} overrides {field}. The environment \
-                 value takes precedence at runtime; if you rotated the secret in kora.toml, the \
-                 stale environment value is still in effect. Unset {env_var} or align it with the config."
-            ));
+        for warning in config.kora.auth.env_overridden_fields() {
+            warnings.push(warning);
         }
 
         let usage_config = &config.kora.usage_limit;
@@ -1115,7 +1111,7 @@ mod tests {
             validation: validation_config_with_auth(),
             kora: KoraConfig {
                 auth: AuthConfig {
-                    api_key: Some("rotated-config-key".to_string()),
+                    api_keys: Some(vec!["rotated-config-key".to_string()]),
                     ..Default::default()
                 },
                 ..KoraConfig::default()
