@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{env, path::Path};
 
 use anyhow::Result;
 use kora_deploy::{close, deploy, upgrade, verify_upgrade_authority, DeployConfig, UpgradeConfig};
@@ -14,6 +14,10 @@ pub async fn run(kora_url: &str, rpc_url: &str, program_so: &Path) -> Result<()>
         program_so,
         user_id: user_id.clone(),
         wallet: Some(&owner),
+        resume: false,
+        cleanup_on_failure: true,
+        state_path: env::temp_dir()
+            .join(format!(".kora-deploy-state-{}.json", Pubkey::new_unique())),
     })
     .await?;
     println!("  deployed program {} (owner {})", result.program, owner.pubkey());

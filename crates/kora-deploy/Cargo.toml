@@ -23,6 +23,7 @@ bincode = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 log = { workspace = true }
 reqwest = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 solana-client = { workspace = true }
 solana-commitment-config = { workspace = true }

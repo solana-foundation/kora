@@ -33,6 +33,9 @@ test-ledger/
 tests/src/common/fixtures/lookup_tables.json
 tests/src/common/fixtures/test-accounts/
 
+# kora-deploy state file — contains raw keypair bytes
+.kora-deploy-state.json
+
 # Docs
 sdks/ts/docs-html/
 sdks/ts/docs-md/
