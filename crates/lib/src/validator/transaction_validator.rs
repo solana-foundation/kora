@@ -344,10 +344,11 @@ impl TransactionValidator {
     /// sponsor calls to arbitrary, unvetted programs, but only while it is a pure fee payer. A
     /// program can only move the fee payer's funds if the fee payer's account is passed to it, and a
     /// CPI can only forward accounts its caller held, so the fee payer reaches any program only
-    /// through a top-level instruction that lists it. Checking the raw top-level message is
-    /// therefore sufficient and needs no simulation (immune to a program that behaves differently at
-    /// execution than in simulation) and no address-lookup-table resolution (the fee payer is always
-    /// a static account, since signers cannot come from a lookup table).
+    /// through a top-level instruction that lists it. Checking the top-level message is therefore
+    /// sufficient and needs no simulation (immune to a program that behaves differently at execution
+    /// than in simulation). The fee payer is always a static account (signers cannot come from a
+    /// lookup table), so participation is detected against its static index regardless of any
+    /// lookup tables.
     fn validate_fee_payer_participation(
         &self,
         transaction_resolved: &VersionedTransactionResolved,
@@ -367,8 +368,10 @@ impl TransactionValidator {
         };
         let fee_payer_index = fee_payer_index as u8;
 
+        let all_account_keys = &transaction_resolved.all_account_keys;
         for instruction in message.instructions() {
-            let Some(program_id) = static_keys.get(instruction.program_id_index as usize) else {
+            let Some(program_id) = all_account_keys.get(instruction.program_id_index as usize)
+            else {
                 return Err(KoraError::InvalidTransaction(
                     "Instruction references an out-of-bounds program id index".to_string(),
                 ));
@@ -485,7 +488,10 @@ impl TransactionValidator {
         // allow_create_account gates Kora participating as the funder (payer), the seeded base
         // signer, or the account being created (prefund brick). The owner allowlist is enforced for
         // every owner while the participation gate is inactive (historical behavior), and scoped to
-        // fee-payer-funded creates once it is active; the disallowed blocklist always applies. See
+        // fee-payer-involved creates once it is active; the disallowed blocklist always applies. The
+        // owner check uses the SAME participation definition as the create gate above (payer, base,
+        // or new_account): otherwise a foreign payer could prefund-create Kora's own account and
+        // assign it to an untrusted owner, taking ownership of the sponsored account. See
         // `validate_created_or_assigned_owner`.
         for instruction in system_instructions
             .get(&ParsedSystemInstructionType::SystemCreateAccount)
@@ -510,7 +516,7 @@ impl TransactionValidator {
 
                 self.validate_created_or_assigned_owner(
                     owner,
-                    *payer == self.fee_payer_pubkey,
+                    fee_payer_participates,
                     "CreateAccount",
                 )?;
             }
@@ -3948,6 +3954,48 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .expect_err("fee-payer-funded create with unlisted owner must be rejected");
+        assert!(
+            err.to_string().contains("not in the allowed programs list"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// Regression: with the gate active, the owner allowlist must cover every role the fee payer
+    /// plays in a create, not just the payer. A foreign payer prefund-creating KORA's own account
+    /// with an unlisted owner would otherwise take ownership of the sponsored account.
+    #[tokio::test]
+    #[serial]
+    async fn test_participation_gate_owner_check_covers_fee_payer_as_created_account() {
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let unlisted_owner = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = true;
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_fee_payer_allowed_programs(ProgramsConfig::All)
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        setup_both_configs(config);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Foreign payer, but the created account IS the fee payer. Even though the fee payer is not
+        // the create funder, the owner allowlist must still reject the unlisted owner.
+        let instruction = create_account(&attacker, &fee_payer, 1000, 100, &unlisted_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .expect_err("fee payer as the created account with an unlisted owner must be rejected");
         assert!(
             err.to_string().contains("not in the allowed programs list"),
             "unexpected error: {err}"
