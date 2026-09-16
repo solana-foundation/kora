@@ -50,13 +50,16 @@ Start your local Kora RPC Server from the root project directory:
 kora --config tests/src/common/fixtures/kora-test.toml rpc start --signers-config tests/src/common/fixtures/signers.toml
 ```
 
-Tests rely on [Solana CLI's](https://solana.com/docs/intro/installation) local test validator. 
+Most of the suite runs its chain in-process, but a few tests reach a Solana node
+at `SOLANA_RPC_URL` (default `http://127.0.0.1:8899`), so start one alongside Kora.
 
 Run:
 
 ```bash
-pnpm test:ci:integration
+pnpm test:integration
 ```
 
-This will start a local test validator and run all tests.
+This suite is not run in CI: it has no automated way to boot a node yet, and is
+waiting on [surfpool#804](https://github.com/solana-foundation/surfpool/pull/804)
+so it can embed a surfnet the way the Rust integration tests do.
 

@@ -89,7 +89,7 @@ The deploy workflow expects these to be available in the job env before any
 | `DEVNET_KORA_REDIS_URL` | `redis://10.x.y.z:6379` | private VPC IP, mapped to `KORA_REDIS_URL` |
 
 The 4 runtime vars carry a `DEVNET_` prefix so they don't collide with names
-the kora binary and the integration test runner read directly (`RPC_URL`,
+the kora binary reads directly (`RPC_URL`,
 `KORA_REDIS_URL`, `KORA_GCP_KMS_KEY_NAME`, `KORA_GCP_KMS_PUBLIC_KEY`).
 
 ### Triggering a deploy

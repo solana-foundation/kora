@@ -51,6 +51,3 @@ jobs:
         working-directory: sdks/ts
         run: pnpm test unit.test.ts
 
-      - name: Cleanup test environment
-        uses: ./.github/actions/cleanup-test-env
-
