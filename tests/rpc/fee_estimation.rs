@@ -8,7 +8,7 @@ use spl_associated_token_account_interface::address::get_associated_token_addres
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let test_tx = ctx
         .transaction_builder()
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
@@ -32,7 +32,7 @@ async fn test_estimate_transaction_fee_legacy() {
 /// Test estimateTransactionFee without fee token parameter
 #[tokio::test]
 async fn test_estimate_transaction_fee_without_fee_token_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let test_tx = ctx
         .transaction_builder()
@@ -63,7 +63,7 @@ async fn test_estimate_transaction_fee_without_fee_token_legacy() {
 /// Test estimateTransactionFee with fee token parameter
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_fee_token_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let test_tx = ctx
         .transaction_builder()
@@ -103,7 +103,7 @@ async fn test_estimate_transaction_fee_with_fee_token_legacy() {
 /// Test estimateTransactionFee with invalid mint address
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_invalid_mint_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let test_tx = ctx
         .transaction_builder()
@@ -130,7 +130,7 @@ async fn test_estimate_transaction_fee_with_invalid_mint_legacy() {
 /// Test estimateTransactionFee without payment instruction
 #[tokio::test]
 async fn test_estimate_transaction_fee_without_payment_instruction_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let test_tx = ctx
         .transaction_builder()
@@ -161,7 +161,7 @@ async fn test_estimate_transaction_fee_without_payment_instruction_legacy() {
 // NOTE: Lookup table is properly tested via mint address (not in transaction accounts, only ATAs)
 #[tokio::test]
 async fn test_estimate_transaction_fee_v0_with_lookup() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -194,7 +194,7 @@ async fn test_estimate_transaction_fee_v0_with_lookup() {
 /// Test estimateTransactionFee without fee token parameter with V0 and lookup table
 #[tokio::test]
 async fn test_estimate_transaction_fee_without_fee_token_v0_with_lookup() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -233,7 +233,7 @@ async fn test_estimate_transaction_fee_without_fee_token_v0_with_lookup() {
 /// Test estimateTransactionFee with fee token parameter with V0 and lookup table
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_fee_token_v0_with_lookup() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -282,7 +282,7 @@ async fn test_estimate_transaction_fee_with_fee_token_v0_with_lookup() {
 /// SPL token operations, compute budget, and priority fees
 #[tokio::test]
 async fn test_estimate_fee_comprehensive_with_token_accounts_creation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = SenderTestHelper::get_test_sender_keypair();
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
@@ -352,7 +352,7 @@ async fn test_estimate_fee_comprehensive_with_token_accounts_creation() {
 
 #[tokio::test]
 async fn test_estimate_fee_with_spl_token_transfer_from_fee_payer() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();

@@ -91,3 +91,10 @@ base64 = { workspace = true }
 chrono = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
+libc = "0.2"
+ctor = "0.6"
+
+[dev-dependencies]
+# Fork of solana-foundation/surfpool@30242a4 carrying the fix for jito bundle
+# commits discarding concurrent writes: https://github.com/solana-foundation/surfpool/pull/804
+surfpool-sdk = { git = "https://github.com/dev-jodee/surfpool", rev = "207030e09c6b46789157765077ad85a5b6cc3897" }
