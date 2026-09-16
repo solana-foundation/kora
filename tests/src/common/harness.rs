@@ -27,7 +27,7 @@ use crate::common::{
         LIGHTHOUSE_PROGRAM_PATH, PAYMENT_ADDRESS_KEYPAIR_ENV, RPC_URL_ENV, SIGNER_2_KEYPAIR_ENV,
         TEST_ALLOWED_LOOKUP_TABLE_ADDRESS_ENV, TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS_ENV,
         TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR_ENV, TEST_FEE_PAYER_POLICY_MINT_KEYPAIR_ENV,
-        TEST_INTEREST_BEARING_MINT_KEYPAIR_ENV, TEST_SENDER_KEYPAIR_ENV, TEST_SERVER_URL_ENV,
+        TEST_INTEREST_BEARING_MINT_KEYPAIR_ENV, TEST_SENDER_KEYPAIR_ENV,
         TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS_ENV, TEST_TRANSFER_HOOK_MINT_KEYPAIR_ENV,
         TEST_USDC_MINT_2022_KEYPAIR_ENV, TEST_USDC_MINT_KEYPAIR_ENV, TRANSFER_HOOK_PROGRAM_ID,
         TRANSFER_HOOK_PROGRAM_PATH,
@@ -36,8 +36,8 @@ use crate::common::{
     setup::TestAccountInfo,
 };
 
-/// Mirrors `AccountFile::required_test_accounts_env_vars`, which lives in
-/// `test_runner` and is not reachable from a test binary.
+/// Kora reads each signing key from the environment, so the fixtures under
+/// `local-keys/` have to be exported before the node starts.
 const LOCAL_KEY_ENV_FILES: &[(&str, &str)] = &[
     (KORA_PRIVATE_KEY_ENV, "fee-payer-local.json"),
     (SIGNER_2_KEYPAIR_ENV, "signer2-local.json"),
@@ -60,7 +60,7 @@ static KORA_PID: AtomicI32 = AtomicI32::new(0);
 static RENDERED_CONFIG: OnceLock<PathBuf> = OnceLock::new();
 static HARNESS: OnceCell<KoraHarness> = OnceCell::const_new();
 
-/// Paths are workspace-relative, matching `tests/src/test_runner/test_cases.toml`.
+/// Paths are workspace-relative.
 #[derive(Clone, Copy)]
 pub struct KoraSpec {
     pub config: &'static str,
@@ -116,14 +116,7 @@ impl KoraHarness {
 ///
 /// Contexts are rebuilt per test rather than shared: every `#[tokio::test]` owns
 /// its runtime, and a client outliving that runtime loses its dispatch task.
-///
-/// `TEST_SERVER_URL` means the legacy `test_runner` already booted a validator
-/// and a node; defer to it so both paths keep running. Drop with the runner.
 pub async fn harness_context(spec: KoraSpec) -> TestContext {
-    if std::env::var(TEST_SERVER_URL_ENV).is_ok() {
-        return TestContext::new().await.expect("Failed to create test context");
-    }
-
     let harness = HARNESS
         .get_or_init(|| async {
             KoraHarness::start(spec).await.expect("Failed to start Kora harness")

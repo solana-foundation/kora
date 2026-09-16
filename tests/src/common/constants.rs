@@ -1,9 +1,6 @@
 /// Default local Solana RPC URL
 pub const DEFAULT_RPC_URL: &str = "http://127.0.0.1:8899";
 
-/// Default Kora test server URL
-pub const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
-
 /// Default recipient public key for tests
 pub const RECIPIENT_PUBKEY: &str = "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM";
 
@@ -46,9 +43,6 @@ pub const TEST_API_KEY: &str = "test-api-key-123";
 
 /// Test HMAC secret for authentication tests
 pub const TEST_HMAC_SECRET: &str = "test-hmac-secret-456";
-
-/// Test server URL environment variable
-pub const TEST_SERVER_URL_ENV: &str = "TEST_SERVER_URL";
 
 /// RPC URL environment variable
 pub const RPC_URL_ENV: &str = "RPC_URL";
