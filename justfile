@@ -81,7 +81,7 @@ fmt-ts:
 [group('test')]
 [no-exit-message]
 unit-test:
-    -cargo test --lib --workspace --exclude tests --quiet
+    cargo test --lib --workspace --exclude tests --quiet
 
 # Run all integration tests (use --verbose, --force-refresh, --filter X as needed)
 [group('test')]
@@ -92,7 +92,7 @@ integration-test *args: build _ensure-transfer-hook
 [group('test')]
 [no-exit-message]
 unit-test-ts: build
-    -cd sdks/ts && pnpm test:unit
+    cd sdks/ts && pnpm test:unit
 
 # Run all TypeScript SDK tests (unit + integration)
 [group('test')]
