@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use solana_sdk::pubkey::Pubkey;
 use std::{
     fs,
+    io::Write,
     net::TcpListener,
     path::{Path, PathBuf},
     process::Stdio,
@@ -12,7 +13,7 @@ use std::{
         atomic::{AtomicI32, Ordering},
         OnceLock,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use surfpool_sdk::{cheatcodes::builders::DeployProgram, BlockProductionMode, Surfnet};
 use tokio::{
@@ -98,9 +99,9 @@ impl KoraHarness {
         }
 
         let port = free_port()?;
-        let kora = spawn_kora(&config_path, &signers_path, &rpc_url, port)?;
+        let mut kora = spawn_kora(&config_path, &signers_path, &rpc_url, port)?;
         register_kora_teardown(&kora)?;
-        wait_for_liveness(port).await?;
+        wait_for_liveness(&mut kora, port).await?;
 
         let server_url = format!("http://127.0.0.1:{port}");
 
@@ -219,8 +220,13 @@ fn render_config(source: &Path, rpc_url: &str) -> Result<PathBuf> {
     }
 
     let file_stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("kora");
-    let path = std::env::temp_dir().join(format!("{file_stem}-{}.toml", std::process::id()));
-    fs::write(&path, toml::to_string(&doc)?)?;
+    let unique = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let path =
+        std::env::temp_dir().join(format!("{file_stem}-{}-{unique}.toml", std::process::id()));
+
+    // create_new refuses to follow a symlink another process left at this path
+    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
+    file.write_all(toml::to_string(&doc)?.as_bytes())?;
     let _ = RENDERED_CONFIG.set(path.clone());
     Ok(path)
 }
@@ -299,20 +305,46 @@ fn free_port() -> Result<u16> {
     Ok(listener.local_addr()?.port())
 }
 
-async fn wait_for_liveness(port: u16) -> Result<()> {
+async fn wait_for_liveness(kora: &mut Child, port: u16) -> Result<()> {
     let client = reqwest::Client::new();
     let url = format!("http://127.0.0.1:{port}/liveness");
     let deadline = Instant::now() + Duration::from_secs(30);
     let mut delay = Duration::from_millis(50);
+    let mut last_status = None;
 
     while Instant::now() < deadline {
-        if client.get(&url).timeout(Duration::from_secs(5)).send().await.is_ok() {
-            return Ok(());
+        if let Some(status) = kora.try_wait()? {
+            return Err(anyhow!(
+                "Kora exited with {status} before becoming ready. \
+                Set KORA_TEST_VERBOSE=1 to see its output."
+            ));
+        }
+        if let Ok(response) = client.get(&url).timeout(Duration::from_secs(5)).send().await {
+            let status = response.status();
+            if status.is_success() {
+                return Ok(());
+            }
+            // Fixtures that set `liveness = false` answer 500, so a failing
+            // status still means Kora, as long as the body is its JSON-RPC error.
+            if response.json::<serde_json::Value>().await.is_ok_and(|b| b.get("jsonrpc").is_some())
+            {
+                return Ok(());
+            }
+            last_status = Some(status);
         }
         tokio::time::sleep(delay).await;
         delay = std::cmp::min(delay * 2, Duration::from_secs(1));
     }
-    Err(anyhow!("Kora server on port {port} did not become reachable"))
+
+    // The port was free when we picked it, not when Kora bound it, so something
+    // else can be holding it by now.
+    match last_status {
+        Some(status) => Err(anyhow!(
+            "port {port} answered /liveness with {status} and no JSON-RPC body, \
+            so it is not our Kora"
+        )),
+        None => Err(anyhow!("Kora server on port {port} did not become reachable")),
+    }
 }
 
 /// A `static OnceCell` harness is never dropped, so `kill_on_drop` never fires
