@@ -426,6 +426,16 @@ impl ConfigValidator {
             warnings.push("Rate limit is set to 0 - this will block all requests".to_string());
         }
 
+        if config.metrics.enabled
+            && config.metrics.fee_payer_balance.enabled
+            && config.metrics.fee_payer_balance.expiry_seconds == 0
+        {
+            errors.push(
+                "metrics.fee_payer_balance.expiry_seconds must be at least 1 second when fee payer balance metrics are enabled"
+                    .to_string(),
+            );
+        }
+
         // Validate CORS origins
         match classify_cors_origins(&config.kora.cors_allow_origins) {
             CorsOriginsClassification::Empty => {
@@ -3182,6 +3192,43 @@ mod tests {
         assert!(errors
             .iter()
             .any(|e| e.contains("sign_timeout_seconds must be at least 1 second")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_rejects_zero_fee_payer_balance_interval_when_enabled() {
+        let mut config = crate::tests::config_mock::ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.metrics.enabled = true;
+        config.metrics.fee_payer_balance.enabled = true;
+        config.metrics.fee_payer_balance.expiry_seconds = 0;
+        crate::state::update_config(config).unwrap();
+
+        let rpc_client = crate::tests::rpc_mock::RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+
+        assert!(result.is_err());
+        let errors = result.err().unwrap();
+        assert!(errors
+            .iter()
+            .any(|e| e
+                .contains("metrics.fee_payer_balance.expiry_seconds must be at least 1 second")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_allows_zero_fee_payer_balance_interval_when_disabled() {
+        let mut config = crate::tests::config_mock::ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.metrics.enabled = true;
+        config.metrics.fee_payer_balance.enabled = false;
+        config.metrics.fee_payer_balance.expiry_seconds = 0;
+        crate::state::update_config(config).unwrap();
+
+        let rpc_client = crate::tests::rpc_mock::RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+
+        assert!(result.is_ok());
     }
 
     #[test]
