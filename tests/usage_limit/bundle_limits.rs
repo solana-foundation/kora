@@ -7,7 +7,7 @@ use solana_sdk::signature::{Keypair, Signer};
 /// Expects: Bundle with 4 txs succeeds, then single tx fails (windowed limit reached)
 #[tokio::test]
 async fn test_bundle_transaction_limit_enforcement() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();
@@ -65,7 +65,7 @@ async fn test_bundle_transaction_limit_enforcement() {
 /// Expects: Bundle with 3 CreateAccount txs succeeds, 4th fails
 #[tokio::test]
 async fn test_bundle_instruction_limit_enforcement() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();
@@ -137,7 +137,7 @@ async fn test_bundle_instruction_limit_enforcement() {
 /// Tests bundle with mixed instruction types
 #[tokio::test]
 async fn test_bundle_mixed_rules_enforcement() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();
@@ -227,7 +227,7 @@ async fn test_bundle_mixed_rules_enforcement() {
 /// Bundle with 5 transactions should fail immediately (not process any)
 #[tokio::test]
 async fn test_bundle_fails_fast_on_limit_exceeded() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();

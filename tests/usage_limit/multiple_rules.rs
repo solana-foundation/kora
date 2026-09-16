@@ -7,7 +7,7 @@ use solana_sdk::signature::{Keypair, Signer};
 /// Expects: 4 tx succeed, 5th fails (windowed)
 #[tokio::test]
 async fn test_windowed_limit_before_lifetime() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();
@@ -61,7 +61,7 @@ async fn test_windowed_limit_before_lifetime() {
 /// Note: Instruction limits only count instructions where Kora is the payer (subsidized account creations)
 #[tokio::test]
 async fn test_transaction_and_instruction_rules_combined() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();
@@ -130,7 +130,7 @@ async fn test_transaction_and_instruction_rules_combined() {
 /// Config: windowed=4/30s checked first, then lifetime=5
 #[tokio::test]
 async fn test_first_rule_violation_denies_transaction() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();
@@ -183,7 +183,7 @@ async fn test_first_rule_violation_denies_transaction() {
 /// Test all rules pass - transaction allowed when all rules satisfied
 #[tokio::test]
 async fn test_all_rules_pass_transaction_allowed() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();

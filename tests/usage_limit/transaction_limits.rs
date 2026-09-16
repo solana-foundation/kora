@@ -79,7 +79,7 @@ async fn attempt_windowed_overflow(
 /// The windowed limit kicks in before lifetime limit
 #[tokio::test]
 async fn test_transaction_limit_enforcement() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     for attempt in 0..WINDOW_ATTEMPTS {
         let sender = create_funded_wallet(&ctx).await;
@@ -108,7 +108,7 @@ async fn test_transaction_limit_enforcement() {
 /// This test waits for windowed limit to reset to test lifetime limit specifically
 #[tokio::test]
 async fn test_transaction_lifetime_limit() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();
@@ -184,7 +184,7 @@ async fn test_transaction_lifetime_limit() {
 /// After window reset, we can only send 1 more tx (5th) because lifetime limit is 5
 #[tokio::test]
 async fn test_transaction_time_windowed_limit() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let recipient = RecipientTestHelper::get_recipient_pubkey();
 
     let mut verified = None;
@@ -261,7 +261,7 @@ async fn test_transaction_time_windowed_limit() {
 /// Config: windowed=4/30s
 #[tokio::test]
 async fn test_independent_wallet_limits() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let recipient = RecipientTestHelper::get_recipient_pubkey();
 
     for _ in 0..WINDOW_ATTEMPTS {
