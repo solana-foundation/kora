@@ -54,7 +54,3 @@ jobs:
       - name: Cleanup test environment
         uses: ./.github/actions/cleanup-test-env
 
-      - name: Show failure logs
-        uses: ./.github/actions/show-failure-logs
-        with:
-          test-type: "TypeScript unit"

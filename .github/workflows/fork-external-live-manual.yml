@@ -100,11 +100,6 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-test-env
 
-      - name: Show failure logs
-        if: failure()
-        uses: ./.github/actions/show-failure-logs
-        with:
-          test-type: "Rust integration (fork external live)"
 
       - name: Verify PR head is unchanged
         if: success()
