@@ -674,7 +674,7 @@ async fn test_sign_bundle_insufficient_payment_error() {
 #[tokio::test]
 async fn test_sign_bundle_rejects_net_zero_token_loop_across_transactions() {
     let ctx = crate::ctx().await;
-    let setup = TestAccountSetup::new().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let attacker = create_funded_wallet(&ctx).await;

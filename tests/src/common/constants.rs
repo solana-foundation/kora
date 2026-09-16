@@ -1,6 +1,3 @@
-/// Default local Solana RPC URL
-pub const DEFAULT_RPC_URL: &str = "http://127.0.0.1:8899";
-
 /// Default recipient public key for tests
 pub const RECIPIENT_PUBKEY: &str = "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM";
 
@@ -57,13 +54,11 @@ pub const SIGNER_2_KEYPAIR_ENV: &str = "SIGNER_2_KEYPAIR";
 pub const TEST_SENDER_KEYPAIR_ENV: &str = "TEST_SENDER_KEYPAIR";
 
 /// Test recipient public key environment variable
-pub const TEST_RECIPIENT_PUBKEY_ENV: &str = "TEST_RECIPIENT_PUBKEY";
 
 /// Test USDC mint private key environment variable
 pub const TEST_USDC_MINT_KEYPAIR_ENV: &str = "TEST_USDC_MINT_KEYPAIR";
 
 /// Test USDC mint decimals environment variable
-pub const TEST_USDC_MINT_DECIMALS_ENV: &str = "TEST_USDC_MINT_DECIMALS";
 
 /// Test USDC mint 2022 private key environment variable
 pub const TEST_USDC_MINT_2022_KEYPAIR_ENV: &str = "TEST_USDC_MINT_2022_KEYPAIR";

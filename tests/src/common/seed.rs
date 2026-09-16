@@ -25,7 +25,7 @@ use std::borrow::Cow;
 use surfpool_sdk::{cheatcodes::Cheatcodes, Surfnet};
 
 use crate::common::{
-    setup::{ts_auth_wallet, ts_free_wallet, TestAccountInfo},
+    setup::{ts_auth_wallet, ts_free_wallet},
     FeePayerPolicyMintTestHelper, FeePayerTestHelper, LookupTableHelper, RecipientTestHelper,
     SenderTestHelper, USDCMint2022TestHelper, USDCMintTestHelper,
 };
@@ -37,13 +37,21 @@ const MAXIMUM_TRANSFER_FEE: u64 = 1_000_000;
 /// Only PDA seeds: no `CreateLookupTable` runs, so these need not be recent.
 const LOOKUP_TABLE_SLOTS: [u64; 3] = [1, 2, 3];
 
+/// The lookup tables the harness exports, the only seeded addresses a test
+/// cannot re-derive for itself.
+pub struct SeededLookupTables {
+    pub allowed: Pubkey,
+    pub disallowed: Pubkey,
+    pub transaction: Pubkey,
+}
+
 struct Holder {
     owner: Pubkey,
     amount: u64,
 }
 
-/// Writes the same account state `TestAccountSetup::setup_all_accounts` creates.
-pub fn seed_accounts(surfnet: &Surfnet) -> Result<TestAccountInfo> {
+/// Writes every account the test phases expect to already exist on chain.
+pub fn seed_accounts(surfnet: &Surfnet) -> Result<SeededLookupTables> {
     let cheats = surfnet.cheatcodes();
 
     let sender_pubkey = SenderTestHelper::get_test_sender_keypair().pubkey();
@@ -67,8 +75,7 @@ pub fn seed_accounts(surfnet: &Surfnet) -> Result<TestAccountInfo> {
         Holder { owner: ts_auth_wallet(), amount: mint_amount },
         Holder { owner: ts_free_wallet(), amount: mint_amount },
     ];
-    let usdc_accounts =
-        write_spl_mint(&cheats, &usdc_mint_pubkey, &sender_pubkey, decimals, &usdc_holders)?;
+    write_spl_mint(&cheats, &usdc_mint_pubkey, &sender_pubkey, decimals, &usdc_holders)?;
 
     let usdc_mint_2022_pubkey = USDCMint2022TestHelper::get_test_usdc_mint_2022_pubkey();
     let usdc_2022_holders = [
@@ -76,7 +83,7 @@ pub fn seed_accounts(surfnet: &Surfnet) -> Result<TestAccountInfo> {
         Holder { owner: recipient_pubkey, amount: 0 },
         Holder { owner: fee_payer_pubkey, amount: 0 },
     ];
-    let usdc_2022_accounts = write_token_2022_mint(
+    write_token_2022_mint(
         &cheats,
         &usdc_mint_2022_pubkey,
         &sender_pubkey,
@@ -92,7 +99,7 @@ pub fn seed_accounts(surfnet: &Surfnet) -> Result<TestAccountInfo> {
         Holder { owner: recipient_pubkey, amount: 0 },
         Holder { owner: fee_payer_pubkey, amount: 0 },
     ];
-    let policy_accounts = write_spl_mint(
+    write_spl_mint(
         &cheats,
         &fee_payer_policy_mint_pubkey,
         &fee_payer_pubkey,
@@ -102,7 +109,7 @@ pub fn seed_accounts(surfnet: &Surfnet) -> Result<TestAccountInfo> {
 
     let fee_payer_policy_mint_2022_pubkey =
         FeePayerPolicyMintTestHelper::get_fee_payer_policy_mint_2022_pubkey();
-    let policy_2022_accounts = write_token_2022_mint(
+    write_token_2022_mint(
         &cheats,
         &fee_payer_policy_mint_2022_pubkey,
         &fee_payer_pubkey,
@@ -114,29 +121,10 @@ pub fn seed_accounts(surfnet: &Surfnet) -> Result<TestAccountInfo> {
     let (allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table) =
         write_lookup_tables(&cheats, &sender_pubkey)?;
 
-    Ok(TestAccountInfo {
-        fee_payer_pubkey,
-        sender_pubkey,
-        recipient_pubkey,
-        usdc_mint_pubkey,
-        sender_token_account: usdc_accounts[0],
-        recipient_token_account: usdc_accounts[1],
-        fee_payer_token_account: usdc_accounts[2],
-        usdc_mint_2022_pubkey,
-        sender_token_2022_account: usdc_2022_accounts[0],
-        recipient_token_2022_account: usdc_2022_accounts[1],
-        fee_payer_token_2022_account: usdc_2022_accounts[2],
-        fee_payer_policy_mint_pubkey,
-        fee_payer_policy_sender_token_account: policy_accounts[0],
-        fee_payer_policy_recipient_token_account: policy_accounts[1],
-        fee_payer_policy_fee_payer_token_account: policy_accounts[2],
-        fee_payer_policy_mint_2022_pubkey,
-        fee_payer_policy_sender_token_2022_account: policy_2022_accounts[0],
-        fee_payer_policy_recipient_token_2022_account: policy_2022_accounts[1],
-        fee_payer_policy_fee_payer_token_2022_account: policy_2022_accounts[2],
-        allowed_lookup_table,
-        disallowed_lookup_table,
-        transaction_lookup_table,
+    Ok(SeededLookupTables {
+        allowed: allowed_lookup_table,
+        disallowed: disallowed_lookup_table,
+        transaction: transaction_lookup_table,
     })
 }
 
@@ -146,7 +134,7 @@ fn write_spl_mint(
     authority: &Pubkey,
     decimals: u8,
     holders: &[Holder],
-) -> Result<Vec<Pubkey>> {
+) -> Result<()> {
     let state = spl_token_interface::state::Mint {
         mint_authority: COption::Some(*authority),
         supply: holders.iter().map(|holder| holder.amount).sum(),
@@ -177,7 +165,7 @@ fn write_spl_mint(
                 &spl_token_interface::id(),
             );
             write_account(cheats, &address, &data, &spl_token_interface::id())?;
-            Ok(address)
+            Ok(())
         })
         .collect()
 }
@@ -189,7 +177,7 @@ fn write_token_2022_mint(
     decimals: u8,
     transfer_fee: bool,
     holders: &[Holder],
-) -> Result<Vec<Pubkey>> {
+) -> Result<()> {
     let extensions: &[ExtensionType] =
         if transfer_fee { &[ExtensionType::TransferFeeConfig] } else { &[] };
     let mut data =
@@ -235,7 +223,7 @@ fn write_token_2022_mint(
                 &token_2022_account_data(mint, holder, transfer_fee)?,
                 &spl_token_2022_interface::id(),
             )?;
-            Ok(address)
+            Ok(())
         })
         .collect()
 }

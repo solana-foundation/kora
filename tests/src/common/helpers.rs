@@ -70,10 +70,7 @@ pub struct RecipientTestHelper;
 
 impl RecipientTestHelper {
     pub fn get_recipient_pubkey() -> Pubkey {
-        dotenv::dotenv().ok();
-        let recipient_str = std::env::var(TEST_RECIPIENT_PUBKEY_ENV)
-            .unwrap_or_else(|_| RECIPIENT_PUBKEY.to_string());
-        Pubkey::from_str(&recipient_str).expect("Invalid recipient pubkey")
+        Pubkey::from_str(RECIPIENT_PUBKEY).expect("Invalid recipient pubkey")
     }
 }
 
@@ -94,11 +91,7 @@ impl USDCMintTestHelper {
     }
 
     pub fn get_test_usdc_mint_decimals() -> u8 {
-        dotenv::dotenv().ok();
-        std::env::var(TEST_USDC_MINT_DECIMALS_ENV)
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(TEST_USDC_MINT_DECIMALS)
+        TEST_USDC_MINT_DECIMALS
     }
 }
 
