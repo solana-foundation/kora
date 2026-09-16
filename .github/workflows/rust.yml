@@ -11,7 +11,6 @@ on:
       - "justfile"
       - ".github/workflows/rust.yml"
       - ".github/workflows/build-rust.yml"
-      - ".github/actions/run-test-runner/**"
   pull_request:
     branches: [main]
     paths:
@@ -22,7 +21,6 @@ on:
       - "justfile"
       - ".github/workflows/rust.yml"
       - ".github/workflows/build-rust.yml"
-      - ".github/actions/run-test-runner/**"
 
 env:
   CARGO_TERM_COLOR: always
@@ -49,9 +47,11 @@ jobs:
       fail-fast: false
       matrix:
         # external excluded: hits live Jupiter API
-        test-group:
+        test-target:
           [
-            regular,
+            rpc,
+            tokens,
+            adversarial,
             auth,
             payment_address,
             multi_signer,
@@ -68,9 +68,6 @@ jobs:
         with:
           toolchain: nightly-2026-07-13
 
-      # test_runner shells out to `cargo test` per phase, so the integration
-      # jobs need the toolchain and the incremental build cache even though
-      # they download prebuilt kora/test_runner binaries
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "rust-dev"
@@ -83,10 +80,7 @@ jobs:
           path: target/debug/
 
       - name: Make binaries executable
-        run: chmod +x target/debug/kora target/debug/test_runner
-
-      - name: Setup Solana CLI
-        uses: ./.github/actions/setup-solana
+        run: chmod +x target/debug/kora
 
       - name: Fetch Doppler secrets
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -99,9 +93,7 @@ jobs:
           inject-env-vars: true
 
       - name: Run integration tests
-        uses: ./.github/actions/run-test-runner
-        with:
-          filters: "--filter ${{ matrix.test-group }}"
+        run: cargo test -p tests --test ${{ matrix.test-target }}
 
       - name: Cleanup test environment
         if: always()
@@ -111,4 +103,4 @@ jobs:
         if: failure()
         uses: ./.github/actions/show-failure-logs
         with:
-          test-type: "Rust integration (${{ matrix.test-group }})"
+          test-type: "Rust integration (${{ matrix.test-target }})"

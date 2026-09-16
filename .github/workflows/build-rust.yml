@@ -11,6 +11,11 @@ on:
         description: "Base name for the uploaded artifact"
         required: true
         type: string
+      include-test-runner:
+        description: "Also upload the legacy test_runner binary"
+        required: false
+        default: false
+        type: boolean
     outputs:
       artifact-name:
         description: "The actual artifact name with hash suffix"
@@ -56,5 +61,5 @@ jobs:
           name: ${{ inputs.artifact-name }}-${{ steps.source-hash.outputs.hash }}
           path: |
             target/debug/kora
-            target/debug/test_runner
+            ${{ inputs.include-test-runner && 'target/debug/test_runner' || '' }}
           retention-days: 1
