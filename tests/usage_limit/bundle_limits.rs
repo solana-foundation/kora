@@ -231,32 +231,33 @@ async fn test_bundle_mixed_rules_enforcement() {
 #[tokio::test]
 async fn test_bundle_fails_fast_on_limit_exceeded() {
     let ctx = crate::ctx().await;
-
-    let sender = create_funded_wallet(&ctx).await;
-    let user_id = sender.pubkey().to_string();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
 
-    // Create a bundle with 5 transactions (exceeds windowed limit of 4)
-    let mut transactions = Vec::new();
-    for _ in 0..5 {
-        let tx_b64 = ctx
-            .transaction_builder()
-            .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-            .with_transfer(&sender.pubkey(), &recipient, 1000)
-            .with_signer(&sender)
-            .build()
-            .await
-            .expect("Failed to build transaction");
-        transactions.push(tx_b64);
-    }
+    let result = crate::window::within_one_window("a five-transaction bundle", || async {
+        let sender = create_funded_wallet(&ctx).await;
+        let user_id = sender.pubkey().to_string();
 
-    // Bundle with 5 transactions should fail (exceeds windowed limit of 4)
-    let result = ctx
-        .rpc_call::<serde_json::Value, _>(
+        // Create a bundle with 5 transactions (exceeds windowed limit of 4)
+        let mut transactions = Vec::new();
+        for _ in 0..5 {
+            let tx_b64 = ctx
+                .transaction_builder()
+                .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
+                .with_transfer(&sender.pubkey(), &recipient, 1000)
+                .with_signer(&sender)
+                .build()
+                .await
+                .expect("Failed to build transaction");
+            transactions.push(tx_b64);
+        }
+
+        ctx.rpc_call::<serde_json::Value, _>(
             "signBundle",
-            rpc_params![transactions, None::<String>, false, user_id.clone()],
+            rpc_params![transactions, None::<String>, false, user_id],
         )
-        .await;
+        .await
+    })
+    .await;
 
     let err = result.expect_err("Expected error for bundle exceeding windowed limit");
     err.assert_contains_message("Usage limit exceeded");
