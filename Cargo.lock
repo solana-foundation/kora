@@ -12865,7 +12865,6 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "chrono",
- "clap",
  "ctor",
  "dotenv",
  "futures 0.3.33",
