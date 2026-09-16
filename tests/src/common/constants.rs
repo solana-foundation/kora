@@ -53,12 +53,8 @@ pub const SIGNER_2_KEYPAIR_ENV: &str = "SIGNER_2_KEYPAIR";
 /// Test sender private key environment variable
 pub const TEST_SENDER_KEYPAIR_ENV: &str = "TEST_SENDER_KEYPAIR";
 
-/// Test recipient public key environment variable
-
 /// Test USDC mint private key environment variable
 pub const TEST_USDC_MINT_KEYPAIR_ENV: &str = "TEST_USDC_MINT_KEYPAIR";
-
-/// Test USDC mint decimals environment variable
 
 /// Test USDC mint 2022 private key environment variable
 pub const TEST_USDC_MINT_2022_KEYPAIR_ENV: &str = "TEST_USDC_MINT_2022_KEYPAIR";
