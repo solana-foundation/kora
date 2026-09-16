@@ -1,34 +1,14 @@
 name: TypeScript Integration Tests
 
+# Temporarily off for routine CI: these phases are the last ones still on the
+# legacy test_runner and solana-test-validator, and they cannot move to the
+# surfpool harness until surfpool#804 lands upstream (the npm @solana/surfpool
+# build carries the jito bundle-commit bug, which makes the auth suite ~40%
+# flaky). Still runs on demand and as the pre-publish gate in
+# typescript-publish.yml.
 on:
   workflow_dispatch:
   workflow_call:
-  push:
-    branches: [main]
-    paths:
-      # TS SDK changes
-      - "sdks/ts/**"
-      # Backend changes that affect TS integration
-      - "crates/**"
-      - "tests/**"
-      - "Cargo.*"
-      - "justfile"
-      - ".github/workflows/typescript-integration.yml"
-      - ".github/workflows/build-rust.yml"
-      - ".github/actions/run-test-runner/**"
-  pull_request:
-    branches: [main]
-    paths:
-      # TS SDK changes
-      - "sdks/ts/**"
-      # Backend changes that affect TS integration
-      - "crates/**"
-      - "tests/**"
-      - "Cargo.*"
-      - "justfile"
-      - ".github/workflows/typescript-integration.yml"
-      - ".github/workflows/build-rust.yml"
-      - ".github/actions/run-test-runner/**"
 
 env:
   CARGO_TERM_COLOR: always
