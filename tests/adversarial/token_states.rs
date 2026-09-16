@@ -9,7 +9,7 @@ use spl_token_interface::instruction as token_instruction;
 
 #[tokio::test]
 async fn test_frozen_token_account_as_fee_payment() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let setup = TestAccountSetup::new().await;
 
     let frozen_token_account_keypair = Keypair::new();

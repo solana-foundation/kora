@@ -216,9 +216,17 @@ pub async fn send_and_confirm_allow_duplicate(
 ) -> Result<()> {
     match rpc_client.send_and_confirm_transaction(transaction).await {
         Ok(_) => Ok(()),
-        Err(e) if e.get_transaction_error() == Some(TransactionError::AlreadyProcessed) => Ok(()),
+        Err(e) if is_already_processed(&e) => Ok(()),
         Err(e) => Err(e.into()),
     }
+}
+
+/// Surfnet reports a duplicate signature as a bare `-32002` string instead of
+/// putting a `TransactionError` in the error data, so the structured check that
+/// works against agave misses it.
+fn is_already_processed(error: &solana_client::client_error::ClientError) -> bool {
+    error.get_transaction_error() == Some(TransactionError::AlreadyProcessed)
+        || error.to_string().contains("already been processed")
 }
 
 #[cfg(test)]

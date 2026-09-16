@@ -15,15 +15,19 @@ use std::{
     time::{Duration, Instant},
 };
 use surfpool_sdk::{cheatcodes::builders::DeployProgram, BlockProductionMode, Surfnet};
-use tokio::process::{Child, Command};
+use tokio::{
+    process::{Child, Command},
+    sync::OnceCell,
+};
 
 use crate::common::{
+    client::TestContext,
     constants::{
         DISABLE_SBPF_V0_V1_V2_DEPLOYMENT_FEATURE, KORA_PRIVATE_KEY_ENV, LIGHTHOUSE_PROGRAM_ID,
         LIGHTHOUSE_PROGRAM_PATH, PAYMENT_ADDRESS_KEYPAIR_ENV, RPC_URL_ENV, SIGNER_2_KEYPAIR_ENV,
         TEST_ALLOWED_LOOKUP_TABLE_ADDRESS_ENV, TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS_ENV,
         TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR_ENV, TEST_FEE_PAYER_POLICY_MINT_KEYPAIR_ENV,
-        TEST_INTEREST_BEARING_MINT_KEYPAIR_ENV, TEST_SENDER_KEYPAIR_ENV,
+        TEST_INTEREST_BEARING_MINT_KEYPAIR_ENV, TEST_SENDER_KEYPAIR_ENV, TEST_SERVER_URL_ENV,
         TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS_ENV, TEST_TRANSFER_HOOK_MINT_KEYPAIR_ENV,
         TEST_USDC_MINT_2022_KEYPAIR_ENV, TEST_USDC_MINT_KEYPAIR_ENV, TRANSFER_HOOK_PROGRAM_ID,
         TRANSFER_HOOK_PROGRAM_PATH,
@@ -50,11 +54,14 @@ const LOCAL_KEY_ENV_FILES: &[(&str, &str)] = &[
 const KORA_BINARY_PATH_ENV: &str = "KORA_TEST_BINARY_PATH";
 const KORA_BINARY_PATH: &str = "target/debug/kora";
 const SLOT_TIME_MS: u64 = 400;
+const SURFNET_START_ATTEMPTS: usize = 5;
 
 static KORA_PID: AtomicI32 = AtomicI32::new(0);
 static RENDERED_CONFIG: OnceLock<PathBuf> = OnceLock::new();
+static HARNESS: OnceCell<KoraHarness> = OnceCell::const_new();
 
 /// Paths are workspace-relative, matching `tests/src/test_runner/test_cases.toml`.
+#[derive(Clone, Copy)]
 pub struct KoraSpec {
     pub config: &'static str,
     pub signers: &'static str,
@@ -72,10 +79,7 @@ pub struct KoraHarness {
 
 impl KoraHarness {
     pub async fn start(spec: KoraSpec) -> Result<Self> {
-        let (surfnet, accounts) =
-            tokio::task::spawn_blocking(|| std::thread::spawn(start_surfnet).join())
-                .await?
-                .map_err(|_| anyhow!("surfnet startup thread panicked"))??;
+        let (surfnet, accounts) = start_surfnet_with_retry().await?;
 
         let rpc_url = surfnet.rpc_url().to_string();
         std::env::set_var(RPC_URL_ENV, &rpc_url);
@@ -106,6 +110,31 @@ impl KoraHarness {
     }
 }
 
+/// Kora keeps its config in process-global state, so one node per config means
+/// one harness per test binary. Each binary compiles its own `common`, and so
+/// its own `HARNESS`.
+///
+/// Contexts are rebuilt per test rather than shared: every `#[tokio::test]` owns
+/// its runtime, and a client outliving that runtime loses its dispatch task.
+///
+/// `TEST_SERVER_URL` means the legacy `test_runner` already booted a validator
+/// and a node; defer to it so both paths keep running. Drop with the runner.
+pub async fn harness_context(spec: KoraSpec) -> TestContext {
+    if std::env::var(TEST_SERVER_URL_ENV).is_ok() {
+        return TestContext::new().await.expect("Failed to create test context");
+    }
+
+    let harness = HARNESS
+        .get_or_init(|| async {
+            KoraHarness::start(spec).await.expect("Failed to start Kora harness")
+        })
+        .await;
+
+    TestContext::with_urls(harness.server_url.clone(), harness.rpc_url.clone())
+        .await
+        .expect("Failed to create test context")
+}
+
 fn workspace_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("tests/ always has a parent")
 }
@@ -122,6 +151,27 @@ fn set_local_key_env_vars() {
         let key = read_local_key(filename).expect("failed to read local test keypair");
         std::env::set_var(env_var, key);
     }
+}
+
+/// The SDK picks its two ports by binding an ephemeral listener and dropping it
+/// before the servers bind for real, so a port can be taken in between, either
+/// by the SDK's own second probe or by another test binary starting at the same
+/// time. The allocation is fresh per attempt, so retrying clears it.
+async fn start_surfnet_with_retry() -> Result<(Surfnet, TestAccountInfo)> {
+    let mut last_error = None;
+    for _ in 0..SURFNET_START_ATTEMPTS {
+        let attempt = tokio::task::spawn_blocking(|| std::thread::spawn(start_surfnet).join())
+            .await?
+            .map_err(|_| anyhow!("surfnet startup thread panicked"))?;
+        match attempt {
+            Ok(started) => return Ok(started),
+            Err(e) if e.to_string().contains("Address already in use") => last_error = Some(e),
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last_error
+        .unwrap_or_else(|| anyhow!("surfnet startup failed"))
+        .context(format!("surfnet did not start in {SURFNET_START_ATTEMPTS} attempts")))
 }
 
 /// The surfpool SDK and its cheatcodes drive the blocking Solana RPC client,

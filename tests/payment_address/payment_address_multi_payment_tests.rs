@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 #[tokio::test]
 async fn test_sign_transaction_if_paid_with_multiple_payments_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let payment_address = Pubkey::from_str(TEST_PAYMENT_ADDRESS).unwrap();
     let test_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -62,7 +62,7 @@ async fn test_sign_transaction_if_paid_with_multiple_payments_legacy() {
 
 #[tokio::test]
 async fn test_sign_transaction_if_paid_with_multiple_payments_insufficient_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let payment_address = Pubkey::from_str(TEST_PAYMENT_ADDRESS).unwrap();
     let test_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -114,7 +114,7 @@ async fn test_sign_transaction_if_paid_with_multiple_payments_insufficient_legac
 
 #[tokio::test]
 async fn test_sign_transaction_if_paid_with_multiple_sources_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let payment_address = Pubkey::from_str(TEST_PAYMENT_ADDRESS).unwrap();
     let test_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();

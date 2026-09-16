@@ -13,7 +13,7 @@ use tests::common::helpers::get_fee_for_default_transaction_in_usdc;
 
 #[tokio::test]
 async fn test_sign_transaction_if_paid_with_payment_address_v0() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let payment_address = Pubkey::from_str(TEST_PAYMENT_ADDRESS).unwrap();
     let test_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -55,7 +55,7 @@ async fn test_sign_transaction_if_paid_with_payment_address_v0() {
 
 #[tokio::test]
 async fn test_sign_transaction_if_paid_with_wrong_destination_v0() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
     let wrong_destination = Keypair::new(); // Random wrong destination

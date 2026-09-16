@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::common::{client::TestClient, constants::TEST_HMAC_SECRET};
+use crate::common::constants::TEST_HMAC_SECRET;
 
 pub static JSON_TEST_BODY: Lazy<Value> = Lazy::new(|| {
     json!({
@@ -30,11 +30,14 @@ pub static JSON_TEST_BODY_WITH_PARAMS: Lazy<Value> = Lazy::new(|| {
 });
 
 /// Helper to make JSON-RPC request with custom headers to test server
-pub async fn make_auth_request(headers: Option<Vec<(&str, &str)>>) -> reqwest::Response {
+pub async fn make_auth_request(
+    server_url: &str,
+    headers: Option<Vec<(&str, &str)>>,
+) -> reqwest::Response {
     let client = reqwest::Client::new();
 
     let mut request = client
-        .post(TestClient::get_default_server_url())
+        .post(server_url)
         .header("Content-Type", "application/json")
         .json(&JSON_TEST_BODY.clone());
 
@@ -48,15 +51,13 @@ pub async fn make_auth_request(headers: Option<Vec<(&str, &str)>>) -> reqwest::R
 }
 
 pub async fn make_auth_request_with_body(
+    server_url: &str,
     body: &Value,
     headers: Option<Vec<(&str, &str)>>,
 ) -> reqwest::Response {
     let client = reqwest::Client::new();
 
-    let mut request = client
-        .post(TestClient::get_default_server_url())
-        .header("Content-Type", "application/json")
-        .json(body);
+    let mut request = client.post(server_url).header("Content-Type", "application/json").json(body);
 
     if let Some(custom_headers) = headers {
         for (key, value) in custom_headers {

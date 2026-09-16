@@ -1,9 +1,10 @@
-use crate::common::*;
 use serde_json::json;
 
 /// Test that oversized request bodies are rejected with 413 Payload Too Large
 #[tokio::test]
 async fn test_request_body_oversized_rejected() {
+    let ctx = crate::ctx().await;
+
     // Create a very large JSON payload (4 MB, exceeds 2 MB limit)
     let large_string = "x".repeat(4 * 1024 * 1024);
 
@@ -17,8 +18,7 @@ async fn test_request_body_oversized_rejected() {
     });
 
     let client = reqwest::Client::new();
-    let response =
-        client.post(TestClient::get_default_server_url()).json(&request_body).send().await;
+    let response = client.post(&ctx.client.server_url).json(&request_body).send().await;
 
     // Should get 413 Payload Too Large
     assert_eq!(
