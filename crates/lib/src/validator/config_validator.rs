@@ -531,6 +531,9 @@ impl ConfigValidator {
             );
         }
 
+        let fee_payer_programs_configured = config.validation.fee_payer_allowed_programs.is_all()
+            || !config.validation.fee_payer_allowed_programs.as_slice().is_empty();
+
         let is_wildcard = config.validation.allowed_programs.is_all();
         if is_wildcard {
             warnings.push(
@@ -539,6 +542,16 @@ impl ConfigValidator {
                  disallowed_accounts are configured to bound drainage risk."
                     .to_string(),
             );
+            if fee_payer_programs_configured {
+                warnings.push(
+                    "fee_payer_allowed_programs has no effect while allowed_programs is \"All\": \
+                     the fee payer is permitted to participate in every program, so nothing is \
+                     gated. To use the participation gate, set allowed_programs to a restricted \
+                     list (the trusted programs the fee payer may participate in) and put the \
+                     unvetted programs in fee_payer_allowed_programs instead."
+                        .to_string(),
+                );
+            }
         } else if config.validation.allowed_programs.as_slice().is_empty() {
             warnings.push(
                 "No allowed programs configured - this will block all transactions".to_string(),
@@ -598,6 +611,15 @@ impl ConfigValidator {
             if Pubkey::from_str(pubkey_str).is_err() {
                 errors.push(format!(
                     "Invalid base58 pubkey format in allowed_programs: '{}'",
+                    pubkey_str
+                ));
+            }
+        }
+
+        for pubkey_str in &config.validation.fee_payer_allowed_programs {
+            if Pubkey::from_str(pubkey_str).is_err() {
+                errors.push(format!(
+                    "Invalid base58 pubkey format in fee_payer_allowed_programs: '{}'",
                     pubkey_str
                 ));
             }
@@ -1008,6 +1030,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec!["program1".to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["token1".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec!["token3".to_string()]),
                 disallowed_accounts: vec!["account1".to_string()],
@@ -1052,6 +1075,7 @@ mod tests {
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1095,6 +1119,7 @@ mod tests {
                 SYSTEM_PROGRAM_ID.to_string(),
                 SPL_TOKEN_PROGRAM_ID.to_string(),
             ]),
+            fee_payer_allowed_programs: ProgramsConfig::default(),
             allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
             allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                 "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1189,6 +1214,7 @@ mod tests {
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1240,6 +1266,7 @@ mod tests {
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1293,6 +1320,7 @@ mod tests {
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                     TOKEN_2022_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1339,6 +1367,7 @@ mod tests {
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                     TOKEN_2022_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1384,6 +1413,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 0,
                 allowed_programs: ProgramsConfig::Allowlist(vec![]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -1601,6 +1631,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec![],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -1641,6 +1672,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec![],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1684,6 +1716,7 @@ mod tests {
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     "11111111111111111111111111111112".to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -1798,6 +1831,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec![],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "invalid_token_address".to_string()
@@ -1842,6 +1876,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1889,6 +1924,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1945,6 +1981,7 @@ mod tests {
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1994,6 +2031,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -2040,6 +2078,7 @@ mod tests {
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::All,
                 disallowed_accounts: vec![],
@@ -2081,6 +2120,7 @@ mod tests {
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
@@ -2117,6 +2157,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -2144,6 +2185,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -2205,6 +2247,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -2241,6 +2284,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -2278,6 +2322,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -2313,6 +2358,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -2356,6 +2402,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -2399,6 +2446,7 @@ mod tests {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -2520,6 +2568,7 @@ mod tests {
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                     TOKEN_2022_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -2906,6 +2955,7 @@ mod tests {
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -2949,6 +2999,7 @@ mod tests {
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -2992,6 +3043,7 @@ mod tests {
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -3034,6 +3086,7 @@ mod tests {
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -3085,6 +3138,7 @@ mod tests {
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                     LIGHTHOUSE_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -3136,6 +3190,7 @@ mod tests {
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -3347,6 +3402,7 @@ mod tests {
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ]),
+                fee_payer_allowed_programs: ProgramsConfig::default(),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
