@@ -1,4 +1,4 @@
-use crate::common::{FeePayerTestHelper, TestContext};
+use crate::common::FeePayerTestHelper;
 use kora_lib::bundle::{JitoClient, JitoConfig};
 
 const JITO_TESTNET_BLOCK_ENGINE_URL: &str = "https://dallas.testnet.block-engine.jito.wtf";
@@ -45,7 +45,7 @@ async fn test_jito_testnet_connection() {
 
 #[tokio::test]
 async fn test_jito_send_bundle() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let config = JitoConfig {
         block_engine_url: JITO_TESTNET_BLOCK_ENGINE_URL.to_string(),
         simulate_bundle_url: None,
