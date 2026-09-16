@@ -24,7 +24,7 @@ const TEST_PROGRAM_SO_REL: &str = "src/common/transfer-hook-example/transfer_hoo
 
 #[tokio::test]
 async fn deploy_v3_program_through_kora() -> Result<()> {
-    let ctx = TestContext::new().await.expect("test context");
+    let ctx = crate::ctx().await;
     let kora_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let program = Keypair::new();
     let buffer = Keypair::new();
