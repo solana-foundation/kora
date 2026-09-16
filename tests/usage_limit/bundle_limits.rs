@@ -8,52 +8,55 @@ use solana_sdk::signature::{Keypair, Signer};
 #[tokio::test]
 async fn test_bundle_transaction_limit_enforcement() {
     let ctx = crate::ctx().await;
-
-    let sender = create_funded_wallet(&ctx).await;
-    let user_id = sender.pubkey().to_string();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
 
-    // Create a bundle with 4 transactions (hits windowed limit exactly)
-    let mut transactions = Vec::new();
-    for _ in 0..4 {
-        let tx_b64 = ctx
-            .transaction_builder()
-            .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-            .with_transfer(&sender.pubkey(), &recipient, 1000)
-            .with_signer(&sender)
-            .build()
+    let result =
+        crate::window::within_one_window("a four-transaction bundle and one more send", || async {
+            let sender = create_funded_wallet(&ctx).await;
+            let user_id = sender.pubkey().to_string();
+
+            let mut transactions = Vec::new();
+            for _ in 0..4 {
+                let tx_b64 = ctx
+                    .transaction_builder()
+                    .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
+                    .with_transfer(&sender.pubkey(), &recipient, 1000)
+                    .with_signer(&sender)
+                    .build()
+                    .await
+                    .expect("Failed to build transaction");
+                transactions.push(tx_b64);
+            }
+
+            let response: serde_json::Value = ctx
+                .rpc_call(
+                    "signBundle",
+                    rpc_params![transactions, None::<String>, false, user_id.clone()],
+                )
+                .await
+                .expect("Failed to sign bundle with 4 transactions");
+
+            response.assert_success();
+            assert!(
+                response["signed_transactions"].as_array().is_some(),
+                "Expected signed_transactions array in response"
+            );
+
+            let tx_b64 = ctx
+                .transaction_builder()
+                .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
+                .with_transfer(&sender.pubkey(), &recipient, 1000)
+                .with_signer(&sender)
+                .build()
+                .await
+                .expect("Failed to build transaction");
+
+            ctx.rpc_call::<serde_json::Value, _>(
+                "signBundle",
+                rpc_params![vec![tx_b64], None::<String>, false, user_id],
+            )
             .await
-            .expect("Failed to build transaction");
-        transactions.push(tx_b64);
-    }
-
-    // Bundle with 4 transactions should succeed (windowed limit is 4)
-    let response: serde_json::Value = ctx
-        .rpc_call("signBundle", rpc_params![transactions, None::<String>, false, user_id.clone()])
-        .await
-        .expect("Failed to sign bundle with 4 transactions");
-
-    response.assert_success();
-    assert!(
-        response["signed_transactions"].as_array().is_some(),
-        "Expected signed_transactions array in response"
-    );
-
-    // 5th transaction (single) should fail (exceeds windowed limit of 4)
-    let tx_b64 = ctx
-        .transaction_builder()
-        .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-        .with_transfer(&sender.pubkey(), &recipient, 1000)
-        .with_signer(&sender)
-        .build()
-        .await
-        .expect("Failed to build transaction");
-
-    let result = ctx
-        .rpc_call::<serde_json::Value, _>(
-            "signBundle",
-            rpc_params![vec![tx_b64], None::<String>, false, user_id.clone()],
-        )
+        })
         .await;
 
     let err = result.expect_err("Expected error for exceeding windowed limit after bundle");

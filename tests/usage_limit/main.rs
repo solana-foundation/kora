@@ -11,6 +11,7 @@ mod bundle_limits;
 mod instruction_limits;
 mod multiple_rules;
 mod transaction_limits;
+mod window;
 
 // Make common utilities available
 #[path = "../src/common/mod.rs"]
