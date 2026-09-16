@@ -93,6 +93,8 @@ jobs:
           inject-env-vars: true
 
       - name: Run integration tests
+        env:
+          KORA_TEST_VERBOSE: "1"
         run: cargo test -p tests --test ${{ matrix.test-target }}
 
       - name: Cleanup test environment
