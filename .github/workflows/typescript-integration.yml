@@ -1,30 +1,12 @@
 name: TypeScript Integration Tests
 
+# Routine CI runs these three flavors inside the rust.yml matrix, which already
+# has the build artifact, so this workflow exists only for the publish gate and
+# manual runs. Keeping the triggers off avoids a second Build Artifacts job on
+# every pull request.
 on:
   workflow_dispatch:
   workflow_call:
-  push:
-    branches: [main]
-    paths:
-      - "sdks/ts/**"
-      - "crates/**"
-      - "tests/**"
-      - "Cargo.*"
-      - "rust-toolchain.toml"
-      - "justfile"
-      - ".github/workflows/typescript-integration.yml"
-      - ".github/workflows/build-rust.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "sdks/ts/**"
-      - "crates/**"
-      - "tests/**"
-      - "Cargo.*"
-      - "rust-toolchain.toml"
-      - "justfile"
-      - ".github/workflows/typescript-integration.yml"
-      - ".github/workflows/build-rust.yml"
 
 env:
   CARGO_TERM_COLOR: always
