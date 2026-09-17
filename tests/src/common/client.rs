@@ -58,10 +58,6 @@ impl TestContext {
         Ok(Self { client })
     }
 
-    pub fn http_client(&self) -> &HttpClient {
-        &self.client.http_client
-    }
-
     pub fn rpc_client(&self) -> &Arc<RpcClient> {
         &self.client.rpc_client
     }

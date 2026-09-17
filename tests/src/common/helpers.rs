@@ -37,18 +37,6 @@ impl FeePayerTestHelper {
     pub fn get_fee_payer_pubkey() -> Pubkey {
         Self::get_fee_payer_keypair().pubkey()
     }
-
-    pub fn get_signer_2_keypair() -> Keypair {
-        parse_private_key_string(
-            &std::env::var(SIGNER_2_KEYPAIR_ENV)
-                .expect("SIGNER_2_KEYPAIR environment variable is not set"),
-        )
-        .expect("Failed to parse signer 2 private key")
-    }
-
-    pub fn get_signer_2_pubkey() -> Pubkey {
-        Self::get_signer_2_keypair().pubkey()
-    }
 }
 
 pub struct SenderTestHelper;
@@ -114,48 +102,12 @@ impl USDCMint2022TestHelper {
         .expect("Failed to parse test interest bearing mint private key")
     }
 
-    pub fn get_test_interest_bearing_mint_pubkey() -> Pubkey {
-        Self::get_test_interest_bearing_mint_keypair().pubkey()
-    }
-
     pub fn get_test_transfer_hook_mint_keypair() -> Keypair {
         parse_private_key_string(
             &std::env::var(TEST_TRANSFER_HOOK_MINT_KEYPAIR_ENV)
                 .expect("TEST_TRANSFER_HOOK_MINT_KEYPAIR environment variable is not set"),
         )
         .expect("Failed to parse test transfer hook mint private key")
-    }
-
-    pub fn get_test_transfer_hook_mint_pubkey() -> Pubkey {
-        Self::get_test_transfer_hook_mint_keypair().pubkey()
-    }
-}
-
-pub struct PaymentAddressTestHelper;
-
-impl PaymentAddressTestHelper {
-    pub fn get_payment_address_keypair() -> Keypair {
-        parse_private_key_string(
-            &std::env::var(PAYMENT_ADDRESS_KEYPAIR_ENV)
-                .expect("PAYMENT_ADDRESS_KEYPAIR environment variable is not set"),
-        )
-        .expect("Failed to parse payment address private key")
-    }
-
-    pub fn get_payment_address_pubkey() -> Pubkey {
-        Self::get_payment_address_keypair().pubkey()
-    }
-
-    pub fn get_payment_test_address_pubkey() -> Pubkey {
-        Pubkey::from_str(TEST_PAYMENT_ADDRESS).expect("Invalid payment test address")
-    }
-}
-
-pub struct PYUSDTestHelper;
-
-impl PYUSDTestHelper {
-    pub fn get_pyusd_mint_pubkey() -> Pubkey {
-        Pubkey::from_str(PYUSD_MINT).expect("Invalid PYUSD mint")
     }
 }
 

@@ -1,14 +1,10 @@
 use anyhow::Error as AnyhowError;
 use jsonrpsee::core::Error as RpcError;
 use serde_json::Value;
-use solana_sdk::signature::Signature;
-use std::str::FromStr;
 
 /// Trait for common RPC response assertions
 pub trait RpcAssertions {
     fn assert_success(&self);
-    fn assert_error(&self, expected_code: i32);
-    fn assert_has_signature(&self) -> Signature;
     fn assert_has_field(&self, field: &str);
     fn get_field(&self, field: &str) -> Option<&Value>;
 }
@@ -28,34 +24,6 @@ impl RpcAssertions for Value {
         // - Config endpoints: return data directly (fee_payers, validation_config, etc.)
         // - Fee estimation endpoints: return fee fields directly
         // - JSON-RPC wrapped responses: have "result" field
-    }
-
-    fn assert_error(&self, expected_code: i32) {
-        let error =
-            self.get("error").expect("Expected error in response, but got successful result");
-
-        let code =
-            error.get("code").and_then(|c| c.as_i64()).expect("Error response missing code field");
-
-        assert_eq!(
-            code,
-            expected_code as i64,
-            "Expected error code {}, got {}. Full error: {}",
-            expected_code,
-            code,
-            serde_json::to_string_pretty(error).unwrap()
-        );
-    }
-
-    fn assert_has_signature(&self) -> Signature {
-        // Check for signature in multiple possible locations
-        let sig_str = self
-            .get("signature")
-            .or_else(|| self.get("result").and_then(|r| r.get("signature")))
-            .and_then(|s| s.as_str())
-            .expect("Response does not contain a signature");
-
-        Signature::from_str(sig_str).expect("Invalid signature format")
     }
 
     fn assert_has_field(&self, field: &str) {
@@ -94,17 +62,9 @@ impl TransactionAssertions for Value {
     }
 }
 
-/// Standard JSON-RPC error codes for reference
-pub struct JsonRpcErrorCodes;
-
-impl JsonRpcErrorCodes {
-    pub const METHOD_NOT_FOUND: i32 = -32601;
-}
-
 /// Trait for RPC error assertions
 pub trait RpcErrorAssertions {
     fn assert_contains_message(&self, expected_message: &str);
-    fn assert_error_type(&self, expected_type: &str);
     fn assert_error_type_and_message(&self, expected_type: &str, expected_message: &str);
 }
 
@@ -114,14 +74,6 @@ impl RpcErrorAssertions for RpcError {
         assert!(
             error_str.contains(expected_message),
             "Expected error to contain '{expected_message}', got: {error_str}",
-        );
-    }
-
-    fn assert_error_type(&self, expected_type: &str) {
-        let error_str = self.to_string();
-        assert!(
-            error_str.contains(expected_type),
-            "Expected error type '{expected_type}', got: {error_str}",
         );
     }
 
@@ -144,14 +96,6 @@ impl RpcErrorAssertions for AnyhowError {
         assert!(
             error_str.contains(expected_message),
             "Expected error to contain '{expected_message}', got: {error_str}",
-        );
-    }
-
-    fn assert_error_type(&self, expected_type: &str) {
-        let error_str = self.to_string();
-        assert!(
-            error_str.contains(expected_type),
-            "Expected error type '{expected_type}', got: {error_str}",
         );
     }
 
