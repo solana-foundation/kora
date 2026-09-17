@@ -69,7 +69,6 @@
     "@eslint/js": "^10.0.1",
     "@solana-program/system": "^0.13.0",
     "@solana/eslint-config-solana": "6.0.0",
-    "@solana/kit-plugin-litesvm": "^0.15.0",
     "@solana/prettier-config-solana": "^0.0.6",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.1.0",

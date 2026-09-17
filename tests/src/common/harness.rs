@@ -73,6 +73,7 @@ pub struct KoraHarness {
     _kora: Child,
     pub server_url: String,
     pub rpc_url: String,
+    pub ws_url: String,
 }
 
 impl KoraHarness {
@@ -80,6 +81,7 @@ impl KoraHarness {
         let (surfnet, lookup_tables) = start_surfnet_with_retry().await?;
 
         let rpc_url = surfnet.rpc_url().to_string();
+        let ws_url = surfnet.ws_url().to_string();
         std::env::set_var(RPC_URL_ENV, &rpc_url);
 
         for (env_var, address) in [
@@ -104,7 +106,7 @@ impl KoraHarness {
 
         let server_url = format!("http://127.0.0.1:{port}");
 
-        Ok(Self { _surfnet: surfnet, _kora: kora, server_url, rpc_url })
+        Ok(Self { _surfnet: surfnet, _kora: kora, server_url, rpc_url, ws_url })
     }
 }
 
@@ -115,15 +117,19 @@ impl KoraHarness {
 /// Contexts are rebuilt per test rather than shared: every `#[tokio::test]` owns
 /// its runtime, and a client outliving that runtime loses its dispatch task.
 pub async fn harness_context(spec: KoraSpec) -> TestContext {
-    let harness = HARNESS
-        .get_or_init(|| async {
-            KoraHarness::start(spec).await.expect("Failed to start Kora harness")
-        })
-        .await;
+    let harness = started(spec).await;
 
     TestContext::with_urls(harness.server_url.clone(), harness.rpc_url.clone())
         .await
         .expect("Failed to create test context")
+}
+
+pub async fn started(spec: KoraSpec) -> &'static KoraHarness {
+    HARNESS
+        .get_or_init(|| async {
+            KoraHarness::start(spec).await.expect("Failed to start Kora harness")
+        })
+        .await
 }
 
 fn workspace_root() -> &'static Path {

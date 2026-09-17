@@ -43,23 +43,31 @@ pnpm run build
 
 ### Running Tests
 
-
-Start your local Kora RPC Server from the root project directory: 
-
-```bash
-kora --config tests/src/common/fixtures/kora-test.toml rpc start --signers-config tests/src/common/fixtures/signers.toml
-```
-
-Most of the suite runs its chain in-process, but a few tests reach a Solana node
-at `SOLANA_RPC_URL` (default `http://127.0.0.1:8899`), so start one alongside Kora.
-
-Run:
+Unit tests need nothing running:
 
 ```bash
-pnpm test:integration
+pnpm test:unit
 ```
 
-This suite is not run in CI: it has no automated way to boot a node yet, and is
-waiting on [surfpool#804](https://github.com/solana-foundation/surfpool/pull/804)
-so it can embed a surfnet the way the Rust integration tests do.
+The integration suite talks to a Kora node over `KORA_RPC_URL` and to that
+node's Solana RPC over `SOLANA_RPC_URL` (plus `SOLANA_WS_URL` when the
+websocket is not the RPC URL with an `http` to `ws` swap). Rather than start
+both by hand, run the phase from the workspace root and let the Rust harness
+boot a surfnet, seed it, and start Kora:
+
+```bash
+cargo test -p tests --test typescript_basic
+cargo test -p tests --test typescript_auth
+cargo test -p tests --test typescript_free
+```
+
+Each flavor is a separate phase because each needs its own Kora config. To run
+the suite against a node you started yourself:
+
+```bash
+KORA_RPC_URL=http://127.0.0.1:8080 SOLANA_RPC_URL=http://127.0.0.1:8899 pnpm test:integration
+```
+
+Setup seeds the mint and wallets itself when they are absent, so this works
+against a bare validator as well as against the seeded harness.
 
