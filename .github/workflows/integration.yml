@@ -1,0 +1,65 @@
+name: Integration Tests
+
+# Owns the one build both suites download: artifacts are scoped to a workflow
+# run, so the suites have to be called from here to share it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "tests/**"
+      - "sdks/ts/**"
+      - "Cargo.*"
+      - "rust-toolchain.toml"
+      - "justfile"
+      - ".github/workflows/integration.yml"
+      - ".github/workflows/rust-integration.yml"
+      - ".github/workflows/typescript-integration.yml"
+      - ".github/workflows/build-rust.yml"
+      - ".github/actions/integration-phase/**"
+      - ".github/actions/cleanup-test-env/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "tests/**"
+      - "sdks/ts/**"
+      - "Cargo.*"
+      - "rust-toolchain.toml"
+      - "justfile"
+      - ".github/workflows/integration.yml"
+      - ".github/workflows/rust-integration.yml"
+      - ".github/workflows/typescript-integration.yml"
+      - ".github/workflows/build-rust.yml"
+      - ".github/actions/integration-phase/**"
+      - ".github/actions/cleanup-test-env/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Artifacts
+    uses: ./.github/workflows/build-rust.yml
+    with:
+      cache-key: "rust-dev"
+      artifact-name: "rust-binaries"
+
+  rust:
+    name: Rust
+    needs: build
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/rust-integration.yml
+    with:
+      artifact-name: ${{ needs.build.outputs.artifact-name }}
+
+  typescript:
+    name: TypeScript
+    needs: build
+    permissions:
+      contents: read
+    uses: ./.github/workflows/typescript-integration.yml
+    with:
+      artifact-name: ${{ needs.build.outputs.artifact-name }}

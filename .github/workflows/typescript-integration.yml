@@ -1,8 +1,8 @@
 name: TypeScript Integration Tests
 
-# Called by rust.yml for routine CI and by typescript-publish.yml as a release
-# gate. Both own the build, so this workflow takes the artifact rather than
-# producing a second identical one.
+# Called by integration.yml for routine CI and by typescript-publish.yml as a
+# release gate. Both own the build, so this workflow takes the artifact rather
+# than producing a second identical one.
 on:
   workflow_call:
     inputs:
@@ -21,7 +21,7 @@ env:
 
 jobs:
   typescript-integration:
-    name: TypeScript SDK Integration Tests
+    name: Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:

@@ -1,34 +1,14 @@
 name: Rust Integration Tests
 
+# One phase per Kora config, each booting its own embedded surfnet. Called by
+# integration.yml, which owns the build these phases download.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "crates/**"
-      - "tests/**"
-      - "sdks/ts/**"
-      - "Cargo.*"
-      - "rust-toolchain.toml"
-      - "justfile"
-      - ".github/workflows/rust.yml"
-      - ".github/workflows/build-rust.yml"
-      - ".github/workflows/typescript-integration.yml"
-      - ".github/actions/integration-phase/**"
-      - ".github/actions/cleanup-test-env/**"
-  pull_request:
-    branches: [main]
-    paths:
-      - "crates/**"
-      - "tests/**"
-      - "sdks/ts/**"
-      - "Cargo.*"
-      - "rust-toolchain.toml"
-      - "justfile"
-      - ".github/workflows/rust.yml"
-      - ".github/workflows/build-rust.yml"
-      - ".github/workflows/typescript-integration.yml"
-      - ".github/actions/integration-phase/**"
-      - ".github/actions/cleanup-test-env/**"
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: "Artifact holding the prebuilt Kora binary"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -39,17 +19,9 @@ env:
   CI: true
 
 jobs:
-  build:
-    name: Build Artifacts
-    uses: ./.github/workflows/build-rust.yml
-    with:
-      cache-key: "rust-dev"
-      artifact-name: "rust-binaries"
-
   integration:
     name: Integration Tests
     runs-on: ubuntu-latest
-    needs: build
     timeout-minutes: 25
     permissions:
       contents: read
@@ -88,19 +60,8 @@ jobs:
       - uses: ./.github/actions/integration-phase
         with:
           test-target: ${{ matrix.test-target }}
-          artifact-name: ${{ needs.build.outputs.artifact-name }}
+          artifact-name: ${{ inputs.artifact-name }}
 
       - name: Cleanup test environment
         if: always()
         uses: ./.github/actions/cleanup-test-env
-
-  # The typescript flavors are phases of this same suite, so they run off this
-  # run's build artifact rather than a second one of their own.
-  typescript:
-    name: TypeScript
-    needs: build
-    permissions:
-      contents: read
-    uses: ./.github/workflows/typescript-integration.yml
-    with:
-      artifact-name: ${{ needs.build.outputs.artifact-name }}
