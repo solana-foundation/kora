@@ -1,7 +1,3 @@
-#[cfg(test)]
-use crate::tests::usage_limiter_mock::MockUsageTracker as UsageTracker;
-#[cfg(not(test))]
-use crate::usage_limit::UsageTracker;
 use crate::{
     config::{classify_cors_origins, AuthConfig, CorsOriginsClassification},
     constant::{X_API_KEY, X_HMAC_SIGNATURE, X_RECAPTCHA_TOKEN, X_TIMESTAMP},
@@ -13,6 +9,7 @@ use crate::{
         recaptcha_util::RecaptchaConfig,
         rpc::KoraRpc,
     },
+    usage_limit::UsageTracker,
 };
 
 use crate::state::drain_background_tasks;

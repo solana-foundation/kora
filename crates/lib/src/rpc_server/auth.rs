@@ -31,21 +31,39 @@ impl std::fmt::Debug for ClientIdentity {
     }
 }
 
+struct KeyEntry {
+    identity: String,
+    hash: [u8; 32],
+}
+
+impl Clone for KeyEntry {
+    fn clone(&self) -> Self {
+        Self { identity: self.identity.clone(), hash: self.hash }
+    }
+}
+
 #[derive(Clone)]
 pub struct ApiKeyAuthLayer {
-    api_keys: Vec<String>,
+    api_keys: Vec<KeyEntry>,
 }
 
 impl ApiKeyAuthLayer {
     pub fn new(api_keys: Vec<String>) -> Self {
-        Self { api_keys }
+        let entries = api_keys
+            .iter()
+            .map(|k| {
+                let h = hash_key(k.as_bytes());
+                KeyEntry { identity: hex::encode(&h[..4]), hash: h }
+            })
+            .collect();
+        Self { api_keys: entries }
     }
 }
 
 #[derive(Clone)]
 pub struct ApiKeyAuthService<S> {
     inner: S,
-    api_keys: Vec<String>,
+    api_keys: Vec<KeyEntry>,
 }
 
 impl<S> tower::Layer<S> for ApiKeyAuthLayer {
@@ -98,13 +116,12 @@ where
                 let mut matched_id = String::new();
                 let provided_hash = hash_key(provided_key.as_bytes());
 
-                for configured_key in api_keys.iter() {
-                    let configured_hash = hash_key(configured_key.as_bytes());
-                    let matches: bool = provided_hash.ct_eq(&configured_hash).into();
+                for entry in api_keys.iter() {
+                    let matches: bool = provided_hash.ct_eq(&entry.hash).into();
 
                     if matches {
                         is_valid = true;
-                        matched_id = hex::encode(&configured_hash[..4]);
+                        matched_id = entry.identity.clone();
                     }
                 }
 

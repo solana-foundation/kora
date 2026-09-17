@@ -877,7 +877,6 @@ where
             if trimmed.is_empty() {
                 Ok(None)
             } else {
-                log::warn!("DEPRECATION WARNING: 'api_key' as a single string is deprecated. Please migrate to using 'api_keys' as an array in your configuration.");
                 Ok(Some(vec![trimmed.to_string()]))
             }
         }
