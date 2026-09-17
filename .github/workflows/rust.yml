@@ -12,6 +12,9 @@ on:
       - "justfile"
       - ".github/workflows/rust.yml"
       - ".github/workflows/build-rust.yml"
+      - ".github/workflows/typescript-integration.yml"
+      - ".github/actions/integration-phase/**"
+      - ".github/actions/cleanup-test-env/**"
   pull_request:
     branches: [main]
     paths:
@@ -23,6 +26,12 @@ on:
       - "justfile"
       - ".github/workflows/rust.yml"
       - ".github/workflows/build-rust.yml"
+      - ".github/workflows/typescript-integration.yml"
+      - ".github/actions/integration-phase/**"
+      - ".github/actions/cleanup-test-env/**"
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -90,6 +99,8 @@ jobs:
   typescript:
     name: TypeScript
     needs: build
+    permissions:
+      contents: read
     uses: ./.github/workflows/typescript-integration.yml
     with:
       artifact-name: ${{ needs.build.outputs.artifact-name }}
