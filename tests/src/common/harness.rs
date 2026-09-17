@@ -51,7 +51,6 @@ const LOCAL_KEY_ENV_FILES: &[(&str, &str)] = &[
     (PAYMENT_ADDRESS_KEYPAIR_ENV, "payment-local.json"),
 ];
 
-const KORA_BINARY_PATH_ENV: &str = "KORA_TEST_BINARY_PATH";
 const KORA_BINARY_PATH: &str = "target/debug/kora";
 const SLOT_TIME_MS: u64 = 400;
 const SURFNET_START_ATTEMPTS: usize = 5;
@@ -136,9 +135,11 @@ fn workspace_path(relative: &str) -> PathBuf {
 }
 
 /// Test helpers read these before touching the harness, so they must be set
-/// before any test body runs.
+/// before any test body runs. `.env` is only loaded for keys the harness does
+/// not own, such as `JUPITER_API_KEY` for the external phase.
 #[ctor::ctor]
 fn set_local_key_env_vars() {
+    dotenv::dotenv().ok();
     for (env_var, filename) in LOCAL_KEY_ENV_FILES {
         let key = read_local_key(filename).expect("failed to read local test keypair");
         std::env::set_var(env_var, key);
@@ -232,9 +233,7 @@ fn render_config(source: &Path, rpc_url: &str) -> Result<PathBuf> {
 }
 
 fn kora_binary_path() -> Result<PathBuf> {
-    let path = std::env::var(KORA_BINARY_PATH_ENV)
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| workspace_path(KORA_BINARY_PATH));
+    let path = workspace_path(KORA_BINARY_PATH);
     if !path.exists() {
         return Err(anyhow!(
             "pre-built Kora binary not found at '{}'. Run 'cargo build --bin kora' first.",

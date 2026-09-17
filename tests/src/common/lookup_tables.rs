@@ -13,14 +13,12 @@ impl LookupTableHelper {
     }
 
     pub fn get_allowed_lookup_table_address() -> Result<Pubkey> {
-        dotenv::dotenv().ok();
         let allowed_lookup_table_address = std::env::var(TEST_ALLOWED_LOOKUP_TABLE_ADDRESS_ENV)
             .expect("TEST_ALLOWED_LOOKUP_TABLE_ADDRESS environment variable is not set");
         Pubkey::from_str(&allowed_lookup_table_address).map_err(Into::into)
     }
 
     pub fn get_disallowed_lookup_table_address() -> Result<Pubkey> {
-        dotenv::dotenv().ok();
         let disallowed_lookup_table_address =
             std::env::var(TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS_ENV)
                 .expect("TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS environment variable is not set");
@@ -28,7 +26,6 @@ impl LookupTableHelper {
     }
 
     pub fn get_transaction_lookup_table_address() -> Result<Pubkey> {
-        dotenv::dotenv().ok();
         let transaction_lookup_table_address =
             std::env::var(TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS_ENV)
                 .expect("TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS environment variable is not set");
