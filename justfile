@@ -81,7 +81,7 @@ fmt-ts:
 [group('test')]
 [no-exit-message]
 unit-test:
-    -cargo test --lib --workspace --exclude tests --quiet
+    cargo test --lib --workspace --exclude tests --quiet
 
 # Run all integration tests (pass cargo test args, e.g. --test rpc)
 [group('test')]
@@ -92,7 +92,7 @@ integration-test *args='--tests': build
 [group('test')]
 [no-exit-message]
 unit-test-ts: build
-    -cd sdks/ts && pnpm test:unit
+    cd sdks/ts && pnpm test:unit
 
 # Run all tests (unit + TypeScript unit + integration)
 [group('test')]
