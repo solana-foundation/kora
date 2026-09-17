@@ -29,6 +29,9 @@ env:
   RUST_LOG: info
   CI: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build Artifacts
