@@ -11,6 +11,7 @@ use spl_token_2022_interface::{
     instruction::{
         approve, burn, close_account, freeze_account, initialize_account3, initialize_mint2,
         initialize_multisig2, mint_to, revoke, set_authority, thaw_account, transfer_checked,
+        withdraw_excess_lamports,
         AuthorityType,
     },
 };
@@ -20,6 +21,7 @@ enum Token2022Role {
     Transfer,
     Burn,
     CloseAccount,
+    WithdrawExcessLamports,
     Approve,
     Revoke,
     SetAuthority,
@@ -41,6 +43,7 @@ impl DrainRole for Token2022Role {
         Self::Transfer,
         Self::Burn,
         Self::CloseAccount,
+        Self::WithdrawExcessLamports,
         Self::Approve,
         Self::Revoke,
         Self::SetAuthority,
@@ -66,6 +69,7 @@ impl DrainRole for Token2022Role {
             Self::Transfer => &mut policy.token_2022.allow_transfer,
             Self::Burn => &mut policy.token_2022.allow_burn,
             Self::CloseAccount => &mut policy.token_2022.allow_close_account,
+            Self::WithdrawExcessLamports => &mut policy.token_2022.allow_withdraw_excess_lamports,
             Self::Approve => &mut policy.token_2022.allow_approve,
             Self::Revoke => &mut policy.token_2022.allow_revoke,
             Self::SetAuthority => &mut policy.token_2022.allow_set_authority,

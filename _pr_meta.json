@@ -1,0 +1,8 @@
+{
+  "repo": "solana-foundation/kora",
+  "number": 653,
+  "base": "main",
+  "head": "fix/issue-643",
+  "fork": "VedantMadane/solana-foundation-kora",
+  "title": "test: Token-2022 fee-payer drain property coverage"
+}
