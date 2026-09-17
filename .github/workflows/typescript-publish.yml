@@ -40,9 +40,18 @@ jobs:
     uses: ./.github/workflows/typescript-unit.yml
     secrets: inherit
 
-  typescript-integration:
+  build:
     needs: guard-main
+    uses: ./.github/workflows/build-rust.yml
+    with:
+      cache-key: "rust-dev"
+      artifact-name: "rust-binaries-ts"
+
+  typescript-integration:
+    needs: [guard-main, build]
     uses: ./.github/workflows/typescript-integration.yml
+    with:
+      artifact-name: ${{ needs.build.outputs.artifact-name }}
     secrets: inherit
 
   publish:
