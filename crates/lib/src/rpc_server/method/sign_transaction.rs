@@ -47,8 +47,8 @@ pub struct SignTransactionResponse {
     /// Public key of the signer used (for client consistency)
     pub signer_pubkey: String,
     /// Whether a Lighthouse fee payer assertion was appended to the message before signing.
-    /// When true, the returned message differs from the request and any client signature
-    /// taken over the original message is invalid; sign the returned transaction instead.
+    /// Reports only the assertion. It is not a statement that the message is otherwise
+    /// unchanged: a request with an empty signature array also gets a fresh blockhash.
     pub lighthouse_assertion_added: bool,
 }
 
