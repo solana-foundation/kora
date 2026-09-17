@@ -172,7 +172,7 @@ const result = await client.signAndSendTransaction({ transaction: base64Final })
 
 - **Transaction validation fails**: Check `allowed_programs` and `allowed_spl_paid_tokens` in operator's kora.toml
 - **Payment instruction fails**: Ensure fresh blockhash, verify Kora payment address has initialized ATAs
-- **Signature verification fails**: Ensure all required signers included, transaction not modified after signing. If Lighthouse is enabled, client must re-sign after `signTransaction`.
+- **Signature verification fails**: Ensure all required signers included, transaction not modified after signing. If Lighthouse is enabled, client must re-sign after `signTransaction`. The response's `lighthouse_assertion_added` field says whether the message changed; when it is `true`, sign the returned transaction, not the one you sent.
 
 ---
 

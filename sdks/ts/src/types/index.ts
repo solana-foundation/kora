@@ -130,6 +130,11 @@ export interface SignTransactionResponse {
     signed_transaction: string;
     /** Public key of the signer used to sign the transaction */
     signer_pubkey: string;
+    /**
+     * Whether a Lighthouse fee payer assertion was appended before signing. When true, the
+     * returned message differs from the request: re-sign the returned transaction.
+     */
+    lighthouse_assertion_added: boolean;
 }
 
 /**
@@ -580,6 +585,8 @@ export interface KitSignTransactionResponse {
     signed_transaction: Base64EncodedWireTransaction;
     /** Public key of the signer used to sign the transaction */
     signer_pubkey: Address;
+    /** Whether a Lighthouse fee payer assertion was appended before signing */
+    lighthouse_assertion_added: boolean;
 }
 
 /** Plugin response for signAndSendTransaction with Kit types */

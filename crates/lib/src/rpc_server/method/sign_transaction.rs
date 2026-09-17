@@ -46,6 +46,10 @@ pub struct SignTransactionResponse {
     pub signed_transaction: String,
     /// Public key of the signer used (for client consistency)
     pub signer_pubkey: String,
+    /// Whether a Lighthouse fee payer assertion was appended to the message before signing.
+    /// When true, the returned message differs from the request and any client signature
+    /// taken over the original message is invalid; sign the returned transaction instead.
+    pub lighthouse_assertion_added: bool,
 }
 
 pub async fn sign_transaction(
@@ -78,7 +82,7 @@ pub async fn sign_transaction(
     )
     .await?;
 
-    let (signed_transaction, _) =
+    let (signed_transaction, _, lighthouse_assertion_added) =
         resolved_transaction.sign_transaction(config, &signer, rpc_client, false).await?;
 
     let encoded = TransactionUtil::encode_versioned_transaction(&signed_transaction)?;
@@ -86,6 +90,7 @@ pub async fn sign_transaction(
     Ok(SignTransactionResponse {
         signed_transaction: encoded,
         signer_pubkey: signer.pubkey().to_string(),
+        lighthouse_assertion_added,
     })
 }
 

@@ -32,6 +32,9 @@ impl LighthouseUtil {
     /// The `will_send` parameter indicates if the transaction will be sent to the network directly.
     /// When `will_send` is true, the assertion is skipped because modifying the message would
     /// invalidate existing client signatures.
+    ///
+    /// Returns whether the assertion was appended. `false` when lighthouse is disabled, when the
+    /// transaction will be sent by Kora, or when the assertion was skipped for size.
     pub async fn add_fee_payer_assertion(
         transaction: &mut VersionedTransaction,
         rpc_client: &RpcClient,
@@ -39,9 +42,9 @@ impl LighthouseUtil {
         estimated_fee: u64,
         config: &LighthouseConfig,
         will_send: bool,
-    ) -> Result<(), KoraError> {
+    ) -> Result<bool, KoraError> {
         if !config.enabled || will_send {
-            return Ok(());
+            return Ok(false);
         }
 
         let current_balance = rpc_client.get_balance(fee_payer).await.map_err(|e| {
@@ -249,11 +252,12 @@ impl LighthouseUtil {
     }
 
     /// Handles size overflow based on config settings.
+    /// Returns `true` when the assertion was appended, `false` when it was skipped for size.
     pub(crate) fn append_lighthouse_assertion(
         transaction: &mut VersionedTransaction,
         assertion_ix: Instruction,
         config: &LighthouseConfig,
-    ) -> Result<(), KoraError> {
+    ) -> Result<bool, KoraError> {
         // Clone and append to get actual size
         let mut tx_with_assertion = transaction.clone();
         Self::append_instruction_to_transaction(&mut tx_with_assertion, assertion_ix)?;
@@ -283,12 +287,12 @@ impl LighthouseUtil {
                 )));
             } else {
                 log::warn!("Lighthouse assertion {reason}. Skipping.");
-                return Ok(());
+                return Ok(false);
             }
         }
 
         *transaction = tx_with_assertion;
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -510,8 +514,10 @@ mod tests {
         let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);
         let config = LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: false };
 
-        LighthouseUtil::append_lighthouse_assertion(&mut transaction, assertion_ix, &config)
-            .expect("assertion is skipped, not an error");
+        let appended =
+            LighthouseUtil::append_lighthouse_assertion(&mut transaction, assertion_ix, &config)
+                .expect("assertion is skipped, not an error");
+        assert!(!appended, "a skipped assertion must be reported as not appended");
 
         assert_eq!(transaction.message.instructions().len(), original_ix_count);
         assert!(!transaction.message.static_account_keys().contains(&LIGHTHOUSE_PROGRAM_ID));
