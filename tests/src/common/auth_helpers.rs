@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::common::{client::TestClient, constants::TEST_HMAC_SECRET};
+use crate::common::constants::TEST_HMAC_SECRET;
 
 pub static JSON_TEST_BODY: Lazy<Value> = Lazy::new(|| {
     json!({
@@ -17,46 +17,17 @@ pub static JSON_TEST_BODY: Lazy<Value> = Lazy::new(|| {
     })
 });
 
-pub static JSON_TEST_BODY_WITH_PARAMS: Lazy<Value> = Lazy::new(|| {
-    json!({
-        "jsonrpc": "2.0",
-        "method": "estimateTransactionFee",
-        "params": {
-            "transaction": "base64_encoded_transaction_here",
-            "commitment": "confirmed"
-        },
-        "id": 1
-    })
-});
-
 /// Helper to make JSON-RPC request with custom headers to test server
-pub async fn make_auth_request(headers: Option<Vec<(&str, &str)>>) -> reqwest::Response {
-    let client = reqwest::Client::new();
-
-    let mut request = client
-        .post(TestClient::get_default_server_url())
-        .header("Content-Type", "application/json")
-        .json(&JSON_TEST_BODY.clone());
-
-    if let Some(custom_headers) = headers {
-        for (key, value) in custom_headers {
-            request = request.header(key, value);
-        }
-    }
-
-    request.send().await.expect("Request should complete")
-}
-
-pub async fn make_auth_request_with_body(
-    body: &Value,
+pub async fn make_auth_request(
+    server_url: &str,
     headers: Option<Vec<(&str, &str)>>,
 ) -> reqwest::Response {
     let client = reqwest::Client::new();
 
     let mut request = client
-        .post(TestClient::get_default_server_url())
+        .post(server_url)
         .header("Content-Type", "application/json")
-        .json(body);
+        .json(&JSON_TEST_BODY.clone());
 
     if let Some(custom_headers) = headers {
         for (key, value) in custom_headers {
@@ -91,18 +62,6 @@ pub fn create_valid_hmac_signature_headers() -> Vec<(String, String)> {
 
     let signature =
         create_hmac_signature(TEST_HMAC_SECRET, &timestamp, &JSON_TEST_BODY.to_string());
-
-    vec![(X_TIMESTAMP.to_string(), timestamp), (X_HMAC_SIGNATURE.to_string(), signature)]
-}
-
-pub fn create_valid_hmac_signature_headers_with_body(body: &Value) -> Vec<(String, String)> {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        .to_string();
-
-    let signature = create_hmac_signature(TEST_HMAC_SECRET, &timestamp, &body.to_string());
 
     vec![(X_TIMESTAMP.to_string(), timestamp), (X_HMAC_SIGNATURE.to_string(), signature)]
 }

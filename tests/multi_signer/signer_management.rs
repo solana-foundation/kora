@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 #[tokio::test]
 async fn test_multi_signer_get_config() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let response: serde_json::Value =
         ctx.rpc_call("getConfig", rpc_params![]).await.expect("Failed to get config");
@@ -19,7 +19,7 @@ async fn test_multi_signer_get_config() {
 
 #[tokio::test]
 async fn test_multi_signer_get_payer_signer() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let response: serde_json::Value =
         ctx.rpc_call("getPayerSigner", rpc_params![]).await.expect("Failed to get payer signer");
@@ -31,7 +31,7 @@ async fn test_multi_signer_get_payer_signer() {
 
 #[tokio::test]
 async fn test_multi_signer_round_robin_behavior() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     for _ in 0..6 {
         let response: serde_json::Value =
@@ -46,7 +46,7 @@ async fn test_multi_signer_round_robin_behavior() {
 
 #[tokio::test]
 async fn test_signer_key_consistency() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let config_response: serde_json::Value =
         ctx.rpc_call("getConfig", rpc_params![]).await.expect("Failed to get config");
@@ -143,7 +143,7 @@ async fn test_signer_key_consistency() {
 /// Test that without signer keys, multiple estimate calls get different signers (round-robin)
 #[tokio::test]
 async fn test_round_robin_without_signer_keys() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let mut signers_used = std::collections::HashSet::new();
 
     let test_tx = ctx
@@ -180,7 +180,7 @@ async fn test_round_robin_without_signer_keys() {
 /// Test invalid signer key handling
 #[tokio::test]
 async fn test_invalid_signer_key() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let invalid_pubkey = "InvalidPubkey123";
 
     let test_tx = ctx
@@ -211,7 +211,7 @@ async fn test_invalid_signer_key() {
 /// Test nonexistent signer key handling
 #[tokio::test]
 async fn test_nonexistent_signer_key() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let nonexistent_pubkey = "11111111111111111111111111111112"; // Valid format but not in pool
 
     let test_tx = ctx

@@ -18,7 +18,7 @@ use std::str::FromStr;
 
 #[tokio::test]
 async fn test_sol_transfer_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
@@ -46,7 +46,7 @@ async fn test_sol_transfer_policy_violation() {
 
 #[tokio::test]
 async fn test_assign_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let new_owner = Pubkey::new_unique();
@@ -72,7 +72,7 @@ async fn test_assign_policy_violation() {
 
 #[tokio::test]
 async fn test_create_account_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let new_account = Pubkey::new_unique();
@@ -99,7 +99,7 @@ async fn test_create_account_policy_violation() {
 
 #[tokio::test]
 async fn test_allocate_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
 
@@ -124,8 +124,8 @@ async fn test_allocate_policy_violation() {
 
 #[tokio::test]
 async fn test_spl_transfer_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
@@ -173,8 +173,8 @@ async fn test_spl_transfer_policy_violation() {
 
 #[tokio::test]
 async fn test_token2022_transfer_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
@@ -231,8 +231,8 @@ async fn test_token2022_transfer_policy_violation() {
 
 #[tokio::test]
 async fn test_burn_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let fee_payer_token_account = setup
@@ -276,8 +276,8 @@ async fn test_burn_policy_violation() {
 
 #[tokio::test]
 async fn test_close_account_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_token_account = setup
         .create_fee_payer_token_account_spl(&setup.fee_payer_policy_mint.pubkey())
@@ -316,8 +316,8 @@ async fn test_close_account_policy_violation() {
 
 #[tokio::test]
 async fn test_approve_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
@@ -362,8 +362,8 @@ async fn test_approve_policy_violation() {
 
 #[tokio::test]
 async fn test_revoke_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let fee_payer_token_account = setup
@@ -397,8 +397,8 @@ async fn test_revoke_policy_violation() {
 
 #[tokio::test]
 async fn test_revoke_token2022_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let fee_payer_token_2022_account = setup
@@ -435,8 +435,8 @@ async fn test_revoke_token2022_policy_violation() {
 
 #[tokio::test]
 async fn test_withdraw_excess_lamports_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
@@ -472,8 +472,8 @@ async fn test_withdraw_excess_lamports_policy_violation() {
 
 #[tokio::test]
 async fn test_withdraw_excess_lamports_token2022_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
@@ -509,8 +509,8 @@ async fn test_withdraw_excess_lamports_token2022_policy_violation() {
 
 #[tokio::test]
 async fn test_batch_wrapped_transfer_does_not_bypass_policy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
@@ -559,8 +559,8 @@ async fn test_batch_wrapped_transfer_does_not_bypass_policy() {
 
 #[tokio::test]
 async fn test_cpi_batch_wrapped_transfer_does_not_bypass_policy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
@@ -619,8 +619,8 @@ async fn test_cpi_batch_wrapped_transfer_does_not_bypass_policy() {
 
 #[tokio::test]
 async fn test_set_authority_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
@@ -661,8 +661,8 @@ async fn test_set_authority_policy_violation() {
 
 #[tokio::test]
 async fn test_set_authority_token2022_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
@@ -709,8 +709,8 @@ async fn test_set_authority_token2022_policy_violation() {
 
 #[tokio::test]
 async fn test_mint_to_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let fee_payer_token_account = setup
@@ -744,8 +744,8 @@ async fn test_mint_to_policy_violation() {
 
 #[tokio::test]
 async fn test_mint_to_token2022_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let fee_payer_token_2022_account = setup
@@ -779,8 +779,8 @@ async fn test_mint_to_token2022_policy_violation() {
 
 #[tokio::test]
 async fn test_freeze_account_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let fee_payer_token_account = setup
@@ -813,8 +813,8 @@ async fn test_freeze_account_policy_violation() {
 
 #[tokio::test]
 async fn test_freeze_account_token2022_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let fee_payer_token_2022_account = setup
@@ -849,8 +849,8 @@ async fn test_freeze_account_token2022_policy_violation() {
 
 #[tokio::test]
 async fn test_thaw_account_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let fee_payer_token_account = setup
@@ -907,8 +907,8 @@ async fn test_thaw_account_policy_violation() {
 
 #[tokio::test]
 async fn test_thaw_account_token2022_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let fee_payer_token_2022_account = setup
@@ -967,9 +967,8 @@ async fn test_thaw_account_token2022_policy_violation() {
 
 #[tokio::test]
 async fn test_burn_multisig_bypass() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
-    setup.setup_fee_payer_policy_token_accounts().await.expect("Failed to setup token accounts");
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let other_keypair = Keypair::new();
@@ -1084,9 +1083,8 @@ async fn test_burn_multisig_bypass() {
 
 #[tokio::test]
 async fn test_approve_multisig_bypass() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
-    setup.setup_fee_payer_policy_token_accounts().await.expect("Failed to setup token accounts");
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let other_keypair = Keypair::new();
@@ -1196,9 +1194,8 @@ async fn test_approve_multisig_bypass() {
 
 #[tokio::test]
 async fn test_transfer_multisig_bypass() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
-    setup.setup_fee_payer_policy_token_accounts().await.expect("Failed to setup token accounts");
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let other_keypair = Keypair::new();
@@ -1336,9 +1333,8 @@ async fn test_transfer_multisig_bypass() {
 
 #[tokio::test]
 async fn test_set_authority_multisig_bypass() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
-    setup.setup_fee_payer_policy_token_accounts().await.expect("Failed to setup token accounts");
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let other_keypair = Keypair::new();
@@ -1451,9 +1447,8 @@ async fn test_set_authority_multisig_bypass() {
 
 #[tokio::test]
 async fn test_reallocate_multisig_bypass() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
-    setup.setup_fee_payer_policy_token_accounts().await.expect("Failed to setup token accounts");
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let other_keypair = Keypair::new();
@@ -1568,7 +1563,7 @@ async fn test_reallocate_multisig_bypass() {
 
 #[tokio::test]
 async fn test_create_account_allow_prefund_funder_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let new_account = Pubkey::new_unique();
@@ -1595,7 +1590,7 @@ async fn test_create_account_allow_prefund_funder_policy_violation() {
 
 #[tokio::test]
 async fn test_create_account_allow_prefund_brick_vector_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let owner = Pubkey::new_unique();

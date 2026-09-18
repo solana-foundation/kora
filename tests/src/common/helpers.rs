@@ -27,7 +27,6 @@ pub struct FeePayerTestHelper;
 
 impl FeePayerTestHelper {
     pub fn get_fee_payer_keypair() -> Keypair {
-        dotenv::dotenv().ok();
         parse_private_key_string(
             &std::env::var(KORA_PRIVATE_KEY_ENV)
                 .expect("KORA_PRIVATE_KEY environment variable is not set"),
@@ -38,26 +37,12 @@ impl FeePayerTestHelper {
     pub fn get_fee_payer_pubkey() -> Pubkey {
         Self::get_fee_payer_keypair().pubkey()
     }
-
-    pub fn get_signer_2_keypair() -> Keypair {
-        dotenv::dotenv().ok();
-        parse_private_key_string(
-            &std::env::var(SIGNER_2_KEYPAIR_ENV)
-                .expect("SIGNER_2_KEYPAIR environment variable is not set"),
-        )
-        .expect("Failed to parse signer 2 private key")
-    }
-
-    pub fn get_signer_2_pubkey() -> Pubkey {
-        Self::get_signer_2_keypair().pubkey()
-    }
 }
 
 pub struct SenderTestHelper;
 
 impl SenderTestHelper {
     pub fn get_test_sender_keypair() -> Keypair {
-        dotenv::dotenv().ok();
         parse_private_key_string(
             &std::env::var(TEST_SENDER_KEYPAIR_ENV)
                 .expect("TEST_SENDER_KEYPAIR environment variable is not set"),
@@ -70,10 +55,7 @@ pub struct RecipientTestHelper;
 
 impl RecipientTestHelper {
     pub fn get_recipient_pubkey() -> Pubkey {
-        dotenv::dotenv().ok();
-        let recipient_str = std::env::var(TEST_RECIPIENT_PUBKEY_ENV)
-            .unwrap_or_else(|_| RECIPIENT_PUBKEY.to_string());
-        Pubkey::from_str(&recipient_str).expect("Invalid recipient pubkey")
+        Pubkey::from_str(RECIPIENT_PUBKEY).expect("Invalid recipient pubkey")
     }
 }
 
@@ -81,7 +63,6 @@ pub struct USDCMintTestHelper;
 
 impl USDCMintTestHelper {
     pub fn get_test_usdc_mint_keypair() -> Keypair {
-        dotenv::dotenv().ok();
         parse_private_key_string(
             &std::env::var(TEST_USDC_MINT_KEYPAIR_ENV)
                 .expect("TEST_USDC_MINT_KEYPAIR environment variable is not set"),
@@ -94,11 +75,7 @@ impl USDCMintTestHelper {
     }
 
     pub fn get_test_usdc_mint_decimals() -> u8 {
-        dotenv::dotenv().ok();
-        std::env::var(TEST_USDC_MINT_DECIMALS_ENV)
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(TEST_USDC_MINT_DECIMALS)
+        TEST_USDC_MINT_DECIMALS
     }
 }
 
@@ -106,8 +83,6 @@ pub struct USDCMint2022TestHelper;
 
 impl USDCMint2022TestHelper {
     pub fn get_test_usdc_mint_2022_keypair() -> Keypair {
-        dotenv::dotenv().ok();
-
         parse_private_key_string(
             &std::env::var(TEST_USDC_MINT_2022_KEYPAIR_ENV)
                 .expect("TEST_USDC_MINT_2022_KEYPAIR environment variable is not set"),
@@ -120,8 +95,6 @@ impl USDCMint2022TestHelper {
     }
 
     pub fn get_test_interest_bearing_mint_keypair() -> Keypair {
-        dotenv::dotenv().ok();
-
         parse_private_key_string(
             &std::env::var(TEST_INTEREST_BEARING_MINT_KEYPAIR_ENV)
                 .expect("TEST_INTEREST_BEARING_MINT_KEYPAIR environment variable is not set"),
@@ -129,51 +102,12 @@ impl USDCMint2022TestHelper {
         .expect("Failed to parse test interest bearing mint private key")
     }
 
-    pub fn get_test_interest_bearing_mint_pubkey() -> Pubkey {
-        Self::get_test_interest_bearing_mint_keypair().pubkey()
-    }
-
     pub fn get_test_transfer_hook_mint_keypair() -> Keypair {
-        dotenv::dotenv().ok();
-
         parse_private_key_string(
             &std::env::var(TEST_TRANSFER_HOOK_MINT_KEYPAIR_ENV)
                 .expect("TEST_TRANSFER_HOOK_MINT_KEYPAIR environment variable is not set"),
         )
         .expect("Failed to parse test transfer hook mint private key")
-    }
-
-    pub fn get_test_transfer_hook_mint_pubkey() -> Pubkey {
-        Self::get_test_transfer_hook_mint_keypair().pubkey()
-    }
-}
-
-pub struct PaymentAddressTestHelper;
-
-impl PaymentAddressTestHelper {
-    pub fn get_payment_address_keypair() -> Keypair {
-        dotenv::dotenv().ok();
-        parse_private_key_string(
-            &std::env::var(PAYMENT_ADDRESS_KEYPAIR_ENV)
-                .expect("PAYMENT_ADDRESS_KEYPAIR environment variable is not set"),
-        )
-        .expect("Failed to parse payment address private key")
-    }
-
-    pub fn get_payment_address_pubkey() -> Pubkey {
-        Self::get_payment_address_keypair().pubkey()
-    }
-
-    pub fn get_payment_test_address_pubkey() -> Pubkey {
-        Pubkey::from_str(TEST_PAYMENT_ADDRESS).expect("Invalid payment test address")
-    }
-}
-
-pub struct PYUSDTestHelper;
-
-impl PYUSDTestHelper {
-    pub fn get_pyusd_mint_pubkey() -> Pubkey {
-        Pubkey::from_str(PYUSD_MINT).expect("Invalid PYUSD mint")
     }
 }
 
@@ -181,7 +115,6 @@ pub struct FeePayerPolicyMintTestHelper;
 
 impl FeePayerPolicyMintTestHelper {
     pub fn get_fee_payer_policy_mint_keypair() -> Keypair {
-        dotenv::dotenv().ok();
         parse_private_key_string(
             &std::env::var(TEST_FEE_PAYER_POLICY_MINT_KEYPAIR_ENV)
                 .expect("TEST_FEE_PAYER_POLICY_MINT_KEYPAIR environment variable is not set"),
@@ -194,7 +127,6 @@ impl FeePayerPolicyMintTestHelper {
     }
 
     pub fn get_fee_payer_policy_mint_2022_keypair() -> Keypair {
-        dotenv::dotenv().ok();
         parse_private_key_string(
             &std::env::var(TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR_ENV)
                 .expect("TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR environment variable is not set"),
@@ -216,9 +148,17 @@ pub async fn send_and_confirm_allow_duplicate(
 ) -> Result<()> {
     match rpc_client.send_and_confirm_transaction(transaction).await {
         Ok(_) => Ok(()),
-        Err(e) if e.get_transaction_error() == Some(TransactionError::AlreadyProcessed) => Ok(()),
+        Err(e) if is_already_processed(&e) => Ok(()),
         Err(e) => Err(e.into()),
     }
+}
+
+/// Surfnet reports a duplicate signature as a bare `-32002` string instead of
+/// putting a `TransactionError` in the error data, so the structured check that
+/// works against agave misses it.
+fn is_already_processed(error: &solana_client::client_error::ClientError) -> bool {
+    error.get_transaction_error() == Some(TransactionError::AlreadyProcessed)
+        || error.to_string().contains("already been processed")
 }
 
 #[cfg(test)]

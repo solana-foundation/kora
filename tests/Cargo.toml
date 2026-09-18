@@ -3,11 +3,6 @@ name = "tests"
 version = { workspace = true }
 edition = { workspace = true }
 
-[[bin]]
-name = "test_runner"
-path = "src/bin/test_runner.rs"
-
-
 [[test]]
 name = "rpc"
 path = "rpc/main.rs"
@@ -53,6 +48,18 @@ name = "lighthouse"
 path = "lighthouse/main.rs"
 
 [[test]]
+name = "typescript_basic"
+path = "typescript_basic/main.rs"
+
+[[test]]
+name = "typescript_auth"
+path = "typescript_auth/main.rs"
+
+[[test]]
+name = "typescript_free"
+path = "typescript_free/main.rs"
+
+[[test]]
 name = "loader_v3_deploy"
 path = "loader_v3_deploy/main.rs"
 
@@ -82,12 +89,21 @@ reqwest = { workspace = true }
 futures = { workspace = true }
 anyhow = { workspace = true }
 once_cell = "1.21.4"
-clap = { workspace = true, features = ["derive"] }
 toml = { workspace = true }
 solana-address-lookup-table-interface = { workspace = true }
 solana-loader-v3-interface = { workspace = true }
 serde = { workspace = true }
 base64 = { workspace = true }
-chrono = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
+libc = "0.2"
+ctor = "0.6"
+
+[dev-dependencies]
+# Fork of solana-foundation/surfpool@30242a4. It holds the svm write lock across
+# a jito bundle's sandbox-and-commit, without which a commit reverts any write
+# that landed while the bundle ran, and stops the sandbox inheriting the
+# confirmation queue, without which a commit re-queues every in-flight
+# transaction. Upstream has both as https://github.com/solana-foundation/surfpool/pull/804
+# and is not expected to merge it, so this fork is the long-term source.
+surfpool-sdk = { git = "https://github.com/dev-jodee/surfpool", rev = "207030e09c6b46789157765077ad85a5b6cc3897" }

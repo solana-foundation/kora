@@ -1,6 +1,6 @@
 use crate::common::{
     send_and_confirm_allow_duplicate, ExtensionHelpers, FeePayerTestHelper, RecipientTestHelper,
-    SenderTestHelper, TestContext, TransactionBuilder, USDCMint2022TestHelper, USDCMintTestHelper,
+    SenderTestHelper, TransactionBuilder, USDCMint2022TestHelper, USDCMintTestHelper,
     TRANSFER_HOOK_PROGRAM_ID,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -19,7 +19,7 @@ async fn test_blocked_memo_transfer_extension() {
     // This test creates manual token accounts with MemoTransfer extension
     // Should be blocked by kora-test.toml when using token accounts with MemoTransfer extension
 
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
     let mint_keypair = USDCMint2022TestHelper::get_test_usdc_mint_2022_keypair();
@@ -122,7 +122,7 @@ async fn test_blocked_interest_bearing_config_extension() {
     // This test creates a mint with InterestBearingConfig extension on-demand
     // Should be blocked by kora-test.toml when using mint with InterestBearingConfig extension
 
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
 
@@ -230,7 +230,7 @@ async fn test_transfer_fee_insufficient_payment() {
     // With 1% transfer fee: sending 1000 tokens results in recipient getting 990 tokens
     // If Kora expects 1000 tokens, the payment should fail validation
 
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
     let mint_keypair = USDCMint2022TestHelper::get_test_usdc_mint_2022_keypair();
@@ -333,7 +333,7 @@ async fn test_transfer_fee_sufficient_payment() {
     // Test that signTransaction succeeds when payment amount accounts for transfer fee
     // To receive 10,000 micro-USDC after 1% fee, sender must send ~10,101 micro-USDC
 
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
     let mint_keypair = USDCMint2022TestHelper::get_test_usdc_mint_2022_keypair();
@@ -437,7 +437,7 @@ async fn test_transfer_fee_sufficient_payment() {
 /// Test Token 2022 transfer with transfer hook that allows transfers
 #[tokio::test]
 async fn test_transfer_hook_allows_transfer() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let rpc_client = ctx.rpc_client();
 
     let hook_program_id =
@@ -592,7 +592,7 @@ async fn test_transfer_hook_allows_transfer() {
 /// Test Token 2022 transfer with transfer hook that blocks transfers
 #[tokio::test]
 async fn test_transfer_hook_blocks_transfer() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let rpc_client = ctx.rpc_client();
 
     let hook_program_id =

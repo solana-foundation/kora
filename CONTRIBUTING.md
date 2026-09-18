@@ -29,7 +29,7 @@ Install Rust, Cargo, and [`just`](https://github.com/casey/just). The Rust toolc
 just build            # build all workspace crates
 just check            # formatting + clippy + TS type-check
 just unit-test        # Rust unit tests
-just integration-test # full integration suite (starts a local validator)
+just integration-test # full integration suite (embeds a surfnet per phase)
 ```
 
 TypeScript SDK:

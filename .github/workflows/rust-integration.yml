@@ -1,0 +1,67 @@
+name: Rust Integration Tests
+
+# One phase per Kora config, each booting its own embedded surfnet. Called by
+# integration.yml, which owns the build these phases download.
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: "Artifact holding the prebuilt Kora binary"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_LOG: info
+  CI: true
+
+jobs:
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # external excluded: hits live Jupiter API
+        test-target:
+          [
+            rpc,
+            tokens,
+            adversarial,
+            auth,
+            payment_address,
+            multi_signer,
+            fee_payer_policy,
+            free_signing,
+            lighthouse,
+            loader_v3_deploy,
+            usage_limit,
+          ]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch Doppler secrets
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: ${{ vars.DOPPLER_PROJECT || 'kora' }}
+          doppler-config: ${{ vars.DOPPLER_CONFIG_CI || 'stg_github' }}
+          inject-env-vars: true
+
+      - uses: ./.github/actions/integration-phase
+        with:
+          test-target: ${{ matrix.test-target }}
+          artifact-name: ${{ inputs.artifact-name }}
+
+      - name: Cleanup test environment
+        if: always()
+        uses: ./.github/actions/cleanup-test-env

@@ -6,7 +6,7 @@ use solana_system_interface::instruction::create_nonce_account;
 
 #[tokio::test]
 async fn test_durable_transaction_rejected() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let rpc_client = ctx.rpc_client();
 
     let sender = SenderTestHelper::get_test_sender_keypair();

@@ -124,7 +124,7 @@ async fn build_transfer_hook_transaction_for_free_signing(
 
 #[tokio::test]
 async fn test_sign_transaction_rejects_mutable_transfer_hook_in_free_mode() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let test_tx = build_transfer_hook_transaction_for_free_signing(&ctx, 10, false)
         .await
@@ -144,7 +144,7 @@ async fn test_sign_transaction_rejects_mutable_transfer_hook_in_free_mode() {
 
 #[tokio::test]
 async fn test_sign_and_send_transaction_allows_mutable_transfer_hook_in_free_mode() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let test_tx = build_transfer_hook_transaction_for_free_signing(&ctx, 10, false)
         .await
@@ -164,7 +164,7 @@ async fn test_sign_and_send_transaction_allows_mutable_transfer_hook_in_free_mod
 #[tokio::test]
 async fn test_sign_transaction_rejects_mutable_transfer_hook_transfer_checked_with_fee_in_free_mode(
 ) {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let test_tx = build_transfer_hook_transaction_for_free_signing(&ctx, 10, true)
         .await
@@ -184,7 +184,7 @@ async fn test_sign_transaction_rejects_mutable_transfer_hook_transfer_checked_wi
 
 #[tokio::test]
 async fn test_sign_transaction_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let test_tx = ctx
         .transaction_builder()
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
@@ -222,7 +222,7 @@ async fn test_sign_transaction_legacy() {
 
 #[tokio::test]
 async fn test_sign_transaction_v0() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -267,7 +267,7 @@ async fn test_sign_transaction_v0() {
 
 #[tokio::test]
 async fn test_sign_transaction_v0_with_lookup() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -315,7 +315,7 @@ async fn test_sign_transaction_v0_with_lookup() {
 
 #[tokio::test]
 async fn test_sign_spl_transaction_legacy() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let test_tx = ctx
         .transaction_builder()
@@ -351,7 +351,7 @@ async fn test_sign_spl_transaction_legacy() {
 
 #[tokio::test]
 async fn test_sign_spl_transaction_v0() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -396,7 +396,7 @@ async fn test_sign_spl_transaction_v0() {
 
 #[tokio::test]
 async fn test_sign_spl_transaction_v0_with_lookup() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();

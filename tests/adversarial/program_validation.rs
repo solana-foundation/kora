@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 #[tokio::test]
 async fn test_disallowed_memo_program() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let disallowed_program_id = Pubkey::from_str("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr")
         .expect("Failed to parse SPL Memo program ID");
@@ -35,7 +35,7 @@ async fn test_disallowed_memo_program() {
 
 #[tokio::test]
 async fn test_disallowed_program_v0_transaction() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let disallowed_program_id = Pubkey::from_str("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr")
         .expect("Failed to parse BPF Loader Upgradeable program ID");

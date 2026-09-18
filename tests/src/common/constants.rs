@@ -1,9 +1,3 @@
-/// Default local Solana RPC URL
-pub const DEFAULT_RPC_URL: &str = "http://127.0.0.1:8899";
-
-/// Default Kora test server URL
-pub const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
-
 /// Default recipient public key for tests
 pub const RECIPIENT_PUBKEY: &str = "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM";
 
@@ -17,9 +11,6 @@ pub const TEST_PAYMENT_ADDRESS: &str = "CWvWnVwqAb9HzqwCGkn4purGEUuu27aNsPQM252u
 /// the basic flavor reuses the rust sender. Secrets live in sdks/ts/test/setup.ts.
 pub const TS_AUTH_WALLET_PUBKEY: &str = "7kBPazc3KfccwopUa9dALgeBSXoYjdqtK5UEpXKCAYYH";
 pub const TS_FREE_WALLET_PUBKEY: &str = "HrQpAeuWRcajWzJ3FSe5UApiSX2Pp2nNdBDj7eZx4yCo";
-
-/// PYUSD token mint on devnet
-pub const PYUSD_MINT: &str = "CXk2AMBfi3TwaEL2468s6zP8xq9NxTXjp9gjMgzeUynM";
 
 /// Transfer hook program ID
 pub const TRANSFER_HOOK_PROGRAM_ID: &str = "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA";
@@ -47,9 +38,6 @@ pub const TEST_API_KEY: &str = "test-api-key-123";
 /// Test HMAC secret for authentication tests
 pub const TEST_HMAC_SECRET: &str = "test-hmac-secret-456";
 
-/// Test server URL environment variable
-pub const TEST_SERVER_URL_ENV: &str = "TEST_SERVER_URL";
-
 /// RPC URL environment variable
 pub const RPC_URL_ENV: &str = "RPC_URL";
 
@@ -62,14 +50,8 @@ pub const SIGNER_2_KEYPAIR_ENV: &str = "SIGNER_2_KEYPAIR";
 /// Test sender private key environment variable
 pub const TEST_SENDER_KEYPAIR_ENV: &str = "TEST_SENDER_KEYPAIR";
 
-/// Test recipient public key environment variable
-pub const TEST_RECIPIENT_PUBKEY_ENV: &str = "TEST_RECIPIENT_PUBKEY";
-
 /// Test USDC mint private key environment variable
 pub const TEST_USDC_MINT_KEYPAIR_ENV: &str = "TEST_USDC_MINT_KEYPAIR";
-
-/// Test USDC mint decimals environment variable
-pub const TEST_USDC_MINT_DECIMALS_ENV: &str = "TEST_USDC_MINT_DECIMALS";
 
 /// Test USDC mint 2022 private key environment variable
 pub const TEST_USDC_MINT_2022_KEYPAIR_ENV: &str = "TEST_USDC_MINT_2022_KEYPAIR";

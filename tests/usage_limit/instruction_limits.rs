@@ -6,7 +6,7 @@ use solana_sdk::signature::{Keypair, Signer};
 /// Config: max 3 CreateAccount instructions per wallet (lifetime)
 #[tokio::test]
 async fn test_system_create_account_instruction_limit() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();
@@ -74,7 +74,7 @@ async fn test_system_create_account_instruction_limit() {
 /// Config: max 3 CreateAccount instructions per wallet (lifetime)
 #[tokio::test]
 async fn test_multiple_create_account_instructions_in_one_tx() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();
@@ -161,52 +161,11 @@ async fn test_multiple_create_account_instructions_in_one_tx() {
 /// Config: max 3 CreateAccount instructions (lifetime), max 4 transactions per 30s (windowed)
 #[tokio::test]
 async fn test_non_matching_instructions_not_counted() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
-    let sender = create_funded_wallet(&ctx).await;
-    let user_id = sender.pubkey().to_string();
-    let recipient = RecipientTestHelper::get_recipient_pubkey();
-
-    // Send 4 SOL transfers (windowed limit) - these should NOT count toward CreateAccount limit
-    for i in 1..=4 {
-        let tx_b64 = ctx
-            .transaction_builder()
-            .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-            .with_transfer(&sender.pubkey(), &recipient, 1000)
-            .with_signer(&sender)
-            .build()
-            .await
-            .expect("Failed to build SOL transfer transaction");
-
-        let response: serde_json::Value = ctx
-            .rpc_call(
-                "signAndSendTransaction",
-                rpc_params![tx_b64, None::<String>, false, user_id.clone()],
-            )
-            .await
-            .unwrap_or_else(|_| panic!("Failed to sign SOL transfer transaction #{i}"));
-
-        response.assert_success();
-    }
-
-    // 5th transaction should fail due to windowed transaction limit (4 per 30s), not instruction limit
-    let tx_b64 = ctx
-        .transaction_builder()
-        .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-        .with_transfer(&sender.pubkey(), &recipient, 1000)
-        .with_signer(&sender)
-        .build()
+    let err = crate::window::transfer_past_windowed_limit(&ctx)
         .await
-        .expect("Failed to build SOL transfer transaction");
-
-    let result = ctx
-        .rpc_call::<serde_json::Value, _>(
-            "signAndSendTransaction",
-            rpc_params![tx_b64, None::<String>, false, user_id.clone()],
-        )
-        .await;
-
-    let err = result.expect_err("Expected error for exceeding transaction windowed limit");
+        .expect_err("Expected error for exceeding transaction windowed limit");
     err.assert_contains_message("Usage limit exceeded");
 }
 
@@ -214,7 +173,7 @@ async fn test_non_matching_instructions_not_counted() {
 /// Config: max 3 CreateAccount instructions (lifetime), max 5 transactions (lifetime)
 #[tokio::test]
 async fn test_instruction_limit_independent_from_transaction_limit() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();
@@ -283,7 +242,7 @@ async fn test_instruction_limit_independent_from_transaction_limit() {
 /// This test creates ATAs along with a SOL transfer to ensure the sender wallet is tracked
 #[tokio::test]
 async fn test_ata_create_idempotent_instruction_limit() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let ctx = crate::ctx().await;
 
     let sender = create_funded_wallet(&ctx).await;
     let user_id = sender.pubkey().to_string();

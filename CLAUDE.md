@@ -70,10 +70,12 @@ In `rpc_server/server.rs` the reCAPTCHA layer is added last, making it innermost
 after API key and HMAC auth have passed. Moving it earlier means unauthenticated traffic burns
 reCAPTCHA quota. `/liveness` is proxied ahead of the auth layers and bypasses them.
 
-### Integration tests cache their accounts
+### Each integration test binary owns one node
 
-`just integration-test` reuses previously created test accounts across runs. After changing fixtures
-or account setup, pass `--force-refresh` or you will debug a stale account instead of your change.
+`tests/` declares one `[[test]]` target per phase, and each boots its own embedded surfnet plus Kora
+node through `harness_context`, seeded from scratch. Kora keeps config in process-global state, so
+one config per binary is the constraint: a new phase needs a new target, not a new module in an
+existing one. Run a single phase with `cargo test -p tests --test <target>`.
 
 ## Conventions
 

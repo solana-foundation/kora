@@ -53,11 +53,12 @@ jobs:
       - name: Build workspace
         run: just build
 
+      - name: Compile integration test dependencies
+        run: cargo test --no-run --workspace
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.artifact-name }}-${{ steps.source-hash.outputs.hash }}
-          path: |
-            target/debug/kora
-            target/debug/test_runner
+          path: target/debug/kora
           retention-days: 1

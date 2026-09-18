@@ -7,7 +7,7 @@ import {
     KeyPairSigner,
     lamports,
 } from '@solana/kit';
-import { litesvm } from '@solana/kit-plugin-litesvm';
+import { solanaLocalRpc } from '@solana/kit-plugin-rpc';
 import { payer } from '@solana/kit-plugin-signer';
 import { tokenProgram, associatedTokenProgram } from '@solana-program/token';
 import { config } from 'dotenv';
@@ -17,10 +17,8 @@ import { KoraClient } from '../src/index.js';
 
 config({ path: path.resolve(process.cwd(), '.env') });
 
-// Each suite flavor (basic / auth / free) runs concurrently against the same
-// validator. Flavors use distinct wallets (funded by the rust test setup) so
-// they never submit byte-identical transactions, which the validator
-// deduplicates by signature.
+// Each suite flavor (basic / auth / free) gets its own Kora node and its own
+// surfnet from the rust harness, which also seeds the wallets below.
 // DO NOT USE THESE KEYPAIRS IN PRODUCTION, TESTING KEYPAIRS ONLY
 const FLAVOR_WALLET_SECRETS = {
     // 7kBPazc3KfccwopUa9dALgeBSXoYjdqtK5UEpXKCAYYH
@@ -44,6 +42,8 @@ const DEFAULTS = {
     KORA_ADDRESS: '7AqpcUvgJ7Kh1VmJZ44rWp2XDow33vswo9VK9VqpPU2d',
 
     KORA_RPC_URL: 'http://localhost:8080/',
+
+    SOLANA_RPC_URL: 'http://127.0.0.1:8899',
 
     KORA_SIGNER_TYPE: 'memory',
 
@@ -103,6 +103,8 @@ export function loadEnvironmentVariables() {
     }
 
     const koraRpcUrl = process.env.KORA_RPC_URL || DEFAULTS.KORA_RPC_URL;
+    const solanaRpcUrl = process.env.SOLANA_RPC_URL || DEFAULTS.SOLANA_RPC_URL;
+    const solanaWsUrl = process.env.SOLANA_WS_URL;
     const tokenDecimals = Number(process.env.TOKEN_DECIMALS || DEFAULTS.DECIMALS);
     const tokenDropAmount = Number(process.env.TOKEN_DROP_AMOUNT || DEFAULTS.TOKEN_DROP_AMOUNT);
     const solDropAmount = BigInt(process.env.SOL_DROP_AMOUNT || DEFAULTS.SOL_DROP_AMOUNT);
@@ -117,6 +119,8 @@ export function loadEnvironmentVariables() {
         koraAddress,
         koraRpcUrl,
         koraSignerType,
+        solanaRpcUrl,
+        solanaWsUrl,
         solDropAmount,
         testUsdcMintSecret,
         testWalletSecret,
@@ -136,8 +140,19 @@ async function createKeyPairSigners() {
     };
 }
 
+// The rust harness seeds the mint before Kora starts, so its presence means
+// every account this suite needs is already on chain.
+async function isSeeded(
+    client: { rpc: { getAccountInfo: (address: Address) => { send: () => Promise<{ value: unknown }> } } },
+    mint: Address,
+) {
+    const { value } = await client.rpc.getAccountInfo(mint).send();
+    return value !== null;
+}
+
 async function setupTestSuite(): Promise<TestSuite> {
-    const { koraAddress, koraRpcUrl, tokenDecimals, tokenDropAmount, solDropAmount } = loadEnvironmentVariables();
+    const { koraAddress, koraRpcUrl, solanaRpcUrl, solanaWsUrl, tokenDecimals, tokenDropAmount, solDropAmount } =
+        loadEnvironmentVariables();
 
     const authConfig =
         process.env.ENABLE_AUTH === 'true'
@@ -150,39 +165,46 @@ async function setupTestSuite(): Promise<TestSuite> {
     const { testWallet, usdcMint, destinationAddress } = await createKeyPairSigners();
     const client = await createClient()
         .use(payer(testWallet))
-        .use(litesvm())
+        .use(
+            solanaLocalRpc({
+                rpcUrl: solanaRpcUrl,
+                ...(solanaWsUrl ? { rpcSubscriptionsUrl: solanaWsUrl } : {}),
+            }),
+        )
         .use(tokenProgram())
         .use(associatedTokenProgram());
 
-    await client.airdrop(koraAddress, lamports(solDropAmount));
-    await client.airdrop(testWallet.address, lamports(solDropAmount));
+    if (!(await isSeeded(client, usdcMint.address))) {
+        await client.airdrop(koraAddress, lamports(solDropAmount));
+        await client.airdrop(testWallet.address, lamports(solDropAmount));
 
-    await client.token.instructions
-        .createMint({
-            newMint: usdcMint,
-            decimals: tokenDecimals,
-            mintAuthority: testWallet.address,
-        })
-        .sendTransaction();
-
-    // mintToATA auto-creates the ATA
-    await client.token.instructions
-        .mintToATA({
-            mint: usdcMint.address,
-            owner: testWallet.address,
-            mintAuthority: testWallet,
-            amount: BigInt(tokenDropAmount * 10 ** tokenDecimals),
-            decimals: tokenDecimals,
-        })
-        .sendTransaction();
-
-    for (const owner of [koraAddress, destinationAddress]) {
-        await client.associatedToken.instructions
-            .createAssociatedTokenIdempotent({
-                owner,
-                mint: usdcMint.address,
+        await client.token.instructions
+            .createMint({
+                newMint: usdcMint,
+                decimals: tokenDecimals,
+                mintAuthority: testWallet.address,
             })
             .sendTransaction();
+
+        // mintToATA auto-creates the ATA
+        await client.token.instructions
+            .mintToATA({
+                mint: usdcMint.address,
+                owner: testWallet.address,
+                mintAuthority: testWallet,
+                amount: BigInt(tokenDropAmount * 10 ** tokenDecimals),
+                decimals: tokenDecimals,
+            })
+            .sendTransaction();
+
+        for (const owner of [koraAddress, destinationAddress]) {
+            await client.associatedToken.instructions
+                .createAssociatedTokenIdempotent({
+                    owner,
+                    mint: usdcMint.address,
+                })
+                .sendTransaction();
+        }
     }
 
     return {

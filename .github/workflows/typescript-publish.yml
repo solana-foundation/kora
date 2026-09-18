@@ -35,20 +35,29 @@ jobs:
           esac
 
   # Run tests before publishing
-  typescript-integration:
-    needs: guard-main
-    uses: ./.github/workflows/typescript-integration.yml
-    secrets: inherit
-
   typescript-unit:
     needs: guard-main
     uses: ./.github/workflows/typescript-unit.yml
     secrets: inherit
 
+  build:
+    needs: guard-main
+    uses: ./.github/workflows/build-rust.yml
+    with:
+      cache-key: "rust-dev"
+      artifact-name: "rust-binaries-ts"
+
+  typescript-integration:
+    needs: [guard-main, build]
+    uses: ./.github/workflows/typescript-integration.yml
+    with:
+      artifact-name: ${{ needs.build.outputs.artifact-name }}
+    secrets: inherit
+
   publish:
     name: Publish TypeScript SDK
     runs-on: ubuntu-latest
-    needs: [guard-main, typescript-integration, typescript-unit]
+    needs: [guard-main, typescript-unit, typescript-integration]
     env:
       NPM_CONFIG_PROVENANCE: true
 

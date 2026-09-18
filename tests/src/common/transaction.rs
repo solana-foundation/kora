@@ -18,6 +18,7 @@ use solana_program_pack::Pack;
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
+    rent::Rent,
     signature::{Keypair, Signature},
     signer::Signer,
     transaction::VersionedTransaction,
@@ -119,6 +120,14 @@ impl TransactionBuilder {
     pub fn with_transfer(mut self, from: &Pubkey, to: &Pubkey, lamports: u64) -> Self {
         self.instructions.push(transfer(from, to, lamports));
         self
+    }
+
+    /// Transfer to a fresh recipient key, so two tests submitting otherwise
+    /// identical transactions cannot collide on a duplicate signature. The
+    /// amount is the rent-exempt minimum because the recipient is a new account.
+    pub fn with_unique_transfer(self, from: &Pubkey) -> Self {
+        let to = Keypair::new().pubkey();
+        self.with_transfer(from, &to, Rent::default().minimum_balance(0))
     }
 
     pub fn with_system_assign(mut self, account: &Pubkey, owner: &Pubkey) -> Self {

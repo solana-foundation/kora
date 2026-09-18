@@ -28,10 +28,7 @@ coverage/
 
 # Make test files
 *.pid
-test-ledger/
 .local/
-tests/src/common/fixtures/lookup_tables.json
-tests/src/common/fixtures/test-accounts/
 
 # kora-deploy state file — contains raw keypair bytes
 .kora-deploy-state.json

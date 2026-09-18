@@ -78,9 +78,6 @@ jobs:
       - name: Build workspace
         run: just build
 
-      - name: Setup Solana CLI
-        uses: ./.github/actions/setup-solana
-
       - uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
         with:
           auth-method: oidc
@@ -97,19 +94,12 @@ jobs:
           fi
 
       - name: Run external live tests
-        uses: ./.github/actions/run-test-runner
-        with:
-          filters: "--filter external_live"
+        run: cargo test -p tests --test external
 
       - name: Cleanup test environment
         if: always()
         uses: ./.github/actions/cleanup-test-env
 
-      - name: Show failure logs
-        if: failure()
-        uses: ./.github/actions/show-failure-logs
-        with:
-          test-type: "Rust integration (fork external live)"
 
       - name: Verify PR head is unchanged
         if: success()

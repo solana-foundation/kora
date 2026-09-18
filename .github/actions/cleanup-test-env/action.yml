@@ -1,5 +1,5 @@
 name: 'Cleanup Test Environment'
-description: 'Kill any remaining test processes (safety net for test runner failures)'
+description: 'Kill a Kora node that outlived its test binary'
 
 runs:
   using: 'composite'
@@ -9,7 +9,6 @@ runs:
       if: always()
       run: |
         echo "🧹 Safety cleanup of any remaining processes..."
-        pkill -f "solana-test-validator" 2>/dev/null || true
         pkill -f "kora" 2>/dev/null || true
         sleep 1
         echo "✅ Cleanup completed"
