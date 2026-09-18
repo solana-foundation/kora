@@ -238,6 +238,15 @@ impl<'a> IntoIterator for &'a ProgramsConfig {
     }
 }
 
+impl Default for ProgramsConfig {
+    /// An empty allowlist. Used as the default for `fee_payer_allowed_programs` so a config that
+    /// omits the field behaves exactly as before: no programs are permitted to run solely because
+    /// the fee payer does not participate in them.
+    fn default() -> Self {
+        ProgramsConfig::Allowlist(Vec::new())
+    }
+}
+
 impl ProgramsConfig {
     pub fn is_all(&self) -> bool {
         matches!(self, ProgramsConfig::All)
@@ -268,6 +277,19 @@ pub struct ValidationConfig {
     pub max_priority_fee_lamports: Option<u64>,
     pub max_signatures: u64,
     pub allowed_programs: ProgramsConfig,
+    /// Programs that may appear in a sponsored transaction ONLY when the fee payer does not
+    /// participate in them (its pubkey is not among the instruction's accounts). This is the
+    /// "sponsor as pure fee payer" set: it lets Kora sponsor calls to arbitrary, unknown programs
+    /// (e.g. DeFi protocols) it has not vetted, while `allowed_programs` remains the stricter set
+    /// of programs the fee payer is allowed to participate in. A program a transaction routes
+    /// through with the fee payer only paying fees needs to be here (or in `allowed_programs`);
+    /// a program the fee payer is an account of must be in `allowed_programs`.
+    ///
+    /// Default: empty. `"All"` permits any program to run as long as the fee payer does not
+    /// participate. Has no effect when `allowed_programs = "All"` (the fee payer is then permitted
+    /// to participate everywhere, so nothing is gated).
+    #[serde(default)]
+    pub fee_payer_allowed_programs: ProgramsConfig,
     pub allowed_tokens: Vec<String>,
     pub allowed_spl_paid_tokens: SplTokenConfig,
     pub disallowed_accounts: Vec<String>,

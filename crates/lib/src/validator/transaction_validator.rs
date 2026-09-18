@@ -28,6 +28,8 @@ pub struct TransactionValidator {
     max_priority_fee_lamports: Option<u64>,
     allowed_programs: HashSet<Pubkey>,
     allow_all_programs: bool,
+    fee_payer_allowed_programs: HashSet<Pubkey>,
+    allow_all_fee_payer_programs: bool,
     require_one_of_programs: HashSet<Pubkey>,
     max_signatures: u64,
     allowed_tokens: HashSet<Pubkey>,
@@ -37,26 +39,40 @@ pub struct TransactionValidator {
     allow_durable_transactions: bool,
 }
 
+/// Parse a `ProgramsConfig` into a `(allow_all, program_set)` pair, resolving each configured
+/// address to a `Pubkey`. `context` names the config field for error messages.
+fn parse_programs_config(
+    config: &ProgramsConfig,
+    context: &str,
+) -> Result<(bool, HashSet<Pubkey>), KoraError> {
+    match config {
+        ProgramsConfig::All => Ok((true, HashSet::new())),
+        ProgramsConfig::Allowlist(programs) => {
+            let set = programs
+                .iter()
+                .map(|addr| {
+                    Pubkey::from_str(addr).map_err(|e| {
+                        KoraError::InternalServerError(format!(
+                            "Invalid program address in {context} config: {e}"
+                        ))
+                    })
+                })
+                .collect::<Result<HashSet<Pubkey>, KoraError>>()?;
+            Ok((false, set))
+        }
+    }
+}
+
 impl TransactionValidator {
     pub fn new(config: &Config, fee_payer_pubkey: Pubkey) -> Result<Self, KoraError> {
         let config = &config.validation;
 
-        let (allow_all_programs, allowed_programs) = match &config.allowed_programs {
-            ProgramsConfig::All => (true, HashSet::new()),
-            ProgramsConfig::Allowlist(programs) => (
-                false,
-                programs
-                    .iter()
-                    .map(|addr| {
-                        Pubkey::from_str(addr).map_err(|e| {
-                            KoraError::InternalServerError(format!(
-                                "Invalid program address in config: {e}"
-                            ))
-                        })
-                    })
-                    .collect::<Result<HashSet<Pubkey>, KoraError>>()?,
-            ),
-        };
+        let (allow_all_programs, allowed_programs) =
+            parse_programs_config(&config.allowed_programs, "allowed_programs")?;
+        let (allow_all_fee_payer_programs, fee_payer_allowed_programs) = parse_programs_config(
+            &config.fee_payer_allowed_programs,
+            "fee_payer_allowed_programs",
+        )?;
 
         let require_one_of_programs = config
             .require_one_of_programs
@@ -76,6 +92,8 @@ impl TransactionValidator {
             max_priority_fee_lamports: config.max_priority_fee_lamports,
             allowed_programs,
             allow_all_programs,
+            fee_payer_allowed_programs,
+            allow_all_fee_payer_programs,
             require_one_of_programs,
             max_signatures: config.max_signatures,
             _price_source: config.price_source.clone(),
@@ -146,6 +164,7 @@ impl TransactionValidator {
         self.validate_signatures(&transaction_resolved.transaction)?;
 
         self.validate_programs(transaction_resolved)?;
+        self.validate_fee_payer_participation(transaction_resolved)?;
         self.validate_require_one_of_programs(transaction_resolved)?;
         self.validate_priority_fee(transaction_resolved)?;
         self.validate_transfer_amounts(config, transaction_resolved, rpc_client).await?;
@@ -275,6 +294,31 @@ impl TransactionValidator {
         Ok(())
     }
 
+    /// Whether the participation gate is configured. It engages only when at least one program is
+    /// permitted to run solely because the fee payer does not participate in it (i.e.
+    /// `fee_payer_allowed_programs` is non-empty or `"All"`). When it is not configured, validation
+    /// behaves exactly as before this feature existed.
+    fn participation_gate_active(&self) -> bool {
+        self.allow_all_fee_payer_programs || !self.fee_payer_allowed_programs.is_empty()
+    }
+
+    /// A program may appear in a sponsored transaction if it is in `allowed_programs` (the fee payer
+    /// may also participate in it) or in `fee_payer_allowed_programs` (it may run only while the fee
+    /// payer does not participate — enforced separately by `validate_fee_payer_participation`).
+    fn program_may_run(&self, program: &Pubkey) -> bool {
+        self.allow_all_programs
+            || self.allowed_programs.contains(program)
+            || self.allow_all_fee_payer_programs
+            || self.fee_payer_allowed_programs.contains(program)
+    }
+
+    /// Whether the fee payer is permitted to be a participating account of `program`. Only programs
+    /// in `allowed_programs` (or `"All"`) are trusted for participation; `fee_payer_allowed_programs`
+    /// grants run permission without participation.
+    fn program_allows_fee_payer_participation(&self, program: &Pubkey) -> bool {
+        self.allow_all_programs || self.allowed_programs.contains(program)
+    }
+
     fn validate_programs(
         &self,
         transaction_resolved: &VersionedTransactionResolved,
@@ -283,13 +327,63 @@ impl TransactionValidator {
             return Ok(());
         }
         for instruction in &transaction_resolved.all_instructions {
-            if !self.allowed_programs.contains(&instruction.program_id) {
+            if !self.program_may_run(&instruction.program_id) {
                 return Err(KoraError::InvalidTransaction(format!(
                     "Program {} is not in the allowed list",
                     instruction.program_id
                 )));
             }
         }
+        Ok(())
+    }
+
+    /// Reject any transaction where the fee payer is a participating account of a program it is not
+    /// trusted to participate in (a program not in `allowed_programs`).
+    ///
+    /// This is the safety half of the participation gate: `fee_payer_allowed_programs` lets Kora
+    /// sponsor calls to arbitrary, unvetted programs, but only while it is a pure fee payer. A
+    /// program can only move the fee payer's funds if the fee payer's account is passed to it, and a
+    /// CPI can only forward accounts its caller held, so the fee payer reaches any program only
+    /// through a top-level instruction that lists it. Checking the top-level message is therefore
+    /// sufficient and needs no simulation (immune to a program that behaves differently at execution
+    /// than in simulation). The fee payer is always a static account (signers cannot come from a
+    /// lookup table), so participation is detected against its static index regardless of any
+    /// lookup tables.
+    fn validate_fee_payer_participation(
+        &self,
+        transaction_resolved: &VersionedTransactionResolved,
+    ) -> Result<(), KoraError> {
+        if !self.participation_gate_active() {
+            return Ok(());
+        }
+
+        let message = &transaction_resolved.transaction.message;
+        let static_keys = message.static_account_keys();
+        let Some(fee_payer_index) =
+            static_keys.iter().position(|key| *key == self.fee_payer_pubkey)
+        else {
+            // The fee payer is not even a static account key; it cannot participate in any
+            // instruction, so there is nothing to gate.
+            return Ok(());
+        };
+        let fee_payer_index = fee_payer_index as u8;
+
+        let all_account_keys = &transaction_resolved.all_account_keys;
+        for instruction in message.instructions() {
+            let Some(program_id) = all_account_keys.get(instruction.program_id_index as usize)
+            else {
+                return Err(KoraError::InvalidTransaction(
+                    "Instruction references an out-of-bounds program id index".to_string(),
+                ));
+            };
+            let fee_payer_participates = instruction.accounts.contains(&fee_payer_index);
+            if fee_payer_participates && !self.program_allows_fee_payer_participation(program_id) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Fee payer participates in program {program_id}, which is not in allowed_programs"
+                )));
+            }
+        }
+
         Ok(())
     }
 
@@ -315,15 +409,31 @@ impl TransactionValidator {
         Ok(())
     }
 
-    fn validate_create_account_owner(&self, owner: &Pubkey) -> Result<(), KoraError> {
-        if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
+    /// Validate the owner program of a created or reassigned account.
+    ///
+    /// The allowed-programs restriction on the owner exists to stop Kora from funding rent into an
+    /// account owned by an unvetted program. It only makes sense when the fee payer funds/owns the
+    /// operation; a create funded by someone else, or an assign of an account the fee payer does not
+    /// own, costs Kora nothing. When the participation gate is active this restriction is therefore
+    /// scoped to the fee-payer-involved case, so that sponsoring a non-participating DeFi
+    /// transaction that creates a program-owned account is not falsely rejected. When the gate is
+    /// inactive the historical broad behavior is preserved for compatibility. The disallowed-account
+    /// blocklist always applies.
+    fn validate_created_or_assigned_owner(
+        &self,
+        owner: &Pubkey,
+        fee_payer_involved: bool,
+        kind: &str,
+    ) -> Result<(), KoraError> {
+        let restrict_owner = fee_payer_involved || !self.participation_gate_active();
+        if restrict_owner && !self.allow_all_programs && !self.allowed_programs.contains(owner) {
             return Err(KoraError::InvalidTransaction(format!(
-                "CreateAccount owner program {owner} is not in the allowed programs list"
+                "{kind} owner program {owner} is not in the allowed programs list"
             )));
         }
         if self.disallowed_accounts.contains(owner) {
             return Err(KoraError::InvalidTransaction(format!(
-                "CreateAccount owner program {owner} is in the disallowed accounts list"
+                "{kind} owner program {owner} is in the disallowed accounts list"
             )));
         }
         Ok(())
@@ -355,22 +465,19 @@ impl TransactionValidator {
             ParsedSystemInstructionData::SystemAssign { authority, .. } => authority,
             self.fee_payer_policy.system.allow_assign, "System Assign");
 
-        // The owner allowlist/disallowed check holds for every Assign owner in a Kora-signed tx,
-        // not only when the fee payer is the reassigned account (parity with CreateAccount).
+        // Owner allowlist for Assign: enforced for every owner while the participation gate is
+        // inactive (historical behavior); scoped to assigns of a fee-payer-owned account once the
+        // gate is active. The disallowed blocklist always applies. See
+        // `validate_created_or_assigned_owner`.
         for instruction in
             system_instructions.get(&ParsedSystemInstructionType::SystemAssign).unwrap_or(&vec![])
         {
-            if let ParsedSystemInstructionData::SystemAssign { owner, .. } = instruction {
-                if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
-                    return Err(KoraError::InvalidTransaction(format!(
-                        "Assign owner program {owner} is not in the allowed programs list"
-                    )));
-                }
-                if self.disallowed_accounts.contains(owner) {
-                    return Err(KoraError::InvalidTransaction(format!(
-                        "Assign owner program {owner} is in the disallowed accounts list"
-                    )));
-                }
+            if let ParsedSystemInstructionData::SystemAssign { owner, authority } = instruction {
+                self.validate_created_or_assigned_owner(
+                    owner,
+                    *authority == self.fee_payer_pubkey,
+                    "Assign",
+                )?;
             }
         }
 
@@ -379,8 +486,13 @@ impl TransactionValidator {
             self.fee_payer_policy.system.allow_allocate, "System Allocate");
 
         // allow_create_account gates Kora participating as the funder (payer), the seeded base
-        // signer, or the account being created (prefund brick). The owner allowlist/blocklist
-        // holds for every CreateAccount owner in a Kora-signed tx regardless of Kora's role.
+        // signer, or the account being created (prefund brick). The owner allowlist is enforced for
+        // every owner while the participation gate is inactive (historical behavior), and scoped to
+        // fee-payer-involved creates once it is active; the disallowed blocklist always applies. The
+        // owner check uses the SAME participation definition as the create gate above (payer, base,
+        // or new_account): otherwise a foreign payer could prefund-create Kora's own account and
+        // assign it to an untrusted owner, taking ownership of the sponsored account. See
+        // `validate_created_or_assigned_owner`.
         for instruction in system_instructions
             .get(&ParsedSystemInstructionType::SystemCreateAccount)
             .unwrap_or(&vec![])
@@ -402,7 +514,11 @@ impl TransactionValidator {
                     ));
                 }
 
-                self.validate_create_account_owner(owner)?;
+                self.validate_created_or_assigned_owner(
+                    owner,
+                    fee_payer_participates,
+                    "CreateAccount",
+                )?;
             }
         }
 
@@ -3636,6 +3752,254 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
+    }
+
+    // ---- Fee-payer participation gate --------------------------------------------------------
+
+    /// With `fee_payer_allowed_programs = All` and a restricted `allowed_programs`, a call to an
+    /// unlisted program is allowed to run as long as the fee payer does not participate in it.
+    #[tokio::test]
+    #[serial]
+    async fn test_participation_gate_allows_unlisted_program_when_fee_payer_absent() {
+        let fee_payer = Pubkey::new_unique();
+        let other_account = Pubkey::new_unique();
+        let unlisted_program = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_fee_payer_allowed_programs(ProgramsConfig::All)
+            .with_max_allowed_lamports(1_000_000)
+            .build();
+        setup_both_configs(config);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        // Fee payer is only the transaction fee payer; it is not an account of the unlisted program.
+        let instruction = Instruction::new_with_bytes(
+            unlisted_program,
+            &[1, 2, 3],
+            vec![AccountMeta::new(other_account, false)],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    /// Same configuration, but the fee payer is passed as an account of the unlisted program. The
+    /// participation gate rejects it because the unlisted program is not in `allowed_programs`.
+    #[tokio::test]
+    #[serial]
+    async fn test_participation_gate_rejects_unlisted_program_when_fee_payer_participates() {
+        let fee_payer = Pubkey::new_unique();
+        let unlisted_program = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_fee_payer_allowed_programs(ProgramsConfig::All)
+            .with_max_allowed_lamports(1_000_000)
+            .build();
+        setup_both_configs(config);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let instruction = Instruction::new_with_bytes(
+            unlisted_program,
+            &[1, 2, 3],
+            vec![AccountMeta::new(fee_payer, true)],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .expect_err("fee payer participating in an unlisted program must be rejected");
+        assert!(
+            err.to_string().contains("Fee payer participates in program"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// Backward compatibility: with `fee_payer_allowed_programs` unset (the default), the gate is
+    /// inactive and an unlisted program is rejected by the run filter, exactly as before.
+    #[tokio::test]
+    #[serial]
+    async fn test_participation_gate_inactive_by_default_rejects_unlisted_program() {
+        let fee_payer = Pubkey::new_unique();
+        let other_account = Pubkey::new_unique();
+        let unlisted_program = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .build();
+        setup_both_configs(config);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let instruction = Instruction::new_with_bytes(
+            unlisted_program,
+            &[1, 2, 3],
+            vec![AccountMeta::new(other_account, false)],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .expect_err("unlisted program must be rejected when the gate is inactive");
+        assert!(err.to_string().contains("not in the allowed list"), "unexpected error: {err}");
+    }
+
+    /// With `allowed_programs = All`, the participation gate is a no-op: the fee payer is permitted
+    /// to participate everywhere, matching pre-feature wildcard behavior.
+    #[tokio::test]
+    #[serial]
+    async fn test_participation_gate_noop_when_allowed_programs_all() {
+        let fee_payer = Pubkey::new_unique();
+        let unlisted_program = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_max_allowed_lamports(1_000_000)
+            .build();
+        config.validation.allowed_programs = ProgramsConfig::All;
+        config.validation.fee_payer_allowed_programs = ProgramsConfig::All;
+        setup_both_configs(config);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let instruction = Instruction::new_with_bytes(
+            unlisted_program,
+            &[1, 2, 3],
+            vec![AccountMeta::new(fee_payer, true)],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    /// When the gate is active, the create-account owner allowlist is scoped to fee-payer-funded
+    /// creates: a create funded by someone else may use an unlisted owner program, but a
+    /// fee-payer-funded create with an unlisted owner is still rejected.
+    #[tokio::test]
+    #[serial]
+    async fn test_participation_gate_scopes_owner_check_to_fee_payer_funded_creates() {
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let base = Pubkey::new_unique();
+        let new_account = Pubkey::new_unique();
+        let unlisted_owner = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = true;
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_fee_payer_allowed_programs(ProgramsConfig::All)
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        setup_both_configs(config);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Funded by the attacker, not the fee payer: unlisted owner is now allowed.
+        let non_fee_payer_funded = create_account_with_seed(
+            &attacker,
+            &new_account,
+            &base,
+            "seed",
+            1000,
+            100,
+            &unlisted_owner,
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[non_fee_payer_funded], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(
+            validator.validate_transaction(config, &mut transaction, &rpc_client).await.is_ok(),
+            "non-fee-payer-funded create with unlisted owner should be allowed when gate is active"
+        );
+
+        // Funded by the fee payer: the owner allowlist still applies.
+        let fee_payer_funded = create_account(&fee_payer, &new_account, 1000, 100, &unlisted_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[fee_payer_funded], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .expect_err("fee-payer-funded create with unlisted owner must be rejected");
+        assert!(
+            err.to_string().contains("not in the allowed programs list"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// Regression: with the gate active, the owner allowlist must cover every role the fee payer
+    /// plays in a create, not just the payer. A foreign payer prefund-creating KORA's own account
+    /// with an unlisted owner would otherwise take ownership of the sponsored account.
+    #[tokio::test]
+    #[serial]
+    async fn test_participation_gate_owner_check_covers_fee_payer_as_created_account() {
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let unlisted_owner = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = true;
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_fee_payer_allowed_programs(ProgramsConfig::All)
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        setup_both_configs(config);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Foreign payer, but the created account IS the fee payer. Even though the fee payer is not
+        // the create funder, the owner allowlist must still reject the unlisted owner.
+        let instruction = create_account(&attacker, &fee_payer, 1000, 100, &unlisted_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .expect_err("fee payer as the created account with an unlisted owner must be rejected");
+        assert!(
+            err.to_string().contains("not in the allowed programs list"),
+            "unexpected error: {err}"
+        );
     }
 
     #[tokio::test]

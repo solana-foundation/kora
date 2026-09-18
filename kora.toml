@@ -77,6 +77,7 @@ allowed_programs = [
     "ComputeBudget111111111111111111111111111111",   # Compute Budget Program
     # "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95", # Lighthouse Program (uncomment when lighthouse enabled)
 ]
+fee_payer_allowed_programs = []
 allowed_tokens = [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # USDC
 ]
