@@ -28,7 +28,7 @@ pub struct RpcArgs {
 
 #[derive(Parser)]
 pub struct AuthArgs {
-    /// API key for authenticating requests to the Kora server (optional) - can be set in `kora.toml`
+    /// API key for authenticating requests to the Kora server (optional). Only a single key can be set via CLI or env var. For multiple keys, use `api_keys = [...]` in `kora.toml`.
     #[arg(long, env = "KORA_API_KEY", help_heading = "Authentication")]
     pub api_key: Option<String>,
 
