@@ -5082,6 +5082,7 @@ dependencies = [
  "bincode",
  "clap",
  "log",
+ "mockito",
  "reqwest 0.13.4",
  "serde",
  "serde_json",

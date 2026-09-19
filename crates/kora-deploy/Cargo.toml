@@ -31,3 +31,6 @@ solana-loader-v3-interface = { workspace = true }
 solana-sdk = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+mockito = "1.7.2"
