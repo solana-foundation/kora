@@ -8,7 +8,8 @@ cors_allow_origins = ["*"]
 
 [kora.auth]
 # Optional: API key for simple authentication
-# api_key = "your-api-key"
+# api_key = "your-api-key"  # Deprecated: use api_keys array instead
+# api_keys = ["key-1", "key-2"]  # Supports multiple API keys
 
 # Optional: HMAC secret for signed requests
 # hmac_secret = "your-hmac-secret"
