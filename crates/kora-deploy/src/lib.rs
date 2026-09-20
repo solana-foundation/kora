@@ -1,6 +1,8 @@
 #![allow(deprecated)]
 
 pub mod state;
+#[cfg(test)]
+pub mod tests;
 
 use std::{
     fs,
@@ -773,7 +775,7 @@ async fn wait_for_next_slot(rpc: &RpcClient) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+mod inline_tests {
     use super::*;
     use crate::state::DeployState;
 
