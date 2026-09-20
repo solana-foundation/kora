@@ -786,7 +786,7 @@ mod inline_tests {
             rpc_mock::DeployRpcMockBuilder,
         },
     };
-    use solana_sdk::signature::Signature;
+    use solana_sdk::{account::Account, signature::Signature};
 
     fn make_state(program_hash: &str, written_chunks: usize) -> DeployState {
         DeployState {
@@ -1046,6 +1046,150 @@ mod inline_tests {
         m1.assert_async().await;
         m2.assert_async().await;
         m3.assert_async().await;
+
+        let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[tokio::test]
+    async fn test_finalize_deploy_already_live_skips_deploy_and_removes_state() {
+        let program = Keypair::new();
+        let buffer = Keypair::new();
+        let program_data = Pubkey::new_unique();
+        let kora_pubkey = Pubkey::new_unique();
+        let bytes = vec![1u8, 2, 3];
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-deploy-test-state-{}.json", Pubkey::new_unique()));
+        std::fs::write(&state_path, b"dummy").unwrap();
+
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_minimum_balance_for_rent_exemption(1_000_000)
+            .with_account_info(&Account {
+                lamports: 1,
+                data: vec![],
+                owner: Pubkey::new_unique(),
+                executable: false,
+                rent_epoch: 0,
+            })
+            .build();
+
+        let cfg = DeployConfig {
+            kora_url: "http://127.0.0.1:1",
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            wallet: None,
+            resume: true,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+
+        let res =
+            finalize_deploy(&ctx, &bytes, &program, &buffer, &program_data, &kora_pubkey).await;
+        assert!(res.is_ok());
+        assert!(!state_path.exists());
+
+        let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[tokio::test]
+    async fn test_finalize_deploy_submits_and_removes_state_on_success() {
+        let program = Keypair::new();
+        let buffer = Keypair::new();
+        let program_data = Pubkey::new_unique();
+        let kora_pubkey = Pubkey::new_unique();
+        let bytes = vec![1u8, 2, 3];
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-deploy-test-state-{}.json", Pubkey::new_unique()));
+        std::fs::write(&state_path, b"dummy").unwrap();
+
+        let mut server = mockito::Server::new_async().await;
+        let sign_mock =
+            mock_sign_and_send_success(&mut server, &Signature::new_unique().to_string())
+                .await
+                .expect(1);
+
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_minimum_balance_for_rent_exemption(1_000_000)
+            .with_blockhash()
+            .with_signature_status(10)
+            .build();
+
+        let cfg = DeployConfig {
+            kora_url: &server.url(),
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            wallet: None,
+            resume: false,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+
+        let res =
+            finalize_deploy(&ctx, &bytes, &program, &buffer, &program_data, &kora_pubkey).await;
+        assert!(res.is_ok());
+        assert!(!state_path.exists());
+
+        sign_mock.assert_async().await;
+
+        let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[tokio::test]
+    async fn test_finalize_deploy_submit_failure_triggers_cleanup_and_returns_error() {
+        let program = Keypair::new();
+        let buffer = Keypair::new();
+        let program_data = Pubkey::new_unique();
+        let kora_pubkey = Pubkey::new_unique();
+        let bytes = vec![1u8, 2, 3];
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-deploy-test-state-{}.json", Pubkey::new_unique()));
+        std::fs::write(&state_path, b"dummy").unwrap();
+
+        let mut server = mockito::Server::new_async().await;
+        let m1 =
+            mock_sign_and_send_error(&mut server, 1, "simulated deploy failure").await.expect(1);
+        let m2 = mock_sign_and_send_success(&mut server, &Signature::new_unique().to_string())
+            .await
+            .expect(1);
+
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_minimum_balance_for_rent_exemption(1_000_000)
+            .with_blockhash()
+            .with_signature_status(10)
+            .build();
+
+        let cfg = DeployConfig {
+            kora_url: &server.url(),
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            wallet: None,
+            resume: false,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+
+        let res =
+            finalize_deploy(&ctx, &bytes, &program, &buffer, &program_data, &kora_pubkey).await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("Failed to submit deploy transaction for"));
+        assert!(err_msg.contains("Verify status: `solana program show"));
+
+        assert!(!state_path.exists());
+
+        m1.assert_async().await;
+        m2.assert_async().await;
 
         let _ = std::fs::remove_file(&state_path);
     }
