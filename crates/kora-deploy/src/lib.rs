@@ -1193,4 +1193,75 @@ mod inline_tests {
 
         let _ = std::fs::remove_file(&state_path);
     }
+
+    #[tokio::test]
+    async fn test_validate_state_hash_mismatch_with_cleanup_enabled_closes_buffer() {
+        let state = Some(make_state("old-hash", 0));
+        let buffer = Keypair::new();
+        let kora_pubkey = Pubkey::new_unique();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-deploy-test-state-{}.json", Pubkey::new_unique()));
+
+        let mut server = mockito::Server::new_async().await;
+        let sign_mock =
+            mock_sign_and_send_success(&mut server, &Signature::new_unique().to_string())
+                .await
+                .expect(1);
+
+        let mock_rpc =
+            DeployRpcMockBuilder::new().with_blockhash().with_signature_status(10).build();
+
+        let cfg = DeployConfig {
+            kora_url: &server.url(),
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            wallet: None,
+            resume: false,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+
+        let res = validate_state(&ctx, &buffer, &kora_pubkey, &state, "new-hash", 5).await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("hash mismatch"));
+        assert!(err_msg.contains("Buffer cleanup was attempted."));
+
+        sign_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_validate_state_chunk_overflow_with_cleanup_disabled_skips_close() {
+        let state = Some(make_state("same-hash", 11));
+        let buffer = Keypair::new();
+        let kora_pubkey = Pubkey::new_unique();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-deploy-test-state-{}.json", Pubkey::new_unique()));
+
+        let mock_rpc = DeployRpcMockBuilder::new().build();
+
+        let cfg = DeployConfig {
+            kora_url: "http://127.0.0.1:1",
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            wallet: None,
+            resume: false,
+            cleanup_on_failure: false,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+
+        let res = validate_state(&ctx, &buffer, &kora_pubkey, &state, "same-hash", 10).await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("written_chunks"));
+        assert!(err_msg.contains("Buffer cleanup skipped (--no-cleanup-on-failure was set)."));
+    }
 }
