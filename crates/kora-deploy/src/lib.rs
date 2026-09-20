@@ -777,7 +777,14 @@ async fn wait_for_next_slot(rpc: &RpcClient) -> Result<()> {
 #[cfg(test)]
 mod inline_tests {
     use super::*;
-    use crate::state::DeployState;
+    use crate::{
+        state::DeployState,
+        tests::{
+            kora_mock::{mock_get_payer_signer, mock_sign_and_send_success},
+            rpc_mock::DeployRpcMockBuilder,
+        },
+    };
+    use solana_sdk::signature::Signature;
 
     fn make_state(program_hash: &str, written_chunks: usize) -> DeployState {
         DeployState {
@@ -826,5 +833,105 @@ mod inline_tests {
             violation,
             Some(StateInvariantViolation::ChunkOverflow { written: 11, total: 10 })
         ));
+    }
+
+    #[tokio::test]
+    async fn test_load_or_init_state_fresh_creates_buffer_and_saves_state() {
+        let mut kora_server = mockito::Server::new_async().await;
+        let kora_url = kora_server.url();
+        let _ = mock_get_payer_signer(&mut kora_server, &Pubkey::new_unique().to_string()).await;
+        let _ = mock_sign_and_send_success(&mut kora_server, &Signature::new_unique().to_string())
+            .await;
+
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_minimum_balance_for_rent_exemption(1_000_000)
+            .with_blockhash()
+            .with_signature_status(10)
+            .build();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-deploy-test-state-{}.json", Pubkey::new_unique()));
+        if state_path.exists() {
+            let _ = std::fs::remove_file(&state_path);
+        }
+
+        let cfg = DeployConfig {
+            kora_url: &kora_url,
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            wallet: None,
+            resume: false,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+
+        let res = load_or_init_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash").await;
+        assert!(res.is_ok());
+        let (_, _, _, _, written_chunks, state_opt) = res.unwrap();
+        assert_eq!(written_chunks, 0);
+        assert!(state_opt.is_some());
+
+        let state = state_opt.unwrap();
+        assert_eq!(state.program_hash, "dummy-hash");
+        assert_eq!(state.written_chunks, 0);
+
+        assert!(state_path.exists());
+        let loaded_state = DeployState::load(&state_path).unwrap().unwrap();
+        assert_eq!(loaded_state.program_hash, "dummy-hash");
+        assert_eq!(loaded_state.written_chunks, 0);
+
+        let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[tokio::test]
+    async fn test_load_or_init_state_save_failure_triggers_forced_cleanup() {
+        let mut kora_server = mockito::Server::new_async().await;
+        let kora_url = kora_server.url();
+        let _ = mock_get_payer_signer(&mut kora_server, &Pubkey::new_unique().to_string()).await;
+        let sign_mock =
+            mock_sign_and_send_success(&mut kora_server, &Signature::new_unique().to_string())
+                .await
+                .expect(2);
+
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_minimum_balance_for_rent_exemption(1_000_000)
+            .with_blockhash()
+            .with_signature_status(10)
+            .build();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-deploy-test-nonexistent-dir-{}", Pubkey::new_unique()))
+            .join("state.json");
+
+        let cfg = DeployConfig {
+            kora_url: &kora_url,
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            wallet: None,
+            resume: false,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+
+        let res = load_or_init_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash").await;
+        match res {
+            Err(e) => {
+                let err_msg = e.to_string();
+                assert!(err_msg.contains("failed to save initial deploy state"));
+            }
+            Ok(_) => panic!("Expected an error"),
+        }
+        sign_mock.assert_async().await;
+
+        let _ = std::fs::remove_file(&state_path);
+        if let Some(parent) = state_path.parent() {
+            let _ = std::fs::remove_dir(parent);
+        }
     }
 }
