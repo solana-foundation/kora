@@ -186,10 +186,7 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         .layer(cors)
         .layer(MethodValidationLayer::new(allowed_methods.clone()))
         .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
-        .option_layer(
-            get_value_by_priority("KORA_API_KEY", config.kora.auth.api_key.clone())
-                .map(ApiKeyAuthLayer::new),
-        )
+        .option_layer(config.kora.auth.resolved_api_keys().map(ApiKeyAuthLayer::new))
         .option_layer(
             get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone())
                 .map(|secret| HmacAuthLayer::new(secret, config.kora.auth.max_timestamp_age)),
