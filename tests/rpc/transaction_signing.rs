@@ -138,6 +138,14 @@ async fn test_sign_transaction_v1() {
 
     response.assert_success();
 
+    // The default test config has Lighthouse disabled, so the message came back unchanged
+    // and the response must say so.
+    assert_eq!(
+        response["lighthouse_assertion_added"].as_bool(),
+        Some(false),
+        "With Lighthouse disabled the response must report no assertion was appended"
+    );
+
     let transaction_string =
         response["signed_transaction"].as_str().expect("Expected signed_transaction in response");
     let transaction = TransactionUtil::decode_b64_transaction(transaction_string)

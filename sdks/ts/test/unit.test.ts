@@ -286,6 +286,7 @@ describe('KoraClient Unit Tests', () => {
             const mockResponse: SignTransactionResponse = {
                 signed_transaction: 'base64_signed_transaction',
                 signer_pubkey: 'test_signer_pubkey',
+                lighthouse_assertion_added: false,
             };
 
             await testSuccessfulRpcMethod(
