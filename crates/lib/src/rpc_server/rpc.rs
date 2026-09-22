@@ -3,6 +3,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 
 use crate::error::KoraError;
+use crate::rpc::RpcClientEnum;
 #[cfg(feature = "docs")]
 use utoipa::{
     openapi::{RefOr, Schema},
@@ -37,7 +38,7 @@ use crate::rpc_server::method::{
 
 #[derive(Clone)]
 pub struct KoraRpc {
-    rpc_client: Arc<RpcClient>,
+    rpc_client: RpcClientEnum,
 }
 #[cfg(feature = "docs")]
 pub struct OpenApiSpec {
@@ -47,12 +48,12 @@ pub struct OpenApiSpec {
 }
 
 impl KoraRpc {
-    pub fn new(rpc_client: Arc<RpcClient>) -> Self {
+    pub fn new(rpc_client: RpcClientEnum) -> Self {
         Self { rpc_client }
     }
 
-    pub fn get_rpc_client(&self) -> &Arc<RpcClient> {
-        &self.rpc_client
+    pub fn get_rpc_client(&self) -> Arc<RpcClient> {
+        self.rpc_client.get_client()
     }
 
     pub async fn liveness(&self) -> Result<(), KoraError> {
@@ -67,7 +68,7 @@ impl KoraRpc {
         request: EstimateTransactionFeeRequest,
     ) -> Result<EstimateTransactionFeeResponse, KoraError> {
         info!("Estimate transaction fee request: {request:?}");
-        let result = estimate_transaction_fee(&self.rpc_client, request).await;
+        let result = estimate_transaction_fee(&self.rpc_client.get_client(), request).await;
         info!("Estimate transaction fee response: {result:?}");
         result
     }
@@ -77,7 +78,7 @@ impl KoraRpc {
         request: EstimateBundleFeeRequest,
     ) -> Result<EstimateBundleFeeResponse, KoraError> {
         info!("Estimate bundle fee request: {request:?}");
-        let result = estimate_bundle_fee(&self.rpc_client, request).await;
+        let result = estimate_bundle_fee(&self.rpc_client.get_client(), request).await;
         info!("Estimate bundle fee response: {result:?}");
         result
     }
@@ -101,7 +102,7 @@ impl KoraRpc {
         request: SignTransactionRequest,
     ) -> Result<SignTransactionResponse, KoraError> {
         info!("Sign transaction request: {request:?}");
-        let result = sign_transaction(&self.rpc_client, request).await;
+        let result = sign_transaction(&self.rpc_client.get_client(), request).await;
         info!("Sign transaction response: {result:?}");
         result
     }
@@ -111,7 +112,7 @@ impl KoraRpc {
         request: SignAndSendTransactionRequest,
     ) -> Result<SignAndSendTransactionResponse, KoraError> {
         info!("Sign and send transaction request: {request:?}");
-        let result = sign_and_send_transaction(&self.rpc_client, request).await;
+        let result = sign_and_send_transaction(&self.rpc_client.get_client(), request).await;
         info!("Sign and send transaction response: {result:?}");
         result
     }
@@ -123,14 +124,14 @@ impl KoraRpc {
     ) -> Result<TransferTransactionResponse, KoraError> {
         info!("Transfer transaction request: {request:?}");
         #[allow(deprecated)]
-        let result = transfer_transaction(&self.rpc_client, request).await;
+        let result = transfer_transaction(&self.rpc_client.get_client(), request).await;
         info!("Transfer transaction response: {result:?}");
         result
     }
 
     pub async fn get_blockhash(&self) -> Result<GetBlockhashResponse, KoraError> {
         info!("Get blockhash request received");
-        let result = get_blockhash(&self.rpc_client).await;
+        let result = get_blockhash(&self.rpc_client.get_client()).await;
         info!("Get blockhash response: {result:?}");
         result
     }
@@ -154,7 +155,7 @@ impl KoraRpc {
         request: SignBundleRequest,
     ) -> Result<SignBundleResponse, KoraError> {
         info!("Sign bundle request: {request:?}");
-        let result = sign_bundle(&self.rpc_client, request).await;
+        let result = sign_bundle(&self.rpc_client.get_client(), request).await;
         info!("Sign bundle response: {result:?}");
         result
     }
@@ -164,7 +165,7 @@ impl KoraRpc {
         request: SignAndSendBundleRequest,
     ) -> Result<SignAndSendBundleResponse, KoraError> {
         info!("Sign and send bundle request: {request:?}");
-        let result = sign_and_send_bundle(&self.rpc_client, request).await;
+        let result = sign_and_send_bundle(&self.rpc_client.get_client(), request).await;
         info!("Sign and send bundle response: {result:?}");
         result
     }
@@ -249,7 +250,7 @@ mod tests {
 
     fn create_test_kora_rpc() -> KoraRpc {
         let rpc_client = RpcMockBuilder::new().build();
-        KoraRpc::new(rpc_client)
+        KoraRpc::new(crate::rpc::RpcClientEnum::Simple(rpc_client))
     }
 
     #[tokio::test]

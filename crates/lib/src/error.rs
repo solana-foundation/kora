@@ -1,4 +1,5 @@
-use crate::{bundle::BundleError, sanitize::sanitize_message};
+use crate::bundle::BundleError;
+use crate::sanitize::sanitize_message;
 use jsonrpsee::{core::Error as RpcError, types::error::CallError};
 use serde::{Deserialize, Serialize};
 use solana_client::client_error::ClientError;
@@ -74,26 +75,13 @@ impl From<ClientError> for KoraError {
     fn from(e: ClientError) -> Self {
         let error_string = e.to_string();
         let sanitized_error_string = sanitize_message(&error_string);
+
         if error_string.contains("AccountNotFound")
             || error_string.contains("could not find account")
         {
-            #[cfg(feature = "unsafe-debug")]
-            {
-                KoraError::AccountNotFound(error_string)
-            }
-            #[cfg(not(feature = "unsafe-debug"))]
-            {
-                KoraError::AccountNotFound(sanitized_error_string)
-            }
+            KoraError::AccountNotFound(sanitized_error_string)
         } else {
-            #[cfg(feature = "unsafe-debug")]
-            {
-                KoraError::RpcError(error_string)
-            }
-            #[cfg(not(feature = "unsafe-debug"))]
-            {
-                KoraError::RpcError(sanitized_error_string)
-            }
+            KoraError::RpcError(sanitized_error_string)
         }
     }
 }

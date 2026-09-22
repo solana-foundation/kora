@@ -354,8 +354,11 @@ mod tests {
 
         let rpc_client = RpcMockBuilder::new().build();
 
-        // This should not panic and should start successfully
-        let result = run_rpc_server(KoraRpc::new(rpc_client), port).await;
+        let result = run_rpc_server(
+            KoraRpc::new(crate::rpc::RpcClientEnum::Simple(rpc_client)),
+            port,
+        )
+        .await;
         match result {
             Ok(_) => (),
             Err(e) if e.to_string().contains("already initialized") => (),
@@ -419,7 +422,7 @@ mod tests {
         let _ = setup_or_get_test_signer();
 
         let rpc_client = RpcMockBuilder::new().build();
-        let kora_rpc = KoraRpc::new(rpc_client);
+        let kora_rpc = KoraRpc::new(crate::rpc::RpcClientEnum::Simple(rpc_client));
 
         let result = build_rpc_module(kora_rpc);
         assert!(result.is_ok(), "Failed to build RPC module with all methods enabled");
@@ -463,7 +466,7 @@ mod tests {
         let _ = setup_or_get_test_signer();
 
         let rpc_client = RpcMockBuilder::new().build();
-        let kora_rpc = KoraRpc::new(rpc_client);
+        let kora_rpc = KoraRpc::new(crate::rpc::RpcClientEnum::Simple(rpc_client));
 
         let result = build_rpc_module(kora_rpc);
         assert!(result.is_ok(), "Failed to build RPC module with all methods disabled");
@@ -494,7 +497,7 @@ mod tests {
         let _ = setup_or_get_test_signer();
 
         let rpc_client = RpcMockBuilder::new().build();
-        let kora_rpc = KoraRpc::new(rpc_client);
+        let kora_rpc = KoraRpc::new(crate::rpc::RpcClientEnum::Simple(rpc_client));
 
         let result = build_rpc_module(kora_rpc);
         assert!(result.is_ok(), "Failed to build RPC module with selective methods");
