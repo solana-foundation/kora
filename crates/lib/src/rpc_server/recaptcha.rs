@@ -81,6 +81,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rpc_server::auth::RejectionReason;
     use http::{Method, StatusCode};
     use std::{
         future::Ready,
@@ -139,6 +140,10 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.extensions().get::<RejectionReason>(),
+            Some(&RejectionReason::AuthFailure)
+        );
     }
 
     #[tokio::test]
@@ -153,6 +158,10 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.extensions().get::<RejectionReason>(),
+            Some(&RejectionReason::AuthFailure)
+        );
     }
 
     #[tokio::test]
@@ -171,5 +180,9 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.extensions().get::<RejectionReason>(),
+            Some(&RejectionReason::AuthFailure)
+        );
     }
 }
