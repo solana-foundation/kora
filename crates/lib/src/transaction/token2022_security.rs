@@ -218,8 +218,9 @@ impl Token2022SecurityParser {
                         Some(ExtensionType::NonTransferable),
                     ));
                 }
-                TokenInstruction::WithdrawExcessLamports
-                | TokenInstruction::ConfidentialTransferExtension
+                // WithdrawExcessLamports is policy-gated (allow_withdraw_excess_lamports), not
+                // an unsupported extension — omit from RejectIfFeePayerPresent.
+                TokenInstruction::ConfidentialTransferExtension
                 | TokenInstruction::ConfidentialTransferFeeExtension
                 | TokenInstruction::ConfidentialMintBurnExtension => {
                     parsed.push(Self::unsupported_fee_payer_account_check(
