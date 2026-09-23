@@ -239,7 +239,7 @@ impl<'a> IntoIterator for &'a ProgramsConfig {
 }
 
 impl Default for ProgramsConfig {
-    /// An empty allowlist. Used as the default for `fee_payer_allowed_programs` so a config that
+    /// An empty allowlist. Used as the default for `sponsor_only_programs` so a config that
     /// omits the field behaves exactly as before: no programs are permitted to run solely because
     /// the fee payer does not participate in them.
     fn default() -> Self {
@@ -289,7 +289,7 @@ pub struct ValidationConfig {
     /// participate. Has no effect when `allowed_programs = "All"` (the fee payer is then permitted
     /// to participate everywhere, so nothing is gated).
     #[serde(default)]
-    pub fee_payer_allowed_programs: ProgramsConfig,
+    pub sponsor_only_programs: ProgramsConfig,
     pub allowed_tokens: Vec<String>,
     pub allowed_spl_paid_tokens: SplTokenConfig,
     pub disallowed_accounts: Vec<String>,

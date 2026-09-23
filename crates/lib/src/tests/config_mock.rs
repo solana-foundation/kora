@@ -82,7 +82,7 @@ impl ConfigMockBuilder {
                         "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".parse().unwrap(), // Token Program
                         "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL".parse().unwrap(), // ATA Program
                     ]),
-                    fee_payer_allowed_programs: ProgramsConfig::default(),
+                    sponsor_only_programs: ProgramsConfig::default(),
                     allowed_tokens: vec![
                         "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".parse().unwrap(), // USDC devnet
                     ],
@@ -183,7 +183,7 @@ impl ConfigMockBuilder {
     }
 
     pub fn with_fee_payer_allowed_programs(mut self, programs: ProgramsConfig) -> Self {
-        self.config.validation.fee_payer_allowed_programs = programs;
+        self.config.validation.sponsor_only_programs = programs;
         self
     }
 
@@ -319,7 +319,7 @@ impl ValidationConfigBuilder {
                 max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![]),
-                fee_payer_allowed_programs: ProgramsConfig::default(),
+                sponsor_only_programs: ProgramsConfig::default(),
                 allowed_tokens: vec![],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],

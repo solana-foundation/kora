@@ -28,7 +28,7 @@ pub struct TransactionValidator {
     max_priority_fee_lamports: Option<u64>,
     allowed_programs: HashSet<Pubkey>,
     allow_all_programs: bool,
-    fee_payer_allowed_programs: HashSet<Pubkey>,
+    sponsor_only_programs: HashSet<Pubkey>,
     allow_all_fee_payer_programs: bool,
     require_one_of_programs: HashSet<Pubkey>,
     max_signatures: u64,
@@ -69,9 +69,9 @@ impl TransactionValidator {
 
         let (allow_all_programs, allowed_programs) =
             parse_programs_config(&config.allowed_programs, "allowed_programs")?;
-        let (allow_all_fee_payer_programs, fee_payer_allowed_programs) = parse_programs_config(
-            &config.fee_payer_allowed_programs,
-            "fee_payer_allowed_programs",
+        let (allow_all_fee_payer_programs, sponsor_only_programs) = parse_programs_config(
+            &config.sponsor_only_programs,
+            "sponsor_only_programs",
         )?;
 
         let require_one_of_programs = config
@@ -92,7 +92,7 @@ impl TransactionValidator {
             max_priority_fee_lamports: config.max_priority_fee_lamports,
             allowed_programs,
             allow_all_programs,
-            fee_payer_allowed_programs,
+            sponsor_only_programs,
             allow_all_fee_payer_programs,
             require_one_of_programs,
             max_signatures: config.max_signatures,
@@ -296,24 +296,24 @@ impl TransactionValidator {
 
     /// Whether the participation gate is configured. It engages only when at least one program is
     /// permitted to run solely because the fee payer does not participate in it (i.e.
-    /// `fee_payer_allowed_programs` is non-empty or `"All"`). When it is not configured, validation
+    /// `sponsor_only_programs` is non-empty or `"All"`). When it is not configured, validation
     /// behaves exactly as before this feature existed.
     fn participation_gate_active(&self) -> bool {
-        self.allow_all_fee_payer_programs || !self.fee_payer_allowed_programs.is_empty()
+        self.allow_all_fee_payer_programs || !self.sponsor_only_programs.is_empty()
     }
 
     /// A program may appear in a sponsored transaction if it is in `allowed_programs` (the fee payer
-    /// may also participate in it) or in `fee_payer_allowed_programs` (it may run only while the fee
+    /// may also participate in it) or in `sponsor_only_programs` (it may run only while the fee
     /// payer does not participate — enforced separately by `validate_fee_payer_participation`).
     fn program_may_run(&self, program: &Pubkey) -> bool {
         self.allow_all_programs
             || self.allowed_programs.contains(program)
             || self.allow_all_fee_payer_programs
-            || self.fee_payer_allowed_programs.contains(program)
+            || self.sponsor_only_programs.contains(program)
     }
 
     /// Whether the fee payer is permitted to be a participating account of `program`. Only programs
-    /// in `allowed_programs` (or `"All"`) are trusted for participation; `fee_payer_allowed_programs`
+    /// in `allowed_programs` (or `"All"`) are trusted for participation; `sponsor_only_programs`
     /// grants run permission without participation.
     fn program_allows_fee_payer_participation(&self, program: &Pubkey) -> bool {
         self.allow_all_programs || self.allowed_programs.contains(program)
@@ -340,7 +340,7 @@ impl TransactionValidator {
     /// Reject any transaction where the fee payer is a participating account of a program it is not
     /// trusted to participate in (a program not in `allowed_programs`).
     ///
-    /// This is the safety half of the participation gate: `fee_payer_allowed_programs` lets Kora
+    /// This is the safety half of the participation gate: `sponsor_only_programs` lets Kora
     /// sponsor calls to arbitrary, unvetted programs, but only while it is a pure fee payer. A
     /// program can only move the fee payer's funds if the fee payer's account is passed to it, and a
     /// CPI can only forward accounts its caller held, so the fee payer reaches any program only
@@ -3756,7 +3756,7 @@ mod tests {
 
     // ---- Fee-payer participation gate --------------------------------------------------------
 
-    /// With `fee_payer_allowed_programs = All` and a restricted `allowed_programs`, a call to an
+    /// With `sponsor_only_programs = All` and a restricted `allowed_programs`, a call to an
     /// unlisted program is allowed to run as long as the fee payer does not participate in it.
     #[tokio::test]
     #[serial]
@@ -3830,7 +3830,7 @@ mod tests {
         );
     }
 
-    /// Backward compatibility: with `fee_payer_allowed_programs` unset (the default), the gate is
+    /// Backward compatibility: with `sponsor_only_programs` unset (the default), the gate is
     /// inactive and an unlisted program is rejected by the run filter, exactly as before.
     #[tokio::test]
     #[serial]
@@ -3879,7 +3879,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .build();
         config.validation.allowed_programs = ProgramsConfig::All;
-        config.validation.fee_payer_allowed_programs = ProgramsConfig::All;
+        config.validation.sponsor_only_programs = ProgramsConfig::All;
         setup_both_configs(config);
 
         let config = get_config().unwrap();
