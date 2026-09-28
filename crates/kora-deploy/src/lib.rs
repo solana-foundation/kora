@@ -32,7 +32,7 @@ use solana_transaction::versioned::VersionedTransaction;
 
 use crate::state::DeployState;
 
-const WRITE_CHUNK_SIZE: usize = 3800;
+pub const WRITE_CHUNK_SIZE: usize = 3800;
 const BPF_LOADER_UPGRADEABLE: Pubkey =
     solana_sdk::pubkey!("BPFLoaderUpgradeab1e11111111111111111111111");
 const SYSTEM_PROGRAM: Pubkey = solana_sdk::pubkey!("11111111111111111111111111111111");
@@ -715,7 +715,17 @@ async fn build_b64_tx(
     extra_signers: &[&Keypair],
 ) -> Result<String> {
     let blockhash = rpc.get_latest_blockhash().await?;
-    let tx = build_tx(fee_payer, ixs, extra_signers, blockhash)?;
+    encode_tx(fee_payer, ixs, extra_signers, blockhash, resource_config(ixs.len()))
+}
+
+pub fn encode_tx(
+    fee_payer: &Pubkey,
+    ixs: &[Instruction],
+    extra_signers: &[&Keypair],
+    blockhash: Hash,
+    config: v1::TransactionConfig,
+) -> Result<String> {
+    let tx = build_tx(fee_payer, ixs, extra_signers, blockhash, config)?;
     Ok(B64.encode(wincode::serialize(&tx)?))
 }
 
@@ -737,12 +747,10 @@ fn build_tx(
     ixs: &[Instruction],
     extra_signers: &[&Keypair],
     blockhash: Hash,
+    config: v1::TransactionConfig,
 ) -> Result<VersionedTransaction> {
     let message = VersionedMessage::V1(v1::Message::try_compile_with_config(
-        fee_payer,
-        ixs,
-        blockhash,
-        resource_config(ixs.len()),
+        fee_payer, ixs, blockhash, config,
     )?);
     let signer_count = usize::from(message.header().num_required_signatures);
     let message_bytes = message.serialize();
@@ -849,7 +857,8 @@ mod tests {
         let buffer = Keypair::new();
         let ix =
             loader_v3::write(&buffer.pubkey(), &kora.pubkey(), 0, vec![0xAB; WRITE_CHUNK_SIZE]);
-        let tx = build_tx(&kora.pubkey(), &[ix], &[], Hash::new_unique()).unwrap();
+        let tx =
+            build_tx(&kora.pubkey(), &[ix], &[], Hash::new_unique(), resource_config(1)).unwrap();
 
         let serialized = wincode::serialize(&tx).unwrap();
         assert!(
@@ -870,7 +879,14 @@ mod tests {
             &program.pubkey(),
             &wallet.pubkey(),
         )];
-        let tx = build_tx(&kora.pubkey(), &ixs, &[&program, &wallet], Hash::new_unique()).unwrap();
+        let tx = build_tx(
+            &kora.pubkey(),
+            &ixs,
+            &[&program, &wallet],
+            Hash::new_unique(),
+            resource_config(1),
+        )
+        .unwrap();
 
         let decoded: VersionedTransaction =
             wincode::deserialize(&wincode::serialize(&tx).unwrap()).unwrap();
@@ -898,7 +914,14 @@ mod tests {
         let kora = Keypair::new();
         let buffer = Keypair::new();
         let ix = loader_v3::write(&buffer.pubkey(), &kora.pubkey(), 0, vec![1]);
-        assert!(build_tx(&kora.pubkey(), &[ix], &[&buffer], Hash::new_unique()).is_err());
+        assert!(build_tx(
+            &kora.pubkey(),
+            &[ix],
+            &[&buffer],
+            Hash::new_unique(),
+            resource_config(1)
+        )
+        .is_err());
     }
 
     #[test]

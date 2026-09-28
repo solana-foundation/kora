@@ -40,7 +40,6 @@ price_source = "Mock"
 allow_durable_transactions = false
 allowed_programs = [
     "11111111111111111111111111111111",             # System Program
-    "ComputeBudget111111111111111111111111111111",  # Compute Budget Program
     "BPFLoaderUpgradeab1e11111111111111111111111",  # BPF Loader Upgradeable (loader-v3)
     "LoaderV411111111111111111111111111111111111",  # Loader-v4 (currently feature-gated)
     "CPoBCCbvawmR2S6joHjXgfFkh9pGqzSixBe2BaBwbVkx",  # Deploy registry (registry-program/)
