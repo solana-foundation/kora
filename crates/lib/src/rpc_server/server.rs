@@ -1,5 +1,5 @@
 use crate::{
-    config::{classify_cors_origins, AuthConfig, CorsOriginsClassification},
+    config::{classify_cors_origins, CorsOriginsClassification},
     constant::{X_API_KEY, X_HMAC_SIGNATURE, X_RECAPTCHA_TOKEN, X_TIMESTAMP},
     metrics::run_metrics_server_if_required,
     rpc_server::{
@@ -104,11 +104,6 @@ async fn wait_for_rpc_stop(rpc_handle: ServerHandle, port: u16) {
     }
 }
 
-// We'll always prioritize the environment variable over the config value
-fn get_value_by_priority(env_var: &str, config_value: Option<String>) -> Option<String> {
-    AuthConfig::resolve_secret(env_var, config_value.as_deref())
-}
-
 fn build_allow_origin(origins: &[String]) -> AllowOrigin {
     match classify_cors_origins(origins) {
         CorsOriginsClassification::Empty => {
@@ -188,7 +183,10 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
         .option_layer(config.kora.auth.resolved_api_keys().map(ApiKeyAuthLayer::new))
         .option_layer(
-            get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone())
+            config
+                .kora
+                .auth
+                .resolved_hmac_secret()
                 .map(|secret| HmacAuthLayer::new(secret, config.kora.auth.max_timestamp_age)),
         )
         .option_layer(recaptcha_config.map(RecaptchaLayer::new));
@@ -331,7 +329,7 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
 mod tests {
     use super::*;
     use crate::{
-        config::{EnabledMethods, CORS_WILDCARD},
+        config::{AuthConfig, EnabledMethods, CORS_WILDCARD},
         tests::{
             common::setup_or_get_test_signer,
             config_mock::{ConfigMockBuilder, KoraConfigBuilder},
@@ -364,48 +362,48 @@ mod tests {
     }
 
     #[test]
-    fn test_get_value_by_priority_env_var_takes_precedence() {
+    fn test_resolve_secret_env_var_takes_precedence() {
         let env_var_name = "TEST_ENV_VAR_PRECEDENCE_UNIQUE";
         env::set_var(env_var_name, "env_value");
 
-        let result = get_value_by_priority(env_var_name, Some("config_value".to_string()));
+        let result = AuthConfig::resolve_secret(env_var_name, Some("config_value"));
         assert_eq!(result, Some("env_value".to_string()));
 
         env::remove_var(env_var_name);
     }
 
     #[test]
-    fn test_get_value_by_priority_config_fallback() {
+    fn test_resolve_secret_config_fallback() {
         let env_var_name = "TEST_ENV_VAR_FALLBACK_UNIQUE_XYZ123";
 
-        let result = get_value_by_priority(env_var_name, Some("config_value".to_string()));
+        let result = AuthConfig::resolve_secret(env_var_name, Some("config_value"));
         assert_eq!(result, Some("config_value".to_string()));
     }
 
     #[test]
-    fn test_get_value_by_priority_none_when_both_missing() {
+    fn test_resolve_secret_none_when_both_missing() {
         let env_var_name = "TEST_ENV_VAR_MISSING_UNIQUE_ABC789";
 
-        let result = get_value_by_priority(env_var_name, None);
+        let result = AuthConfig::resolve_secret(env_var_name, None);
         assert_eq!(result, None);
     }
 
     #[test]
-    fn test_get_value_by_priority_empty_env_var_falls_back_to_config() {
+    fn test_resolve_secret_empty_env_var_falls_back_to_config() {
         let env_var_name = "TEST_ENV_VAR_EMPTY_ENV_UNIQUE_DEF456";
         env::set_var(env_var_name, "");
 
-        let result = get_value_by_priority(env_var_name, Some("config_value".to_string()));
+        let result = AuthConfig::resolve_secret(env_var_name, Some("config_value"));
         assert_eq!(result, Some("config_value".to_string()));
 
         env::remove_var(env_var_name);
     }
 
     #[test]
-    fn test_get_value_by_priority_empty_config_value_is_ignored() {
+    fn test_resolve_secret_empty_config_value_is_ignored() {
         let env_var_name = "TEST_ENV_VAR_EMPTY_CONFIG_UNIQUE_GHI789";
 
-        let result = get_value_by_priority(env_var_name, Some("".to_string()));
+        let result = AuthConfig::resolve_secret(env_var_name, Some(""));
         assert_eq!(result, None);
     }
 

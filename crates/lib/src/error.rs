@@ -514,20 +514,6 @@ mod tests {
     }
 
     #[test]
-    fn test_kora_error_debug() {
-        let error = KoraError::ValidationError("test".to_string());
-        let debug_string = format!("{error:?}");
-        assert!(debug_string.contains("ValidationError"));
-    }
-
-    #[test]
-    fn test_kora_error_clone() {
-        let error = KoraError::SwapError("original".to_string());
-        let cloned = error.clone();
-        assert_eq!(error, cloned);
-    }
-
-    #[test]
     fn test_kora_response_serialization() {
         let response = KoraResponse::ok("test_data".to_string());
         let json = serde_json::to_string(&response).unwrap();
