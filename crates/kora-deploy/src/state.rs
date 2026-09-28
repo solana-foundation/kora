@@ -16,6 +16,14 @@ pub struct DeployState {
     pub written_chunks: usize,
     pub kora_pubkey: String,
     pub program_hash: String,
+    #[serde(default = "legacy_chunk_size")]
+    pub chunk_size: usize,
+}
+
+/// State files written before `chunk_size` was recorded used 900-byte chunks, and resuming
+/// one at any other size would write at offsets that disagree with `written_chunks`.
+fn legacy_chunk_size() -> usize {
+    900
 }
 
 impl DeployState {
@@ -90,6 +98,7 @@ mod tests {
             written_chunks: 42,
             kora_pubkey: "Base58KoraPubkey111111111111111111111111111".to_string(),
             program_hash: "dummyhash123".to_string(),
+            chunk_size: 3800,
         };
 
         let temp_file =
@@ -108,6 +117,22 @@ mod tests {
 
         fs::remove_file(&temp_file)?;
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_deploy_state_without_chunk_size_resumes_at_legacy_size() -> Result<()> {
+        let state: DeployState = serde_json::from_str(
+            r#"{
+                "program_keypair": [1],
+                "buffer_keypair": [2],
+                "program_data": "11111111111111111111111111111111",
+                "written_chunks": 7,
+                "kora_pubkey": "11111111111111111111111111111111",
+                "program_hash": "dummyhash123"
+            }"#,
+        )?;
+        assert_eq!(state.chunk_size, 900);
         Ok(())
     }
 }

@@ -1,5 +1,4 @@
 use anyhow::Result;
-use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_loader_v3_interface::{instruction as v3, state::UpgradeableLoaderState};
 use solana_loader_v4_interface::instruction as v4;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
@@ -68,17 +67,19 @@ pub async fn run(h: &Harness, bytes: &[u8]) -> Result<Report> {
         &[create_account(&payer, &attacker.pubkey(), CAP_LAMPORTS + 1)],
         &[&attacker]
     );
-    case!(
+    rows.push((
         "priority-fee blowup",
         1,
         Kind::CapControl,
-        &[
-            ComputeBudgetInstruction::set_compute_unit_limit(1_400_000),
-            ComputeBudgetInstruction::set_compute_unit_price(20_000_000_000),
-            create_account(&payer, &attacker.pubkey(), 2_000_000),
-        ],
-        &[&attacker]
-    );
+        h.probe_with_config(
+            &[create_account(&payer, &attacker.pubkey(), 2_000_000)],
+            &[&attacker],
+            kora_deploy::resource_config(1)
+                .with_compute_unit_limit(1_400_000)
+                .with_priority_fee(28 * LAMPORTS_PER_SOL),
+        )
+        .await?,
+    ));
     case!("deploy with inflated max_data_len", 2, Kind::Lock, &inflated_deploy, &[&big_program]);
     case!(
         "set_buffer_authority -> attacker",

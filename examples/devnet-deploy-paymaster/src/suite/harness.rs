@@ -1,23 +1,20 @@
 use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, bail, Result};
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use kora_deploy::WRITE_CHUNK_SIZE;
 use reqwest::Client;
 use serde_json::{json, Value};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_loader_v3_interface::{instruction as v3, state::UpgradeableLoaderState};
 use solana_sdk::{
-    hash::Hash,
     instruction::{AccountMeta, Instruction},
-    message::Message,
+    message::v1,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
-    transaction::Transaction,
 };
 
-const WRITE_CHUNK_SIZE: usize = 900;
 pub const BPF_LOADER_UPGRADEABLE: Pubkey =
     solana_sdk::pubkey!("BPFLoaderUpgradeab1e11111111111111111111111");
 
@@ -62,7 +59,16 @@ impl Harness {
     }
 
     pub async fn probe(&self, ixs: &[Instruction], signers: &[&Keypair]) -> Result<Probe> {
-        let resp = self.rpc_call("signTransaction", ixs, signers).await?;
+        self.probe_with_config(ixs, signers, kora_deploy::resource_config(ixs.len())).await
+    }
+
+    pub async fn probe_with_config(
+        &self,
+        ixs: &[Instruction],
+        signers: &[&Keypair],
+        config: v1::TransactionConfig,
+    ) -> Result<Probe> {
+        let resp = self.rpc_call("signTransaction", ixs, signers, config).await?;
         if let Some(err) = resp.get("error") {
             let msg = err.to_string();
             let lower = msg.to_ascii_lowercase();
@@ -78,7 +84,8 @@ impl Harness {
     }
 
     pub async fn send(&self, ixs: &[Instruction], signers: &[&Keypair]) -> Result<Signature> {
-        let resp = self.rpc_call("signAndSendTransaction", ixs, signers).await?;
+        let config = kora_deploy::resource_config(ixs.len());
+        let resp = self.rpc_call("signAndSendTransaction", ixs, signers, config).await?;
         if let Some(err) = resp.get("error") {
             bail!("Kora rejected: {err}");
         }
@@ -189,11 +196,12 @@ impl Harness {
         method: &str,
         ixs: &[Instruction],
         signers: &[&Keypair],
+        config: v1::TransactionConfig,
     ) -> Result<Value> {
         let mut last = String::new();
         for attempt in 0..6 {
             let blockhash = self.rpc.get_latest_blockhash().await?;
-            let tx_b64 = build_b64(&self.payer, blockhash, ixs, signers)?;
+            let tx_b64 = kora_deploy::encode_tx(&self.payer, ixs, signers, blockhash, config)?;
             let user_id = format!("suite-{}", Pubkey::new_unique());
             let sent = self
                 .http
@@ -227,20 +235,6 @@ impl Harness {
         }
         bail!("rpc_call {method} failed after retries: {last}")
     }
-}
-
-fn build_b64(
-    fee_payer: &Pubkey,
-    blockhash: Hash,
-    ixs: &[Instruction],
-    signers: &[&Keypair],
-) -> Result<String> {
-    let msg = Message::new_with_blockhash(ixs, Some(fee_payer), &blockhash);
-    let mut tx = Transaction::new_unsigned(msg);
-    if !signers.is_empty() {
-        tx.partial_sign(signers, blockhash);
-    }
-    Ok(B64.encode(bincode::serialize(&tx)?))
 }
 
 async fn fetch_payer(http: &Client, url: &str) -> Result<Pubkey> {

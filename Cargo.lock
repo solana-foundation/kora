@@ -2624,7 +2624,6 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "bincode",
  "clap",
  "dotenv",
  "kora-deploy",
@@ -2635,7 +2634,6 @@ dependencies = [
  "solana-account-decoder-client-types",
  "solana-client",
  "solana-commitment-config",
- "solana-compute-budget-interface",
  "solana-keychain",
  "solana-loader-v3-interface 6.1.1",
  "solana-loader-v4-interface 3.1.0",
@@ -5087,10 +5085,14 @@ dependencies = [
  "serde_json",
  "solana-client",
  "solana-commitment-config",
+ "solana-compute-budget",
  "solana-loader-v3-interface 6.1.1",
+ "solana-message 4.4.0",
  "solana-sdk",
+ "solana-transaction 4.1.5",
  "tokio",
  "tracing-subscriber",
+ "wincode",
 ]
 
 [[package]]
