@@ -10,9 +10,6 @@ importers:
 
   ts:
     dependencies:
-      '@solana-program/compute-budget':
-        specifier: ^0.19.0
-        version: 0.19.0(@solana/kit@8.4.0(typescript@6.0.3))
       '@solana-program/token':
         specifier: ^0.17.0
         version: 0.17.0(@solana/kit@8.4.0(typescript@6.0.3))
@@ -571,11 +568,6 @@ packages:
 
   '@sinonjs/fake-timers@15.4.0':
     resolution: {integrity: sha512-DsG+8/LscQIQg68J6Ef3dv10u6nVyetYn923s3/sus5eaGfTo1of5WMZSLf0UJc9KDuKPilPH0UDJCjvNbDNCA==}
-
-  '@solana-program/compute-budget@0.19.0':
-    resolution: {integrity: sha512-YV5T0MnTM//avw46UBvWswZw3KZx+HgqohPZkH/OonEHRX4+MSO9wV/8XePEDDyu/geHtdmdEXY/HlgRGJKa8A==}
-    peerDependencies:
-      '@solana/kit': ^8.3.0
 
   '@solana-program/system@0.15.0':
     resolution: {integrity: sha512-xE08wZCyNRhOaO/XNRd9A3kSLfUrTe/BnmAHhql8uqc2eriNy2ZmnvaGRrs0m+kOSihvUbANzHljmJsTzGL5kg==}
@@ -3139,10 +3131,6 @@ snapshots:
   '@sinonjs/fake-timers@15.4.0':
     dependencies:
       '@sinonjs/commons': 3.0.1
-
-  '@solana-program/compute-budget@0.19.0(@solana/kit@8.4.0(typescript@6.0.3))':
-    dependencies:
-      '@solana/kit': 8.4.0(typescript@6.0.3)
 
   '@solana-program/system@0.15.0(@solana/kit@8.4.0(typescript@6.0.3))':
     dependencies:

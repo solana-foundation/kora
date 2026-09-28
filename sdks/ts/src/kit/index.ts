@@ -1,4 +1,13 @@
-import { address, type ClientWithIdentity, createClient, createNoopSigner, createSolanaRpc, pipe } from '@solana/kit';
+import {
+    address,
+    type ClientWithIdentity,
+    createClient,
+    createNoopSigner,
+    createSolanaRpc,
+    estimateAndSetResourceLimitsFactory,
+    estimateResourceLimitsFactory,
+    pipe,
+} from '@solana/kit';
 import {
     planAndSendTransactions,
     transactionPlanExecutor as transactionPlanExecutorPlugin,
@@ -6,17 +15,13 @@ import {
 } from '@solana/kit-plugin-instruction-plan';
 import { rpcGetMinimumBalance, solanaRpcConnection } from '@solana/kit-plugin-rpc';
 import { identity, payer } from '@solana/kit-plugin-signer';
-import {
-    estimateAndUpdateProvisoryComputeUnitLimitFactory,
-    estimateComputeUnitLimitFactory,
-} from '@solana-program/compute-budget';
 
 import { KoraClient } from '../client.js';
 import { koraPlugin } from '../plugin.js';
 import type { KoraBundleConfig, KoraKitClientConfig } from '../types/index.js';
 import { createKoraTransactionPlanExecutor } from './executor.js';
 import { buildPlaceholderPaymentInstruction, koraPaymentAddress } from './payment.js';
-import { buildComputeBudgetInstructions, createKoraTransactionPlanner } from './planner.js';
+import { createKoraTransactionPlanner } from './planner.js';
 
 /**
  * Kora bundle plugin.
@@ -61,13 +66,9 @@ export function kora(config: KoraBundleConfig) {
         const paymentAddr = payment_address ? address(payment_address) : undefined;
         const payerSigner = createNoopSigner(address(signer_address));
 
-        const computeBudgetIxs = buildComputeBudgetInstructions(config);
-        const solanaRpc = createSolanaRpc(config.rpcUrl);
-
-        const hasCuEstimation = config.computeUnitLimit === undefined;
-        const resolveProvisoryComputeUnitLimit = hasCuEstimation
-            ? estimateAndUpdateProvisoryComputeUnitLimitFactory(estimateComputeUnitLimitFactory({ rpc: solanaRpc }))
-            : undefined;
+        const estimateAndSetResourceLimits = estimateAndSetResourceLimitsFactory(
+            estimateResourceLimitsFactory({ rpc: createSolanaRpc(config.rpcUrl) }),
+        );
 
         const userSigner = client.identity;
 
@@ -75,12 +76,7 @@ export function kora(config: KoraBundleConfig) {
             ? await buildPlaceholderPaymentInstruction(userSigner, paymentAddr, config.feeToken, config.tokenProgramId)
             : undefined;
 
-        const koraTransactionPlanner = createKoraTransactionPlanner(
-            payerSigner,
-            computeBudgetIxs,
-            payment?.instruction,
-            hasCuEstimation,
-        );
+        const koraTransactionPlanner = createKoraTransactionPlanner(payerSigner, config, payment?.instruction);
 
         const koraTransactionPlanExecutor = createKoraTransactionPlanExecutor(
             koraClient,
@@ -93,7 +89,7 @@ export function kora(config: KoraBundleConfig) {
                       sourceTokenAccount: payment.sourceTokenAccount,
                   }
                 : undefined,
-            resolveProvisoryComputeUnitLimit,
+            estimateAndSetResourceLimits,
         );
 
         return pipe(
