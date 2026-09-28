@@ -37,13 +37,15 @@ pub async fn run(h: &Harness, bytes: &[u8]) -> Result<Report> {
         .rpc()
         .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_program())
         .await?;
+    let rent_per_mb = h.rpc().get_minimum_balance_for_rent_exemption(1_000_000).await?;
+    let inflated_len = (CAP_LAMPORTS * 3 / 2).div_ceil(rent_per_mb) as usize * 1_000_000;
     let inflated_deploy = v3::deploy_with_max_program_len(
         &payer,
         &big_program.pubkey(),
         &big_buffer.pubkey(),
         &payer,
         program_lamports,
-        1_700_000,
+        inflated_len,
     )?;
 
     let mut rows: Vec<(&str, u8, Kind, Probe)> = Vec::new();
