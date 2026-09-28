@@ -27,6 +27,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 solana-client = { workspace = true }
 solana-commitment-config = { workspace = true }
+solana-compute-budget = { workspace = true }
 solana-loader-v3-interface = { workspace = true }
 solana-message = { workspace = true }
 solana-sdk = { workspace = true }

@@ -15,6 +15,10 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde_json::{json, Value};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
+use solana_compute_budget::compute_budget_limits::{
+    DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT, MAX_COMPUTE_UNIT_LIMIT,
+    MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
+};
 use solana_loader_v3_interface::{instruction as loader_v3, state::UpgradeableLoaderState};
 use solana_message::{v1, VersionedMessage};
 use solana_sdk::{
@@ -29,9 +33,6 @@ use solana_transaction::versioned::VersionedTransaction;
 use crate::state::DeployState;
 
 const WRITE_CHUNK_SIZE: usize = 3800;
-const COMPUTE_UNIT_LIMIT_PER_INSTRUCTION: u32 = 200_000;
-const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
-const LOADED_ACCOUNTS_DATA_SIZE_LIMIT: u32 = 64 * 1024 * 1024;
 const BPF_LOADER_UPGRADEABLE: Pubkey =
     solana_sdk::pubkey!("BPFLoaderUpgradeab1e11111111111111111111111");
 const SYSTEM_PROGRAM: Pubkey = solana_sdk::pubkey!("11111111111111111111111111111111");
@@ -136,6 +137,9 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
     let (program, buffer, program_data, kora_pubkey, mut written_chunks, mut state) =
         load_or_init_state(&ctx, &bytes, &current_program_hash).await?;
     let chunk_size = state.as_ref().map_or(WRITE_CHUNK_SIZE, |st| st.chunk_size);
+    if chunk_size == 0 {
+        bail!("deploy state at {} has a zero chunk_size", cfg.state_path.display());
+    }
     let chunk_count = bytes.len().div_ceil(chunk_size);
 
     validate_state(&ctx, &buffer, &kora_pubkey, &state, &current_program_hash, chunk_count).await?;
@@ -720,11 +724,11 @@ async fn build_b64_tx(
 pub fn resource_config(instruction_count: usize) -> v1::TransactionConfig {
     let compute_unit_limit = u32::try_from(instruction_count)
         .unwrap_or(u32::MAX)
-        .saturating_mul(COMPUTE_UNIT_LIMIT_PER_INSTRUCTION)
+        .saturating_mul(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT)
         .min(MAX_COMPUTE_UNIT_LIMIT);
     v1::TransactionConfig::empty()
         .with_compute_unit_limit(compute_unit_limit)
-        .with_loaded_accounts_data_size_limit(LOADED_ACCOUNTS_DATA_SIZE_LIMIT)
+        .with_loaded_accounts_data_size_limit(MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get())
 }
 
 /// Leaves the fee payer's signature slot at its default for Kora to fill.
@@ -873,10 +877,10 @@ mod tests {
         let VersionedMessage::V1(message) = &decoded.message else {
             panic!("expected a v1 message");
         };
-        assert_eq!(message.config.compute_unit_limit, Some(COMPUTE_UNIT_LIMIT_PER_INSTRUCTION));
+        assert_eq!(message.config.compute_unit_limit, Some(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT));
         assert_eq!(
             message.config.loaded_accounts_data_size_limit,
-            Some(LOADED_ACCOUNTS_DATA_SIZE_LIMIT)
+            Some(MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get())
         );
 
         let keys = decoded.message.static_account_keys();
