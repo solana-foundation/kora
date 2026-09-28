@@ -12,6 +12,7 @@ use solana_loader_v3_interface::{instruction as loader_v3, state::UpgradeableLoa
 use solana_sdk::{
     instruction::Instruction,
     message::Message,
+    native_token::LAMPORTS_PER_SOL,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
@@ -58,6 +59,32 @@ async fn deploy_v3_program_through_kora() -> Result<()> {
         .rpc_client()
         .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_program())
         .await?;
+    let airdrop = ctx.rpc_client().request_airdrop(&kora_pubkey, 5 * LAMPORTS_PER_SOL).await?;
+    ctx.rpc_client()
+        .confirm_transaction_with_spinner(
+            &airdrop,
+            &ctx.rpc_client().get_latest_blockhash().await?,
+            CommitmentConfig::confirmed(),
+        )
+        .await?;
+    let inflated_program = Keypair::new();
+    let inflated_deploy_ixs = loader_v3::deploy_with_max_program_len(
+        &kora_pubkey,
+        &inflated_program.pubkey(),
+        &buffer.pubkey(),
+        &kora_pubkey,
+        program_lamports,
+        1_700_000,
+    )?;
+    expect_reject(
+        &ctx,
+        &kora_pubkey,
+        &inflated_deploy_ixs,
+        &[&inflated_program],
+        "exceeds maximum allowed",
+    )
+    .await?;
+
     let deploy_ixs = loader_v3::deploy_with_max_program_len(
         &kora_pubkey,
         &program.pubkey(),

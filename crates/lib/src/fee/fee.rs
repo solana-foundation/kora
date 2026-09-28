@@ -33,6 +33,7 @@ use solana_compute_budget::compute_budget_limits::{
     ComputeBudgetLimits, DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT, MAX_COMPUTE_UNIT_LIMIT,
 };
 use solana_compute_budget_interface::ComputeBudgetInstruction;
+use solana_loader_v3_interface::state::UpgradeableLoaderState;
 use solana_message::VersionedMessage;
 use solana_program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
@@ -668,6 +669,70 @@ impl FeeConfigUtil {
                 log::error!("Outflow calculation overflow in ExtendProgram rent");
                 KoraError::ValidationError("Outflow calculation overflow".to_string())
             })?;
+        }
+
+        // Loader-v3 DeployWithMaxDataLen refunds the buffer's lamports to the payer, then has the
+        // payer fund ProgramData rent sized by max_data_len through a system CPI. When simulation
+        // did not surface that CPI, count the difference so an inflated max_data_len cannot lock
+        // fee payer rent beyond max_allowed_lamports.
+        let surfaced_creates: HashSet<Pubkey> =
+            transaction
+                .get_or_parse_system_instructions()?
+                .get(&ParsedSystemInstructionType::SystemCreateAccount)
+                .map(Vec::as_slice)
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|instruction| match instruction {
+                    ParsedSystemInstructionData::SystemCreateAccount {
+                        payer, new_account, ..
+                    } if payer == fee_payer_pubkey => Some(*new_account),
+                    _ => None,
+                })
+                .collect();
+        let fee_payer_deploys: Vec<(Pubkey, u64)> = transaction
+            .get_or_parse_bpf_loader_upgradeable_instructions()?
+            .get(&ParsedBpfLoaderUpgradeableInstructionType::DeployWithMaxDataLen)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(|instruction| match instruction {
+                ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
+                    payer,
+                    program_data,
+                    buffer,
+                    max_data_len,
+                    ..
+                } if payer == fee_payer_pubkey && !surfaced_creates.contains(program_data) => {
+                    Some((*buffer, *max_data_len))
+                }
+                _ => None,
+            })
+            .collect();
+
+        for (buffer, max_data_len) in fee_payer_deploys {
+            let programdata_len = usize::try_from(max_data_len)
+                .ok()
+                .and_then(|len| {
+                    len.checked_add(UpgradeableLoaderState::size_of_programdata_metadata())
+                })
+                .ok_or_else(|| {
+                    KoraError::ValidationError(format!(
+                        "DeployWithMaxDataLen max_data_len {max_data_len} is too large"
+                    ))
+                })?;
+            let programdata_rent =
+                rpc_client.get_minimum_balance_for_rent_exemption(programdata_len).await?.max(1);
+            let buffer_refund = rpc_client
+                .get_account_with_commitment(&buffer, rpc_client.commitment())
+                .await?
+                .value
+                .map_or(0, |account| account.lamports);
+            total = total
+                .checked_add(programdata_rent.saturating_sub(buffer_refund) as i128)
+                .ok_or_else(|| {
+                    log::error!("Outflow calculation overflow in DeployWithMaxDataLen rent");
+                    KoraError::ValidationError("Outflow calculation overflow".to_string())
+                })?;
         }
 
         // ATA Create/CreateIdempotent can be no-ops during simulation depending on prestate.
@@ -1444,6 +1509,138 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(outflow, 0, "extension with no payer should not affect outflow");
+    }
+
+    async fn deploy_with_max_data_len_outflow(
+        payer: &Pubkey,
+        fee_payer: &Pubkey,
+        rpc_client: &RpcClient,
+    ) -> i128 {
+        let deploy_ix = solana_loader_v3_interface::instruction::deploy_with_max_program_len(
+            payer,
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            payer,
+            1,
+            1_700_000,
+        )
+        .unwrap()
+        .pop()
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[deploy_ix], Some(fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        FeeConfigUtil::calculate_fee_payer_outflow(
+            fee_payer,
+            &mut resolved,
+            rpc_client,
+            &get_config().unwrap(),
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_deploy_with_max_data_len() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let programdata_rent = 5_000_000u64;
+        let rent_mock = || {
+            RpcMockBuilder::new().with_custom_mock(
+                solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                serde_json::json!(programdata_rent),
+            )
+        };
+        let buffer_with = |lamports| Account {
+            lamports,
+            data: vec![],
+            owner: Pubkey::new_unique(),
+            executable: false,
+            rent_epoch: 0,
+        };
+
+        let rpc = rent_mock().with_account_info(&buffer_with(1_000_000)).build();
+        assert_eq!(
+            deploy_with_max_data_len_outflow(&fee_payer, &fee_payer, &rpc).await,
+            4_000_000,
+            "ProgramData rent beyond the buffer refund should count as outflow"
+        );
+
+        let rpc = rent_mock().with_account_info(&buffer_with(programdata_rent + 1)).build();
+        assert_eq!(
+            deploy_with_max_data_len_outflow(&fee_payer, &fee_payer, &rpc).await,
+            0,
+            "a buffer refund above the rent must not offset other outflow"
+        );
+
+        let rpc = rent_mock().with_account_not_found().build();
+        assert_eq!(
+            deploy_with_max_data_len_outflow(&fee_payer, &fee_payer, &rpc).await,
+            programdata_rent as i128,
+            "a missing buffer refunds nothing"
+        );
+
+        let rpc = rent_mock().with_account_info(&buffer_with(0)).build();
+        assert_eq!(
+            deploy_with_max_data_len_outflow(&Pubkey::new_unique(), &fee_payer, &rpc).await,
+            0,
+            "a deploy funded by another payer should not affect outflow"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_deploy_with_surfaced_programdata_create() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let program_data = Pubkey::find_program_address(
+            &[program.as_ref()],
+            &crate::constant::BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
+        )
+        .0;
+        let surfaced_rent = 7_000_000u64;
+        let rpc = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                serde_json::json!(5_000_000u64),
+            )
+            .with_account_not_found()
+            .build();
+
+        let deploy_ix = solana_loader_v3_interface::instruction::deploy_with_max_program_len(
+            &fee_payer,
+            &program,
+            &Pubkey::new_unique(),
+            &fee_payer,
+            1,
+            1_700_000,
+        )
+        .unwrap()
+        .pop()
+        .unwrap();
+        let surfaced_create = create_account(
+            &fee_payer,
+            &program_data,
+            surfaced_rent,
+            1_700_045,
+            &crate::constant::BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[deploy_ix, surfaced_create], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &rpc,
+            &get_config().unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, surfaced_rent as i128,
+            "a surfaced ProgramData create is already counted and must not be charged twice"
+        );
     }
 
     #[tokio::test]
