@@ -72,7 +72,7 @@ pub async fn run(h: &Harness, bytes: &[u8]) -> Result<Report> {
         1,
         Kind::CapControl,
         h.probe_with_config(
-            &[create_account(&payer, &attacker.pubkey(), 2_000_000)],
+            &[system_instruction::transfer(&attacker.pubkey(), &attacker2.pubkey(), 0)],
             &[&attacker],
             kora_deploy::resource_config(1)
                 .with_compute_unit_limit(1_400_000)

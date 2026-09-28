@@ -130,14 +130,14 @@ impl Harness {
         let create =
             v3::create_buffer(&self.payer, &buffer.pubkey(), &self.payer, lamports, bytes.len())?;
         self.send(&create, &[&buffer]).await?;
-        for (i, chunk) in bytes.chunks(WRITE_CHUNK_SIZE).enumerate() {
-            let ix = v3::write(
-                &buffer.pubkey(),
-                &self.payer,
-                (i * WRITE_CHUNK_SIZE) as u32,
-                chunk.to_vec(),
-            );
-            self.send(&[ix], &[]).await?;
+        for ixs in kora_deploy::write_instruction_batches(
+            &buffer.pubkey(),
+            &self.payer,
+            bytes,
+            WRITE_CHUNK_SIZE,
+            0,
+        ) {
+            self.send(&ixs, &[]).await?;
         }
         Ok(buffer)
     }
