@@ -5088,6 +5088,7 @@ dependencies = [
  "solana-compute-budget",
  "solana-loader-v3-interface 6.1.1",
  "solana-message 4.4.0",
+ "solana-packet 4.2.0",
  "solana-sdk",
  "solana-transaction 4.1.5",
  "tokio",

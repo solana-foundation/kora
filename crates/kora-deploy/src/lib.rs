@@ -21,6 +21,7 @@ use solana_compute_budget::compute_budget_limits::{
 };
 use solana_loader_v3_interface::{instruction as loader_v3, state::UpgradeableLoaderState};
 use solana_message::{v1, VersionedMessage};
+use solana_packet::PACKET_DATA_SIZE;
 use solana_sdk::{
     hash::{hash, Hash},
     instruction::{AccountMeta, Instruction},
@@ -32,7 +33,11 @@ use solana_transaction::versioned::VersionedTransaction;
 
 use crate::state::DeployState;
 
-pub const WRITE_CHUNK_SIZE: usize = 3800;
+// Write instruction data is a u32 enum tag, a u32 offset and a u64 length prefix before the bytes.
+const WRITE_INSTRUCTION_HEADER_LEN: usize = 16;
+/// The loader rejects instruction data over PACKET_DATA_SIZE regardless of transaction version.
+pub const WRITE_CHUNK_SIZE: usize = PACKET_DATA_SIZE - WRITE_INSTRUCTION_HEADER_LEN;
+pub const WRITES_PER_TX: usize = 3;
 const BPF_LOADER_UPGRADEABLE: Pubkey =
     solana_sdk::pubkey!("BPFLoaderUpgradeab1e11111111111111111111111");
 const SYSTEM_PROGRAM: Pubkey = solana_sdk::pubkey!("11111111111111111111111111111111");
@@ -136,10 +141,8 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
 
     let (program, buffer, program_data, kora_pubkey, mut written_chunks, mut state) =
         load_or_init_state(&ctx, &bytes, &current_program_hash).await?;
-    let chunk_size = state.as_ref().map_or(WRITE_CHUNK_SIZE, |st| st.chunk_size);
-    if chunk_size == 0 {
-        bail!("deploy state at {} has a zero chunk_size", cfg.state_path.display());
-    }
+    let chunk_size = resume_chunk_size(&state)
+        .with_context(|| format!("deploy state at {}", cfg.state_path.display()))?;
     let chunk_count = bytes.len().div_ceil(chunk_size);
 
     validate_state(&ctx, &buffer, &kora_pubkey, &state, &current_program_hash, chunk_count).await?;
@@ -262,6 +265,14 @@ async fn load_or_init_state(
     }
 }
 
+fn resume_chunk_size(state: &Option<DeployState>) -> Result<usize> {
+    let chunk_size = state.as_ref().map_or(WRITE_CHUNK_SIZE, |st| st.chunk_size);
+    if chunk_size == 0 || chunk_size > WRITE_CHUNK_SIZE {
+        bail!("chunk_size {chunk_size} is outside 1..={WRITE_CHUNK_SIZE}; delete it to start over");
+    }
+    Ok(chunk_size)
+}
+
 enum StateInvariantViolation {
     HashMismatch,
     ChunkOverflow { written: usize, total: usize },
@@ -352,15 +363,19 @@ async fn write_chunks(
     chunk_count: usize,
 ) -> Result<()> {
     let state_path = ctx.cfg.state_path.as_path();
-    for (i, chunk) in bytes.chunks(chunk_size).enumerate().skip(*written_chunks) {
-        let offset = (i * chunk_size) as u32;
-        let ix = loader_v3::write(&buffer.pubkey(), kora_pubkey, offset, chunk.to_vec());
-
-        match submit(ctx.http, ctx.cfg.kora_url, &ctx.cfg.user_id, ctx.rpc, kora_pubkey, &[ix], &[])
+    let batches = write_instruction_batches(
+        &buffer.pubkey(),
+        kora_pubkey,
+        bytes,
+        chunk_size,
+        *written_chunks,
+    );
+    for ixs in batches {
+        match submit(ctx.http, ctx.cfg.kora_url, &ctx.cfg.user_id, ctx.rpc, kora_pubkey, &ixs, &[])
             .await
         {
             Ok(_) => {
-                *written_chunks += 1;
+                *written_chunks += ixs.len();
                 if let Some(ref mut st) = state {
                     st.written_chunks = *written_chunks;
                     if let Err(e) = st.save(state_path) {
@@ -377,8 +392,8 @@ async fn write_chunks(
                         return Err(e.context("failed to save deploy state after chunk write"));
                     }
                 }
-                if (i + 1) % 25 == 0 || i + 1 == chunk_count {
-                    log::info!("wrote chunk {}/{}", i + 1, chunk_count);
+                if *written_chunks % 25 < ixs.len() || *written_chunks == chunk_count {
+                    log::info!("wrote chunk {}/{}", written_chunks, chunk_count);
                 }
             }
             Err(e) => {
@@ -530,12 +545,14 @@ pub async fn upgrade(cfg: &UpgradeConfig<'_>) -> Result<Signature> {
     submit(&http, cfg.kora_url, &cfg.user_id, &rpc, &kora_pubkey, &create_buf, &[&buffer]).await?;
 
     let chunk_count = bytes.len().div_ceil(WRITE_CHUNK_SIZE);
-    for (i, chunk) in bytes.chunks(WRITE_CHUNK_SIZE).enumerate() {
-        let offset = (i * WRITE_CHUNK_SIZE) as u32;
-        let ix = loader_v3::write(&buffer.pubkey(), &kora_pubkey, offset, chunk.to_vec());
-        submit(&http, cfg.kora_url, &cfg.user_id, &rpc, &kora_pubkey, &[ix], &[]).await?;
-        if (i + 1) % 25 == 0 || i + 1 == chunk_count {
-            log::info!("wrote chunk {}/{}", i + 1, chunk_count);
+    let mut written_chunks = 0;
+    for ixs in
+        write_instruction_batches(&buffer.pubkey(), &kora_pubkey, &bytes, WRITE_CHUNK_SIZE, 0)
+    {
+        submit(&http, cfg.kora_url, &cfg.user_id, &rpc, &kora_pubkey, &ixs, &[]).await?;
+        written_chunks += ixs.len();
+        if written_chunks % 25 < ixs.len() || written_chunks == chunk_count {
+            log::info!("wrote chunk {}/{}", written_chunks, chunk_count);
         }
     }
 
@@ -564,6 +581,25 @@ pub async fn program_is_live(rpc_url: &str, program: &Pubkey) -> Result<bool> {
         .await?
         .value
         .is_some())
+}
+
+/// Buffer writes from chunk `first_chunk` on, grouped `WRITES_PER_TX` to a transaction.
+pub fn write_instruction_batches(
+    buffer: &Pubkey,
+    authority: &Pubkey,
+    bytes: &[u8],
+    chunk_size: usize,
+    first_chunk: usize,
+) -> Vec<Vec<Instruction>> {
+    let writes: Vec<Instruction> = bytes
+        .chunks(chunk_size)
+        .enumerate()
+        .skip(first_chunk)
+        .map(|(i, chunk)| {
+            loader_v3::write(buffer, authority, (i * chunk_size) as u32, chunk.to_vec())
+        })
+        .collect();
+    writes.chunks(WRITES_PER_TX).map(<[Instruction]>::to_vec).collect()
 }
 
 pub fn registry_entry_address(registry_program: &Pubkey, program: &Pubkey) -> Pubkey {
@@ -852,13 +888,32 @@ mod tests {
     }
 
     #[test]
-    fn full_write_chunk_fits_in_a_v1_transaction() {
+    fn full_write_chunk_fills_but_does_not_exceed_the_loader_instruction_limit() {
+        let ix = loader_v3::write(
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            0,
+            vec![0xAB; WRITE_CHUNK_SIZE],
+        );
+        assert_eq!(ix.data.len(), PACKET_DATA_SIZE);
+    }
+
+    #[test]
+    fn full_write_batch_fits_in_a_v1_transaction() {
         let kora = Keypair::new();
         let buffer = Keypair::new();
-        let ix =
-            loader_v3::write(&buffer.pubkey(), &kora.pubkey(), 0, vec![0xAB; WRITE_CHUNK_SIZE]);
-        let tx =
-            build_tx(&kora.pubkey(), &[ix], &[], Hash::new_unique(), resource_config(1)).unwrap();
+        let bytes = vec![0xAB; WRITE_CHUNK_SIZE * WRITES_PER_TX];
+        let batches = write_instruction_batches(
+            &buffer.pubkey(),
+            &kora.pubkey(),
+            &bytes,
+            WRITE_CHUNK_SIZE,
+            0,
+        );
+        assert_eq!(batches.len(), 1);
+        let ixs = &batches[0];
+        let tx = build_tx(&kora.pubkey(), ixs, &[], Hash::new_unique(), resource_config(ixs.len()))
+            .unwrap();
 
         let serialized = wincode::serialize(&tx).unwrap();
         assert!(
@@ -922,6 +977,34 @@ mod tests {
             resource_config(1)
         )
         .is_err());
+    }
+
+    #[test]
+    fn write_batches_resume_at_the_chunk_offset_they_stopped_at() {
+        let buffer = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let chunk_size = 900;
+        let bytes = vec![7u8; chunk_size * 7 + 1];
+        let batches = write_instruction_batches(&buffer, &authority, &bytes, chunk_size, 2);
+
+        assert_eq!(batches.iter().map(Vec::len).collect::<Vec<_>>(), vec![3, 3]);
+        let offsets: Vec<u32> = batches
+            .iter()
+            .flatten()
+            .map(|ix| u32::from_le_bytes(ix.data[4..8].try_into().unwrap()))
+            .collect();
+        let expected: Vec<u32> = (2..8).map(|i| (i * chunk_size) as u32).collect();
+        assert_eq!(offsets, expected);
+    }
+
+    #[test]
+    fn resume_chunk_size_rejects_sizes_the_loader_cannot_write() {
+        assert_eq!(resume_chunk_size(&None).unwrap(), WRITE_CHUNK_SIZE);
+        assert_eq!(resume_chunk_size(&Some(make_state("h", 0))).unwrap(), WRITE_CHUNK_SIZE);
+        for chunk_size in [0, WRITE_CHUNK_SIZE + 1, 3800] {
+            let state = DeployState { chunk_size, ..make_state("h", 0) };
+            assert!(resume_chunk_size(&Some(state)).is_err(), "{chunk_size} accepted");
+        }
     }
 
     #[test]

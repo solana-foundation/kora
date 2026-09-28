@@ -30,6 +30,7 @@ solana-commitment-config = { workspace = true }
 solana-compute-budget = { workspace = true }
 solana-loader-v3-interface = { workspace = true }
 solana-message = { workspace = true }
+solana-packet = { workspace = true }
 solana-sdk = { workspace = true }
 solana-transaction = { workspace = true }
 tokio = { workspace = true }
