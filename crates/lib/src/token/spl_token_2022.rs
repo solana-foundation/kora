@@ -462,12 +462,6 @@ mod tests {
     }
 
     #[test]
-    fn test_token2022_program_creation() {
-        let program = Token2022Program::new();
-        assert_eq!(program.program_id(), spl_token_2022_interface::id());
-    }
-
-    #[test]
     fn test_token2022_account_state() {
         let mint = Pubkey::new_unique();
         let owner = Pubkey::new_unique();

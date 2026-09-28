@@ -81,11 +81,6 @@ impl AccountMockBuilder {
         self
     }
 
-    pub fn with_rent_epoch(mut self, rent_epoch: u64) -> Self {
-        self.rent_epoch = rent_epoch;
-        self
-    }
-
     pub fn build(self) -> Account {
         Account {
             lamports: self.lamports,
@@ -165,15 +160,6 @@ impl TokenAccountMockBuilder {
     /// Set native amount for SPL Token
     pub fn with_native_spl(mut self, native_amount: Option<u64>) -> Self {
         self.is_native_spl = match native_amount {
-            Some(amount) => COption::Some(amount),
-            None => COption::None,
-        };
-        self
-    }
-
-    /// Set native amount for Token2022
-    pub fn with_native_token2022(mut self, native_amount: Option<u64>) -> Self {
-        self.is_native_token2022 = match native_amount {
             Some(amount) => COption::Some(amount),
             None => COption::None,
         };
@@ -570,31 +556,6 @@ pub fn create_mock_account_with_balance(lamports: u64) -> Account {
 
 pub fn create_mock_account_with_owner(owner: Pubkey) -> Account {
     AccountMockBuilder::new().with_owner(owner).build()
-}
-
-pub fn create_mock_usdc_mint_account() -> Account {
-    MintAccountMockBuilder::new()
-        .with_decimals(6)
-        .with_supply(DEFAULT_MINT_SUPPLY) // 1M USDC with 6 decimals
-        .build()
-}
-
-/// Create mock SOL wrapped token mint (9 decimals)
-pub fn create_mock_wsol_mint_account() -> Account {
-    MintAccountMockBuilder::new().with_decimals(9).build()
-}
-
-/// Create mock Token2022 account with specific extensions
-pub fn create_mock_token2022_account_with_extensions(
-    owner: &Pubkey,
-    mint: &Pubkey,
-    extensions: Vec<ExtensionType>,
-) -> Account {
-    TokenAccountMockBuilder::new()
-        .with_owner(owner)
-        .with_mint(mint)
-        .with_extensions(extensions)
-        .build_token2022()
 }
 
 /// Create mock Token2022 mint with specific extensions

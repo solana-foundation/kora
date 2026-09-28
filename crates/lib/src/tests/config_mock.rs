@@ -11,13 +11,11 @@ use crate::{
     fee::price::{PriceConfig, PriceModel},
     oracle::PriceSource,
     signer::config::{
-        MemorySignerConfig, OpenfortSignerConfig, PrivySignerConfig, SelectionStrategy,
-        SignerConfig, SignerPoolConfig, SignerPoolSettings, SignerTypeConfig, TurnkeySignerConfig,
-        VaultSignerConfig,
+        MemorySignerConfig, SelectionStrategy, SignerConfig, SignerPoolConfig, SignerPoolSettings,
+        SignerTypeConfig, TurnkeySignerConfig,
     },
     usage_limit::{UsageLimitConfig, UsageLimitRuleConfig},
 };
-use solana_sdk::pubkey::Pubkey;
 
 /// Mock state management for test isolation
 ///
@@ -161,11 +159,6 @@ impl ConfigMockBuilder {
         self
     }
 
-    pub fn with_rate_limit(mut self, rate_limit: u64) -> Self {
-        self.config.kora.rate_limit = rate_limit;
-        self
-    }
-
     pub fn with_price_source(mut self, price_source: PriceSource) -> Self {
         self.config.validation.price_source = price_source;
         self
@@ -263,16 +256,6 @@ impl ConfigMockBuilder {
         self
     }
 
-    pub fn with_jito_block_engine_url(mut self, url: impl Into<String>) -> Self {
-        self.config.kora.bundle.jito.block_engine_url = url.into();
-        self
-    }
-
-    pub fn with_mock_jito_block_engine(mut self) -> Self {
-        self.config.kora.bundle.jito.block_engine_url = JITO_MOCK_BLOCK_ENGINE_URL.to_string();
-        self
-    }
-
     pub fn with_blocked_token2022_mint_extensions(mut self, extensions: Vec<String>) -> Self {
         self.config.validation.token_2022.blocked_mint_extensions = extensions;
         let _ = self.config.validation.token_2022.initialize();
@@ -333,11 +316,6 @@ impl ValidationConfigBuilder {
 
     pub fn build(self) -> ValidationConfig {
         self.config
-    }
-
-    pub fn with_max_lamports(mut self, max_lamports: u64) -> Self {
-        self.config.max_allowed_lamports = max_lamports;
-        self
     }
 
     pub fn with_max_signatures(mut self, max_signatures: u64) -> Self {
@@ -428,28 +406,13 @@ impl KoraConfigBuilder {
         self
     }
 
-    pub fn with_rate_limit(mut self, rate_limit: u64) -> Self {
-        self.config.rate_limit = rate_limit;
-        self
-    }
-
     pub fn with_enabled_methods(mut self, methods: EnabledMethods) -> Self {
         self.config.enabled_methods = methods;
         self
     }
 
-    pub fn with_auth(mut self, auth: AuthConfig) -> Self {
-        self.config.auth = auth;
-        self
-    }
-
     pub fn with_payment_address(mut self, payment_address: Option<String>) -> Self {
         self.config.payment_address = payment_address;
-        self
-    }
-
-    pub fn with_cache(mut self, cache: CacheConfig) -> Self {
-        self.config.cache = cache;
         self
     }
 }
@@ -481,28 +444,8 @@ impl CacheConfigBuilder {
         self.config
     }
 
-    pub fn with_url(mut self, url: Option<String>) -> Self {
-        self.config.url = url;
-        self
-    }
-
     pub fn with_enabled(mut self, enabled: bool) -> Self {
         self.config.enabled = enabled;
-        self
-    }
-
-    pub fn with_default_ttl(mut self, ttl: u64) -> Self {
-        self.config.default_ttl = ttl;
-        self
-    }
-
-    pub fn with_account_ttl(mut self, ttl: u64) -> Self {
-        self.config.account_ttl = ttl;
-        self
-    }
-
-    pub fn with_price_ttl(mut self, ttl: u64) -> Self {
-        self.config.price_ttl = ttl;
         self
     }
 
@@ -549,47 +492,6 @@ impl AuthConfigBuilder {
     pub fn build(self) -> AuthConfig {
         self.config
     }
-
-    pub fn with_api_keys(mut self, api_keys: Vec<String>) -> Self {
-        self.config.api_keys = Some(api_keys);
-        self
-    }
-
-    pub fn with_api_key(mut self, api_key: String) -> Self {
-        let mut keys = self.config.api_keys.unwrap_or_default();
-        keys.push(api_key);
-        self.config.api_keys = Some(keys);
-        self
-    }
-
-    pub fn with_hmac_secret(mut self, hmac_secret: String) -> Self {
-        self.config.hmac_secret = Some(hmac_secret);
-        self
-    }
-
-    pub fn with_both_auth(mut self, api_key: String, hmac_secret: String) -> Self {
-        let mut keys = self.config.api_keys.unwrap_or_default();
-        keys.push(api_key);
-        self.config.api_keys = Some(keys);
-        self.config.hmac_secret = Some(hmac_secret);
-        self
-    }
-
-    pub fn with_recaptcha(
-        mut self,
-        secret: String,
-        score_threshold: Option<f64>,
-        protected_methods: Option<Vec<String>>,
-    ) -> Self {
-        self.config.recaptcha_secret = Some(secret);
-        if let Some(threshold) = score_threshold {
-            self.config.recaptcha_score_threshold = threshold;
-        }
-        if let Some(methods) = protected_methods {
-            self.config.protected_methods = methods;
-        }
-        self
-    }
 }
 
 pub struct FeePayerPolicyBuilder {
@@ -609,104 +511,6 @@ impl FeePayerPolicyBuilder {
 
     pub fn build(self) -> FeePayerPolicy {
         self.config
-    }
-
-    pub fn with_sol_transfers(mut self, allow: bool) -> Self {
-        self.config.system.allow_transfer = allow;
-        self
-    }
-
-    pub fn with_spl_transfers(mut self, allow: bool) -> Self {
-        self.config.spl_token.allow_transfer = allow;
-        self
-    }
-
-    pub fn with_token2022_transfers(mut self, allow: bool) -> Self {
-        self.config.token_2022.allow_transfer = allow;
-        self
-    }
-
-    pub fn with_assign(mut self, allow: bool) -> Self {
-        self.config.system.allow_assign = allow;
-        self
-    }
-
-    pub fn with_create_account(mut self, allow: bool) -> Self {
-        self.config.system.allow_create_account = allow;
-        self
-    }
-
-    pub fn with_allocate(mut self, allow: bool) -> Self {
-        self.config.system.allow_allocate = allow;
-        self
-    }
-
-    pub fn with_nonce_initialize(mut self, allow: bool) -> Self {
-        self.config.system.nonce.allow_initialize = allow;
-        self
-    }
-
-    pub fn with_nonce_advance(mut self, allow: bool) -> Self {
-        self.config.system.nonce.allow_advance = allow;
-        self
-    }
-
-    pub fn with_nonce_withdraw(mut self, allow: bool) -> Self {
-        self.config.system.nonce.allow_withdraw = allow;
-        self
-    }
-
-    pub fn with_nonce_authorize(mut self, allow: bool) -> Self {
-        self.config.system.nonce.allow_authorize = allow;
-        self
-    }
-
-    pub fn with_spl_burn(mut self, allow: bool) -> Self {
-        self.config.spl_token.allow_burn = allow;
-        self.config.token_2022.allow_burn = allow;
-        self
-    }
-
-    pub fn with_spl_close_account(mut self, allow: bool) -> Self {
-        self.config.spl_token.allow_close_account = allow;
-        self.config.token_2022.allow_close_account = allow;
-        self
-    }
-
-    pub fn with_spl_approve(mut self, allow: bool) -> Self {
-        self.config.spl_token.allow_approve = allow;
-        self.config.token_2022.allow_approve = allow;
-        self
-    }
-
-    pub fn with_spl_revoke(mut self, allow: bool) -> Self {
-        self.config.spl_token.allow_revoke = allow;
-        self.config.token_2022.allow_revoke = allow;
-        self
-    }
-
-    pub fn with_spl_set_authority(mut self, allow: bool) -> Self {
-        self.config.spl_token.allow_set_authority = allow;
-        self.config.token_2022.allow_set_authority = allow;
-        self
-    }
-
-    pub fn with_spl_mint_to(mut self, allow: bool) -> Self {
-        self.config.spl_token.allow_mint_to = allow;
-        self.config.token_2022.allow_mint_to = allow;
-        self
-    }
-
-    pub fn with_spl_freeze_account(mut self, allow: bool) -> Self {
-        self.config.spl_token.allow_freeze_account = allow;
-        self.config.token_2022.allow_freeze_account = allow;
-        self
-    }
-
-    pub fn with_spl_thaw_account(mut self, allow: bool) -> Self {
-        self.config.spl_token.allow_thaw_account = allow;
-        self.config.token_2022.allow_thaw_account = allow;
-        self
     }
 
     pub fn restrictive() -> Self {
@@ -771,10 +575,6 @@ impl FeePayerPolicyBuilder {
             },
         }
     }
-
-    pub fn permissive() -> Self {
-        Self { config: FeePayerPolicy::default() }
-    }
 }
 
 pub struct MetricsConfigBuilder {
@@ -798,11 +598,6 @@ impl MetricsConfigBuilder {
 
     pub fn with_enabled(mut self, enabled: bool) -> Self {
         self.config.enabled = enabled;
-        self
-    }
-
-    pub fn with_endpoint(mut self, endpoint: String) -> Self {
-        self.config.endpoint = endpoint;
         self
     }
 
@@ -853,16 +648,6 @@ impl SignerPoolConfigBuilder {
         self
     }
 
-    pub fn with_signers(mut self, signers: Vec<SignerConfig>) -> Self {
-        self.config.signers = signers;
-        self
-    }
-
-    pub fn add_signer(mut self, signer: SignerConfig) -> Self {
-        self.config.signers.push(signer);
-        self
-    }
-
     pub fn with_memory_signer(
         mut self,
         name: String,
@@ -906,152 +691,4 @@ impl SignerPoolConfigBuilder {
         self.config.signers.push(signer);
         self
     }
-
-    pub fn with_privy_signer(
-        mut self,
-        name: String,
-        app_id_env: String,
-        app_secret_env: String,
-        wallet_id_env: String,
-        weight: Option<u32>,
-    ) -> Self {
-        let signer = SignerConfig {
-            name,
-            weight,
-            config: SignerTypeConfig::Privy {
-                config: PrivySignerConfig {
-                    app_id_env,
-                    app_secret_env,
-                    wallet_id_env,
-                    http_config: None,
-                },
-            },
-        };
-        self.config.signers.push(signer);
-        self
-    }
-
-    pub fn with_openfort_signer(
-        mut self,
-        name: String,
-        secret_key_env: String,
-        account_id_env: String,
-        wallet_secret_env: String,
-        weight: Option<u32>,
-    ) -> Self {
-        let signer = SignerConfig {
-            name,
-            weight,
-            config: SignerTypeConfig::Openfort {
-                config: OpenfortSignerConfig {
-                    secret_key_env,
-                    account_id_env,
-                    wallet_secret_env,
-                    api_base_url: None,
-                    http_config: None,
-                },
-            },
-        };
-        self.config.signers.push(signer);
-        self
-    }
-
-    pub fn with_vault_signer(
-        mut self,
-        name: String,
-        addr_env: String,
-        token_env: String,
-        key_name_env: String,
-        pubkey_env: String,
-        weight: Option<u32>,
-    ) -> Self {
-        let signer = SignerConfig {
-            name,
-            weight,
-            config: SignerTypeConfig::Vault {
-                config: VaultSignerConfig {
-                    vault_addr_env: addr_env,
-                    vault_token_env: token_env,
-                    key_name_env,
-                    pubkey_env,
-                    http_config: None,
-                },
-            },
-        };
-        self.config.signers.push(signer);
-        self
-    }
-}
-
-pub fn get_default_config() -> Config {
-    ConfigMockBuilder::new().build()
-}
-
-pub fn get_default_config_with_cache() -> Config {
-    ConfigMockBuilder::new()
-        .with_cache_enabled(true)
-        .with_cache_url(Some("redis://localhost:6379".to_string()))
-        .build()
-}
-
-pub fn get_default_config_with_auth() -> Config {
-    ConfigMockBuilder::new()
-        .with_api_key_auth("test-api-key".to_string())
-        .with_hmac_auth("test-hmac-secret".to_string())
-        .build()
-}
-
-pub fn get_default_config_with_payment_address() -> Config {
-    ConfigMockBuilder::new().with_payment_address(Some(Pubkey::new_unique().to_string())).build()
-}
-
-pub fn get_default_config_restrictive_policy() -> Config {
-    ConfigMockBuilder::new()
-        .with_validation(
-            ValidationConfigBuilder::new()
-                .with_fee_payer_policy(FeePayerPolicyBuilder::restrictive().build())
-                .build(),
-        )
-        .build()
-}
-
-pub fn get_default_config_with_metrics() -> Config {
-    ConfigMockBuilder::new()
-        .with_metrics(
-            MetricsConfigBuilder::enabled_with_endpoint(
-                "http://localhost:8080/metrics".to_string(),
-            )
-            .build(),
-        )
-        .build()
-}
-
-pub fn get_default_signer_pool_config() -> SignerPoolConfig {
-    SignerPoolConfigBuilder::new()
-        .with_memory_signer("test_signer".to_string(), "TEST_PRIVATE_KEY".to_string(), Some(1))
-        .build()
-}
-
-pub fn get_default_multi_signer_pool_config() -> SignerPoolConfig {
-    SignerPoolConfigBuilder::new()
-        .with_strategy(SelectionStrategy::RoundRobin)
-        .with_memory_signer("memory_signer".to_string(), "MEMORY_PRIVATE_KEY".to_string(), Some(1))
-        .with_turnkey_signer(
-            "turnkey_signer".to_string(),
-            "TURNKEY_API_PUBLIC_KEY".to_string(),
-            "TURNKEY_API_PRIVATE_KEY".to_string(),
-            "TURNKEY_ORG_ID".to_string(),
-            "TURNKEY_PRIVATE_KEY_ID".to_string(),
-            "TURNKEY_PUBLIC_KEY".to_string(),
-            Some(2),
-        )
-        .build()
-}
-
-pub fn get_default_weighted_signer_pool_config() -> SignerPoolConfig {
-    SignerPoolConfigBuilder::new()
-        .with_strategy(SelectionStrategy::Weighted)
-        .with_memory_signer("low_weight".to_string(), "LOW_WEIGHT_KEY".to_string(), Some(1))
-        .with_memory_signer("high_weight".to_string(), "HIGH_WEIGHT_KEY".to_string(), Some(5))
-        .build()
 }

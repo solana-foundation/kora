@@ -1,23 +1,8 @@
-#[cfg(test)]
 pub mod account_mock;
-
-#[cfg(test)]
-pub mod common;
-
-#[cfg(test)]
-pub mod config_mock;
-
-#[cfg(test)]
 pub mod cache_mock;
-
-#[cfg(test)]
-pub mod rpc_mock;
-
-#[cfg(test)]
-pub mod toml_mock;
-
-#[cfg(test)]
-pub mod transaction_mock;
-
-#[cfg(test)]
+pub mod common;
+pub mod config_mock;
 pub mod oracle_mock;
+pub mod rpc_mock;
+pub mod toml_mock;
+pub mod transaction_mock;
