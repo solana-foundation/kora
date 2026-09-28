@@ -4,7 +4,9 @@ import {
     address,
     createClient,
     createNoopSigner,
+    decompileTransactionMessage,
     getBase64Encoder,
+    getCompiledTransactionMessageDecoder,
     getTransactionDecoder,
     type Address,
     type Base64EncodedWireTransaction,
@@ -38,13 +40,13 @@ function mockRpcResponse(result: unknown) {
     });
 }
 
-function mockSimulateResponse(unitsConsumed = 50000) {
+function mockSimulateResponse(unitsConsumed = 50000, loadedAccountsDataSize = 600_000) {
     const body = JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
         result: {
             context: { slot: 1 },
-            value: { err: null, logs: [], unitsConsumed },
+            value: { err: null, loadedAccountsDataSize, logs: [], unitsConsumed },
         },
     });
     mockFetch.mockResolvedValueOnce({
@@ -213,6 +215,41 @@ describe('createKitKoraClient', () => {
                 'estimateTransactionFee',
                 'signAndSendTransaction',
             ]);
+        });
+
+        it('should submit a v1 transaction carrying the simulated resource limits', async () => {
+            mockRpcResponse({ blockhash: '4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi' });
+            mockSimulateResponse(50_000, 600_000);
+            mockRpcResponse({
+                fee_in_lamports: 5000,
+                fee_in_token: 50000,
+                signer_pubkey: MOCK_PAYER_ADDRESS,
+                payment_address: MOCK_PAYMENT_ADDRESS,
+            });
+            mockRpcResponse({
+                signature: MOCK_SIGNATURE,
+                signed_transaction: 'base64signedtx',
+                signer_pubkey: MOCK_PAYER_ADDRESS,
+            });
+
+            await client.sendTransaction([
+                {
+                    programAddress: address('11111111111111111111111111111111'),
+                    accounts: [],
+                    data: new Uint8Array(4),
+                },
+            ]);
+
+            const sendCall = mockFetch.mock.calls.find(c => JSON.parse(c[1].body).method === 'signAndSendTransaction');
+            const wire = JSON.parse(sendCall![1].body).params.transaction as string;
+            const tx = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
+            const message = decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(tx.messageBytes));
+
+            expect(message.version).toBe(1);
+            const config = (message as { config?: { computeUnitLimit?: number; loadedAccountsDataSizeLimit?: number } })
+                .config;
+            expect(config?.computeUnitLimit).toBeGreaterThanOrEqual(50_000);
+            expect(config?.loadedAccountsDataSizeLimit).toBeGreaterThanOrEqual(600_000);
         });
 
         it('should skip payment instruction when fee is 0', async () => {
@@ -436,11 +473,8 @@ describe('createKitKoraClient', () => {
         });
     });
 
-    describe('compute budget instructions', () => {
+    describe('v1 message config', () => {
         const COMPUTE_BUDGET_PROGRAM = 'ComputeBudget111111111111111111111111111111';
-        // SetComputeUnitLimit discriminator = 0x02, SetComputeUnitPrice discriminator = 0x03
-        const CU_LIMIT_DISCRIMINATOR = 2;
-        const CU_PRICE_DISCRIMINATOR = 3;
 
         const DUMMY_IX = {
             programAddress: address('11111111111111111111111111111111'),
@@ -448,143 +482,40 @@ describe('createKitKoraClient', () => {
             data: new Uint8Array(4),
         };
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        function getComputeBudgetIxs(planned: { instructions: readonly any[] }) {
-            return planned.instructions.filter(
-                (ix: { programAddress: string }) => ix.programAddress === COMPUTE_BUDGET_PROGRAM,
-            ) as { programAddress: string; data: Uint8Array }[];
+        async function planWith(overrides: { computeUnitLimit?: number; priorityFeeLamports?: bigint } = {}) {
+            mockRpcResponse({
+                signer_address: MOCK_PAYER_ADDRESS,
+                payment_address: MOCK_PAYMENT_ADDRESS,
+            });
+            const client = await createKitKoraClient({
+                endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
+                feeToken: MOCK_FEE_TOKEN,
+                feePayerWallet: MOCK_WALLET,
+                ...overrides,
+            });
+            return (await client.planTransaction([DUMMY_IX])) as unknown as {
+                config?: Record<string, unknown>;
+                instructions: readonly { programAddress: string }[];
+                version: number;
+            };
         }
 
-        it('should include provisory CU limit by default (simulation-based estimation)', async () => {
-            mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
-                payment_address: MOCK_PAYMENT_ADDRESS,
-            });
-
-            const client = await createKitKoraClient({
-                endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
-                feePayerWallet: MOCK_WALLET,
-            });
-
-            const planned = await client.planTransaction([DUMMY_IX]);
-            const cbIxs = getComputeBudgetIxs(planned);
-            expect(cbIxs).toHaveLength(1);
-            expect(cbIxs[0].data[0]).toBe(CU_LIMIT_DISCRIMINATOR);
-            const units = new DataView(cbIxs[0].data.buffer, cbIxs[0].data.byteOffset).getUint32(1, true);
-            expect(units).toBe(0); // Provisory — resolved via simulation in executor
+        it('builds a v1 message with provisory resource limits and no ComputeBudget instructions', async () => {
+            const planned = await planWith();
+            expect(planned.version).toBe(1);
+            expect(planned.config).toEqual({ computeUnitLimit: 0, loadedAccountsDataSizeLimit: 0 });
+            expect(planned.instructions.some(ix => ix.programAddress === COMPUTE_BUDGET_PROGRAM)).toBe(false);
         });
 
-        it('should include SetComputeUnitLimit with correct units when computeUnitLimit is set', async () => {
-            mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
-                payment_address: MOCK_PAYMENT_ADDRESS,
-            });
-
-            const client = await createKitKoraClient({
-                endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
-                feePayerWallet: MOCK_WALLET,
-                computeUnitLimit: 200_000,
-            });
-
-            const planned = await client.planTransaction([DUMMY_IX]);
-            const cbIxs = getComputeBudgetIxs(planned);
-            expect(cbIxs).toHaveLength(1);
-
-            const ix = cbIxs[0];
-            // discriminator 0x02 = SetComputeUnitLimit
-            expect(ix.data[0]).toBe(CU_LIMIT_DISCRIMINATOR);
-            // 200_000 in u32 LE = [0x40, 0x0D, 0x03, 0x00]
-            const units = new DataView(ix.data.buffer, ix.data.byteOffset).getUint32(1, true);
-            expect(units).toBe(200_000);
-        });
-
-        it('should include SetComputeUnitPrice and provisory CU limit when computeUnitPrice is set', async () => {
-            mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
-                payment_address: MOCK_PAYMENT_ADDRESS,
-            });
-
-            const client = await createKitKoraClient({
-                endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
-                feePayerWallet: MOCK_WALLET,
-                computeUnitPrice: 1000n as import('@solana/kit').MicroLamports,
-            });
-
-            const planned = await client.planTransaction([DUMMY_IX]);
-            const cbIxs = getComputeBudgetIxs(planned);
-            // Price instruction + provisory CU limit (simulation-based estimation always on)
-            expect(cbIxs).toHaveLength(2);
-
-            const priceIx = cbIxs.find(ix => ix.data[0] === CU_PRICE_DISCRIMINATOR);
-            expect(priceIx).toBeDefined();
-            const ix = priceIx!;
-            // discriminator 0x03 = SetComputeUnitPrice
-            expect(ix.data[0]).toBe(CU_PRICE_DISCRIMINATOR);
-            // 1000 in u64 LE
-            const view = new DataView(ix.data.buffer, ix.data.byteOffset);
-            const microLamports = view.getBigUint64(1, true);
-            expect(microLamports).toBe(1000n);
-        });
-
-        it('should include both CU limit and price instructions when both are set', async () => {
-            mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
-                payment_address: MOCK_PAYMENT_ADDRESS,
-            });
-
-            const client = await createKitKoraClient({
-                endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
-                feePayerWallet: MOCK_WALLET,
+        it('writes an explicit computeUnitLimit and priorityFeeLamports into the config', async () => {
+            const planned = await planWith({ computeUnitLimit: 150_000, priorityFeeLamports: 10_000n });
+            expect(planned.config).toEqual({
                 computeUnitLimit: 150_000,
-                computeUnitPrice: 500n as import('@solana/kit').MicroLamports,
+                loadedAccountsDataSizeLimit: 0,
+                priorityFeeLamports: 10_000n,
             });
-
-            const planned = await client.planTransaction([DUMMY_IX]);
-            const cbIxs = getComputeBudgetIxs(planned);
-            expect(cbIxs).toHaveLength(2);
-
-            // First should be SetComputeUnitLimit
-            expect(cbIxs[0].data[0]).toBe(CU_LIMIT_DISCRIMINATOR);
-            const units = new DataView(cbIxs[0].data.buffer, cbIxs[0].data.byteOffset).getUint32(1, true);
-            expect(units).toBe(150_000);
-
-            // Second should be SetComputeUnitPrice
-            expect(cbIxs[1].data[0]).toBe(CU_PRICE_DISCRIMINATOR);
-            const microLamports = new DataView(cbIxs[1].data.buffer, cbIxs[1].data.byteOffset).getBigUint64(1, true);
-            expect(microLamports).toBe(500n);
-        });
-
-        it('should use explicit computeUnitLimit over simulation when computeUnitLimit is set', async () => {
-            mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
-                payment_address: MOCK_PAYMENT_ADDRESS,
-            });
-
-            const client = await createKitKoraClient({
-                endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
-                feePayerWallet: MOCK_WALLET,
-                computeUnitLimit: 200_000,
-            });
-
-            const planned = await client.planTransaction([DUMMY_IX]);
-            const cbIxs = getComputeBudgetIxs(planned);
-            expect(cbIxs).toHaveLength(1);
-
-            const ix = cbIxs[0];
-            expect(ix.data[0]).toBe(CU_LIMIT_DISCRIMINATOR);
-            // Should be the explicit 200_000, not 0 (provisory)
-            const units = new DataView(ix.data.buffer, ix.data.byteOffset).getUint32(1, true);
-            expect(units).toBe(200_000);
+            expect(planned.instructions.some(ix => ix.programAddress === COMPUTE_BUDGET_PROGRAM)).toBe(false);
         });
     });
 });

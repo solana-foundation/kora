@@ -1,4 +1,4 @@
-import { Instruction, type MicroLamports, type TransactionSigner } from '@solana/kit';
+import { Instruction, type TransactionSigner } from '@solana/kit';
 
 /**
  * Parameters for signing a transaction.
@@ -680,12 +680,14 @@ export interface KitValidationConfig {
  */
 export interface KoraBundleConfig {
     readonly apiKey?: string;
+    /** Compute unit limit written to the v1 message config. Estimated by simulation when omitted. */
     readonly computeUnitLimit?: number;
-    readonly computeUnitPrice?: MicroLamports;
     readonly endpoint: string;
     readonly feeToken: Address;
     readonly getRecaptchaToken?: () => Promise<string> | string;
     readonly hmacSecret?: string;
+    /** Flat priority fee in lamports for the whole transaction, written to the v1 message config. */
+    readonly priorityFeeLamports?: bigint;
     readonly rpcUrl: string;
     readonly tokenProgramId?: Address;
     readonly userId?: string;
