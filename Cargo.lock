@@ -5088,9 +5088,12 @@ dependencies = [
  "solana-client",
  "solana-commitment-config",
  "solana-loader-v3-interface 6.1.1",
+ "solana-message 4.4.0",
  "solana-sdk",
+ "solana-transaction 4.1.5",
  "tokio",
  "tracing-subscriber",
+ "wincode",
 ]
 
 [[package]]

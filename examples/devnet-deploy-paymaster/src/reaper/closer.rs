@@ -9,7 +9,7 @@ use solana_loader_v3_interface::instruction as loader_v3;
 use solana_loader_v4_interface::instruction as loader_v4;
 use solana_sdk::{
     instruction::Instruction,
-    message::{Message, VersionedMessage},
+    message::{v1, VersionedMessage},
     pubkey::Pubkey,
 };
 
@@ -36,11 +36,15 @@ pub async fn close_program(
     let blockhash =
         rpc.get_latest_blockhash().await.map_err(|e| anyhow!("getLatestBlockhash: {e}"))?;
 
-    let message = VersionedMessage::Legacy(Message::new_with_blockhash(
-        &instructions,
-        Some(fee_payer),
-        &blockhash,
-    ));
+    let message = VersionedMessage::V1(
+        v1::Message::try_compile_with_config(
+            fee_payer,
+            &instructions,
+            blockhash,
+            kora_deploy::resource_config(instructions.len()),
+        )
+        .map_err(|e| anyhow!("compile v1 message: {e}"))?,
+    );
     let mut tx = TransactionUtil::new_unsigned_versioned_transaction(message);
     let signature = signer
         .sign_message(&tx.message.serialize())

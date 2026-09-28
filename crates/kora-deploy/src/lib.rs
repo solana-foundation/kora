@@ -16,19 +16,22 @@ use serde_json::{json, Value};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_loader_v3_interface::{instruction as loader_v3, state::UpgradeableLoaderState};
+use solana_message::{v1, VersionedMessage};
 use solana_sdk::{
-    hash::hash,
+    hash::{hash, Hash},
     instruction::{AccountMeta, Instruction},
-    message::Message,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
-    transaction::Transaction,
 };
+use solana_transaction::versioned::VersionedTransaction;
 
 use crate::state::DeployState;
 
-const WRITE_CHUNK_SIZE: usize = 900;
+const WRITE_CHUNK_SIZE: usize = 3800;
+const COMPUTE_UNIT_LIMIT_PER_INSTRUCTION: u32 = 200_000;
+const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+const LOADED_ACCOUNTS_DATA_SIZE_LIMIT: u32 = 64 * 1024 * 1024;
 const BPF_LOADER_UPGRADEABLE: Pubkey =
     solana_sdk::pubkey!("BPFLoaderUpgradeab1e11111111111111111111111");
 const SYSTEM_PROGRAM: Pubkey = solana_sdk::pubkey!("11111111111111111111111111111111");
@@ -128,16 +131,26 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
 
     let bytes = fs::read(cfg.program_so)
         .with_context(|| format!("reading {}", cfg.program_so.display()))?;
-    let chunk_count = bytes.len().div_ceil(WRITE_CHUNK_SIZE);
     let current_program_hash = hash(&bytes).to_string();
 
     let (program, buffer, program_data, kora_pubkey, mut written_chunks, mut state) =
         load_or_init_state(&ctx, &bytes, &current_program_hash).await?;
+    let chunk_size = state.as_ref().map_or(WRITE_CHUNK_SIZE, |st| st.chunk_size);
+    let chunk_count = bytes.len().div_ceil(chunk_size);
 
     validate_state(&ctx, &buffer, &kora_pubkey, &state, &current_program_hash, chunk_count).await?;
 
-    write_chunks(&ctx, &bytes, &buffer, &kora_pubkey, &mut state, &mut written_chunks, chunk_count)
-        .await?;
+    write_chunks(
+        &ctx,
+        &bytes,
+        &buffer,
+        &kora_pubkey,
+        &mut state,
+        &mut written_chunks,
+        chunk_size,
+        chunk_count,
+    )
+    .await?;
 
     finalize_deploy(&ctx, &bytes, &program, &buffer, &program_data, &kora_pubkey).await?;
 
@@ -223,6 +236,7 @@ async fn load_or_init_state(
             written_chunks: 0,
             kora_pubkey: kora_pubkey.to_string(),
             program_hash: current_program_hash.to_string(),
+            chunk_size: WRITE_CHUNK_SIZE,
         };
         if let Err(e) = new_state.save(state_path) {
             cleanup_buffer!(
@@ -322,6 +336,7 @@ async fn validate_state(
 
 /// Writes the program data chunks to the on-chain buffer, saving state progress
 /// after each successful write to allow resuming in case of failure.
+#[allow(clippy::too_many_arguments)]
 async fn write_chunks(
     ctx: &DeployCtx<'_, '_>,
     bytes: &[u8],
@@ -329,11 +344,12 @@ async fn write_chunks(
     kora_pubkey: &Pubkey,
     state: &mut Option<DeployState>,
     written_chunks: &mut usize,
+    chunk_size: usize,
     chunk_count: usize,
 ) -> Result<()> {
     let state_path = ctx.cfg.state_path.as_path();
-    for (i, chunk) in bytes.chunks(WRITE_CHUNK_SIZE).enumerate().skip(*written_chunks) {
-        let offset = (i * WRITE_CHUNK_SIZE) as u32;
+    for (i, chunk) in bytes.chunks(chunk_size).enumerate().skip(*written_chunks) {
+        let offset = (i * chunk_size) as u32;
         let ix = loader_v3::write(&buffer.pubkey(), kora_pubkey, offset, chunk.to_vec());
 
         match submit(ctx.http, ctx.cfg.kora_url, &ctx.cfg.user_id, ctx.rpc, kora_pubkey, &[ix], &[])
@@ -695,12 +711,46 @@ async fn build_b64_tx(
     extra_signers: &[&Keypair],
 ) -> Result<String> {
     let blockhash = rpc.get_latest_blockhash().await?;
-    let msg = Message::new_with_blockhash(ixs, Some(fee_payer), &blockhash);
-    let mut tx = Transaction::new_unsigned(msg);
-    if !extra_signers.is_empty() {
-        tx.partial_sign(extra_signers, blockhash);
+    let tx = build_tx(fee_payer, ixs, extra_signers, blockhash)?;
+    Ok(B64.encode(wincode::serialize(&tx)?))
+}
+
+/// V1 budgets zero for any limit the config leaves unset, so both are set to what legacy
+/// transactions got by default: 200k CU per instruction and the maximum loaded data size.
+pub fn resource_config(instruction_count: usize) -> v1::TransactionConfig {
+    let compute_unit_limit = u32::try_from(instruction_count)
+        .unwrap_or(u32::MAX)
+        .saturating_mul(COMPUTE_UNIT_LIMIT_PER_INSTRUCTION)
+        .min(MAX_COMPUTE_UNIT_LIMIT);
+    v1::TransactionConfig::empty()
+        .with_compute_unit_limit(compute_unit_limit)
+        .with_loaded_accounts_data_size_limit(LOADED_ACCOUNTS_DATA_SIZE_LIMIT)
+}
+
+/// Leaves the fee payer's signature slot at its default for Kora to fill.
+fn build_tx(
+    fee_payer: &Pubkey,
+    ixs: &[Instruction],
+    extra_signers: &[&Keypair],
+    blockhash: Hash,
+) -> Result<VersionedTransaction> {
+    let message = VersionedMessage::V1(v1::Message::try_compile_with_config(
+        fee_payer,
+        ixs,
+        blockhash,
+        resource_config(ixs.len()),
+    )?);
+    let signer_count = usize::from(message.header().num_required_signatures);
+    let message_bytes = message.serialize();
+    let mut signatures = vec![Signature::default(); signer_count];
+    for signer in extra_signers {
+        let index = message.static_account_keys()[..signer_count]
+            .iter()
+            .position(|key| *key == signer.pubkey())
+            .ok_or_else(|| anyhow!("{} is not a required signer", signer.pubkey()))?;
+        signatures[index] = signer.try_sign_message(&message_bytes)?;
     }
-    Ok(B64.encode(bincode::serialize(&tx)?))
+    Ok(VersionedTransaction { signatures, message })
 }
 
 async fn submit(
@@ -785,7 +835,72 @@ mod tests {
             written_chunks,
             kora_pubkey: "11111111111111111111111111111111".to_string(),
             program_hash: program_hash.to_string(),
+            chunk_size: WRITE_CHUNK_SIZE,
         }
+    }
+
+    #[test]
+    fn full_write_chunk_fits_in_a_v1_transaction() {
+        let kora = Keypair::new();
+        let buffer = Keypair::new();
+        let ix =
+            loader_v3::write(&buffer.pubkey(), &kora.pubkey(), 0, vec![0xAB; WRITE_CHUNK_SIZE]);
+        let tx = build_tx(&kora.pubkey(), &[ix], &[], Hash::new_unique()).unwrap();
+
+        let serialized = wincode::serialize(&tx).unwrap();
+        assert!(
+            serialized.len() <= v1::MAX_TRANSACTION_SIZE,
+            "{} bytes exceeds the v1 limit",
+            serialized.len()
+        );
+    }
+
+    #[test]
+    fn build_tx_signs_extra_signers_and_leaves_fee_payer_slot_for_kora() {
+        let kora = Keypair::new();
+        let program = Keypair::new();
+        let wallet = Keypair::new();
+        let ixs = vec![register_ix(
+            &DEFAULT_REGISTRY_PROGRAM,
+            &kora.pubkey(),
+            &program.pubkey(),
+            &wallet.pubkey(),
+        )];
+        let tx = build_tx(&kora.pubkey(), &ixs, &[&program, &wallet], Hash::new_unique()).unwrap();
+
+        let decoded: VersionedTransaction =
+            wincode::deserialize(&wincode::serialize(&tx).unwrap()).unwrap();
+        let VersionedMessage::V1(message) = &decoded.message else {
+            panic!("expected a v1 message");
+        };
+        assert_eq!(message.config.compute_unit_limit, Some(COMPUTE_UNIT_LIMIT_PER_INSTRUCTION));
+        assert_eq!(
+            message.config.loaded_accounts_data_size_limit,
+            Some(LOADED_ACCOUNTS_DATA_SIZE_LIMIT)
+        );
+
+        let keys = decoded.message.static_account_keys();
+        let message_bytes = decoded.message.serialize();
+        assert_eq!(keys[0], kora.pubkey());
+        assert_eq!(decoded.signatures[0], Signature::default());
+        for signer in [&program, &wallet] {
+            let index = keys.iter().position(|key| *key == signer.pubkey()).unwrap();
+            assert!(decoded.signatures[index].verify(signer.pubkey().as_ref(), &message_bytes));
+        }
+    }
+
+    #[test]
+    fn build_tx_rejects_a_signer_the_message_does_not_require() {
+        let kora = Keypair::new();
+        let buffer = Keypair::new();
+        let ix = loader_v3::write(&buffer.pubkey(), &kora.pubkey(), 0, vec![1]);
+        assert!(build_tx(&kora.pubkey(), &[ix], &[&buffer], Hash::new_unique()).is_err());
+    }
+
+    #[test]
+    fn resource_config_caps_compute_at_the_runtime_maximum() {
+        assert_eq!(resource_config(3).compute_unit_limit, Some(600_000));
+        assert_eq!(resource_config(8).compute_unit_limit, Some(MAX_COMPUTE_UNIT_LIMIT));
     }
 
     #[test]
