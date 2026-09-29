@@ -69,10 +69,8 @@ impl TransactionValidator {
 
         let (allow_all_programs, allowed_programs) =
             parse_programs_config(&config.allowed_programs, "allowed_programs")?;
-        let (allow_all_fee_payer_programs, sponsor_only_programs) = parse_programs_config(
-            &config.sponsor_only_programs,
-            "sponsor_only_programs",
-        )?;
+        let (allow_all_fee_payer_programs, sponsor_only_programs) =
+            parse_programs_config(&config.sponsor_only_programs, "sponsor_only_programs")?;
 
         let require_one_of_programs = config
             .require_one_of_programs

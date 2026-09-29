@@ -553,9 +553,23 @@ impl ConfigValidator {
                 );
             }
         } else if config.validation.allowed_programs.as_slice().is_empty() {
-            warnings.push(
-                "No allowed programs configured - this will block all transactions".to_string(),
-            );
+            if fee_payer_programs_configured {
+                // Programs in sponsor_only_programs still run when the fee payer does not
+                // participate, so this is a usable (fee-only) configuration, not a dead one.
+                warnings.push(
+                    "allowed_programs is empty: the fee payer may not participate in any program. \
+                     Only transactions where the fee payer is purely the fee payer (never an \
+                     account in an instruction) can be sponsored, limited to the programs in \
+                     sponsor_only_programs. Add the trusted built-ins (System, Token, ATA, ...) to \
+                     allowed_programs if the fee payer needs to fund accounts or otherwise \
+                     participate."
+                        .to_string(),
+                );
+            } else {
+                warnings.push(
+                    "No allowed programs configured - this will block all transactions".to_string(),
+                );
+            }
         } else {
             if !config.validation.allowed_programs.contains(&SYSTEM_PROGRAM_ID.to_string()) {
                 warnings.push("Missing System Program in allowed programs - SOL transfers and account operations will be blocked".to_string());
@@ -636,9 +650,14 @@ impl ConfigValidator {
 
         if !config.validation.require_one_of_programs.is_empty() {
             for program in &config.validation.require_one_of_programs {
-                if !config.validation.allowed_programs.contains(program) {
+                // A required program must be runnable, which now means it is in either program set:
+                // allowed_programs (fee payer may participate) or sponsor_only_programs (runs while
+                // the fee payer does not participate). Requiring a sponsor-only program is valid.
+                if !config.validation.allowed_programs.contains(program)
+                    && !config.validation.sponsor_only_programs.contains(program)
+                {
                     errors.push(format!(
-                        "Program {program} in require_one_of_programs must also be in allowed_programs"
+                        "Program {program} in require_one_of_programs must also be in allowed_programs or sponsor_only_programs"
                     ));
                 }
             }
@@ -1786,6 +1805,57 @@ mod tests {
             e.contains("require_one_of_programs must also be in allowed_programs")
                 && e.contains(&required_program)
         }));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_require_one_of_programs_allows_sponsor_only_program() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        // A program that runs only via sponsor_only_programs may still be required.
+        let sponsor_only_program = solana_sdk::pubkey::Pubkey::new_unique().to_string();
+        config.validation.sponsor_only_programs =
+            ProgramsConfig::Allowlist(vec![sponsor_only_program.clone()]);
+        config.validation.require_one_of_programs = vec![sponsor_only_program];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(
+            result.is_ok(),
+            "requiring a sponsor-only program should pass validation: {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_empty_allowed_programs_with_sponsor_only_is_usable() {
+        // Empty allowed_programs + sponsor_only_programs is a usable fee-only setup: programs run
+        // while the fee payer does not participate. The warning must not claim all transactions are
+        // blocked. Free pricing avoids the unrelated "token program required for fees" error.
+        let config = ConfigMockBuilder::new()
+            .with_allowed_programs(vec![])
+            .with_fee_payer_allowed_programs(ProgramsConfig::All)
+            .with_price_model(crate::fee::price::PriceModel::Free)
+            .with_cache_enabled(false)
+            .build();
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok(), "expected only warnings, got errors: {:?}", result.err());
+        let warnings = result.unwrap();
+        assert!(
+            !warnings.iter().any(|w| w.contains("No allowed programs configured")),
+            "should not warn that all transactions are blocked when sponsor_only is set: {warnings:?}"
+        );
+        assert!(
+            warnings.iter().any(|w| w.contains("allowed_programs is empty")),
+            "expected the fee-only-sponsorship warning, got: {warnings:?}"
+        );
     }
 
     #[tokio::test]
