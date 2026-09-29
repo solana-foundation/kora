@@ -100,10 +100,8 @@ libc = "0.2"
 ctor = "0.6"
 
 [dev-dependencies]
-# Fork of solana-foundation/surfpool@30242a4. It holds the svm write lock across
-# a jito bundle's sandbox-and-commit, without which a commit reverts any write
-# that landed while the bundle ran, and stops the sandbox inheriting the
-# confirmation queue, without which a commit re-queues every in-flight
-# transaction. Upstream has both as https://github.com/solana-foundation/surfpool/pull/804
-# and is not expected to merge it, so this fork is the long-term source.
-surfpool-sdk = { git = "https://github.com/dev-jodee/surfpool", rev = "207030e09c6b46789157765077ad85a5b6cc3897" }
+# Pinned to a commit rather than the 1.6.0 release: bundle execution only became
+# isolated from concurrent airdrops in solana-foundation/surfpool#817 and #824, both
+# merged after that release. Without them a bundle commit reverts any write that
+# landed while the bundle ran, which the bundle phases hit through create_funded_wallet.
+surfpool-sdk = { git = "https://github.com/solana-foundation/surfpool", rev = "72ea220c0ea812892209df4ae2db76a23ef7112f" }
