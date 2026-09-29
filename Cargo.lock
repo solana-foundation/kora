@@ -12542,8 +12542,8 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surfpool-core"
-version = "1.5.0"
-source = "git+https://github.com/dev-jodee/surfpool?rev=207030e09c6b46789157765077ad85a5b6cc3897#207030e09c6b46789157765077ad85a5b6cc3897"
+version = "1.6.0"
+source = "git+https://github.com/solana-foundation/surfpool?rev=72ea220c0ea812892209df4ae2db76a23ef7112f#72ea220c0ea812892209df4ae2db76a23ef7112f"
 dependencies = [
  "agave-feature-set",
  "agave-geyser-plugin-interface",
@@ -12641,8 +12641,8 @@ dependencies = [
 
 [[package]]
 name = "surfpool-db"
-version = "1.5.0"
-source = "git+https://github.com/dev-jodee/surfpool?rev=207030e09c6b46789157765077ad85a5b6cc3897#207030e09c6b46789157765077ad85a5b6cc3897"
+version = "1.6.0"
+source = "git+https://github.com/solana-foundation/surfpool?rev=72ea220c0ea812892209df4ae2db76a23ef7112f#72ea220c0ea812892209df4ae2db76a23ef7112f"
 dependencies = [
  "diesel",
  "diesel-dynamic-schema",
@@ -12652,8 +12652,8 @@ dependencies = [
 
 [[package]]
 name = "surfpool-sdk"
-version = "1.5.0"
-source = "git+https://github.com/dev-jodee/surfpool?rev=207030e09c6b46789157765077ad85a5b6cc3897#207030e09c6b46789157765077ad85a5b6cc3897"
+version = "1.6.0"
+source = "git+https://github.com/solana-foundation/surfpool?rev=72ea220c0ea812892209df4ae2db76a23ef7112f#72ea220c0ea812892209df4ae2db76a23ef7112f"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -12682,8 +12682,8 @@ dependencies = [
 
 [[package]]
 name = "surfpool-types"
-version = "1.5.0"
-source = "git+https://github.com/dev-jodee/surfpool?rev=207030e09c6b46789157765077ad85a5b6cc3897#207030e09c6b46789157765077ad85a5b6cc3897"
+version = "1.6.0"
+source = "git+https://github.com/solana-foundation/surfpool?rev=72ea220c0ea812892209df4ae2db76a23ef7112f#72ea220c0ea812892209df4ae2db76a23ef7112f"
 dependencies = [
  "agave-feature-set",
  "anchor-lang-idl",
