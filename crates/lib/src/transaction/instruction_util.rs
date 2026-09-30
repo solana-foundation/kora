@@ -112,10 +112,8 @@ pub enum ParsedSPLInstructionType {
     SplTokenTransferHookUpdate,
     SplTokenWithdrawExcessLamports,
     SplTokenUnwrapLamports,
-    /// A Token-2022 extension instruction that was successfully deserialized but
-    /// has no dedicated fee-payer parser.
-    /// All account pubkeys are recorded so the validator can reject the transaction
-    /// if the fee payer appears among them.
+    /// A Token-2022 extension instruction with no dedicated fee-payer parser. Its fee-payer
+    /// checks run through `Token2022SecurityParser`, not this variant.
     SplTokenUnknownExtension,
 }
 
@@ -238,9 +236,6 @@ pub enum ParsedSPLInstructionData {
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
     },
-    /// Token-2022 extension instruction with no dedicated fee-payer parser.
-    /// All accounts from the instruction are captured so the validator can check
-    /// whether the fee payer appears among them.
     SplTokenUnknownExtension {
         accounts: Vec<Pubkey>,
     },
