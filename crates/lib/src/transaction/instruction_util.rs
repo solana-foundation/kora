@@ -1553,234 +1553,118 @@ impl IxUtils {
             .get(PARSED_DATA_FIELD_INFO)
             .ok_or_else(|| KoraError::SerializationError("Missing 'info' field".to_string()))?;
 
-        match instruction_type {
-            PARSED_DATA_FIELD_TRANSFER => {
-                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
-                let destination = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DESTINATION)?;
-                let authority = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_AUTHORITY)?;
-                let amount = Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT)?;
+        let pubkey = |field: &str| Self::get_field_as_pubkey(info, field);
+        let optional_pubkey = |field: &str| -> Result<Option<Pubkey>, KoraError> {
+            match info.get(field) {
+                Some(v) if !v.is_null() => pubkey(field).map(Some),
+                _ => Ok(None),
+            }
+        };
+        let index = |field: &str| -> Result<u8, KoraError> {
+            Self::get_account_index(account_keys_hashmap, &pubkey(field)?)
+        };
+        let token_amount = || -> Result<(u64, u8), KoraError> {
+            let token_amount = info.get(PARSED_DATA_FIELD_TOKEN_AMOUNT).ok_or_else(|| {
+                KoraError::SerializationError("Missing 'tokenAmount' field".to_string())
+            })?;
+            let amount = Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_AMOUNT)?;
+            let decimals = Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_DECIMALS)? as u8;
+            Ok((amount, decimals))
+        };
 
-                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
-                let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
-                let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
-
-                let data = if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::Transfer { amount }.pack()
+        macro_rules! pack {
+            ($($variant:tt)+) => {
+                if is_spl_token_program {
+                    spl_token_interface::instruction::TokenInstruction::$($variant)+.pack()
                 } else {
                     #[allow(deprecated)]
-                    spl_token_2022_interface::instruction::TokenInstruction::Transfer { amount }
-                        .pack()
-                };
+                    spl_token_2022_interface::instruction::TokenInstruction::$($variant)+.pack()
+                }
+            };
+        }
 
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![source_idx, destination_idx, authority_idx],
-                    data,
-                })
+        let (data, accounts) = match instruction_type {
+            PARSED_DATA_FIELD_TRANSFER => {
+                let amount = Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT)?;
+                (
+                    pack!(Transfer { amount }),
+                    vec![
+                        index(PARSED_DATA_FIELD_SOURCE)?,
+                        index(PARSED_DATA_FIELD_DESTINATION)?,
+                        index(PARSED_DATA_FIELD_AUTHORITY)?,
+                    ],
+                )
             }
             PARSED_DATA_FIELD_TRANSFER_CHECKED => {
-                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
-                let destination = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DESTINATION)?;
-                let authority = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_AUTHORITY)?;
-                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
-
-                let token_amount = info.get(PARSED_DATA_FIELD_TOKEN_AMOUNT).ok_or_else(|| {
-                    KoraError::SerializationError("Missing 'tokenAmount' field".to_string())
-                })?;
-                let amount = Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_AMOUNT)?;
-                let decimals =
-                    Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_DECIMALS)? as u8;
-
-                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
-                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
-                let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
-                let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
-
-                let data = if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::TransferChecked {
-                        amount,
-                        decimals,
-                    }
-                    .pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::TransferChecked {
-                        amount,
-                        decimals,
-                    }
-                    .pack()
-                };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![source_idx, mint_idx, destination_idx, authority_idx],
-                    data,
-                })
+                let (amount, decimals) = token_amount()?;
+                (
+                    pack!(TransferChecked { amount, decimals }),
+                    vec![
+                        index(PARSED_DATA_FIELD_SOURCE)?,
+                        index(PARSED_DATA_FIELD_MINT)?,
+                        index(PARSED_DATA_FIELD_DESTINATION)?,
+                        index(PARSED_DATA_FIELD_AUTHORITY)?,
+                    ],
+                )
             }
-            PARSED_DATA_FIELD_BURN | PARSED_DATA_FIELD_BURN_CHECKED => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let authority = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_AUTHORITY)?;
-
-                let (amount, decimals) = if instruction_type == PARSED_DATA_FIELD_BURN_CHECKED {
-                    let token_amount =
-                        info.get(PARSED_DATA_FIELD_TOKEN_AMOUNT).ok_or_else(|| {
-                            KoraError::SerializationError(
-                                "Missing 'tokenAmount' field for burnChecked".to_string(),
-                            )
-                        })?;
-                    let amount = Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_AMOUNT)?;
-                    let decimals =
-                        Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_DECIMALS)? as u8;
-                    (amount, Some(decimals))
-                } else {
-                    let amount =
-                        Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT).unwrap_or(0);
-                    (amount, None)
-                };
-
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-                let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
-
-                let accounts = if instruction_type == PARSED_DATA_FIELD_BURN_CHECKED {
-                    let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
-                    let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
-                    vec![account_idx, mint_idx, authority_idx]
-                } else if let Ok(mint) = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT) {
-                    // Solana's parser often includes mint for non-checked burn. If the
-                    // mint index is unavailable, fall back to [source, authority].
-                    if let Ok(mint_idx) = Self::get_account_index(account_keys_hashmap, &mint) {
-                        vec![account_idx, mint_idx, authority_idx]
-                    } else {
-                        vec![account_idx, authority_idx]
-                    }
-                } else {
-                    // Defensive fallback for providers omitting mint in parsed burn JSON.
-                    vec![account_idx, authority_idx]
-                };
-
-                let data = if instruction_type == PARSED_DATA_FIELD_BURN_CHECKED {
-                    let decimals = decimals.unwrap(); // Safe because we set it above for burnChecked
-                    if is_spl_token_program {
-                        spl_token_interface::instruction::TokenInstruction::BurnChecked {
-                            amount,
-                            decimals,
-                        }
-                        .pack()
-                    } else {
-                        spl_token_2022_interface::instruction::TokenInstruction::BurnChecked {
-                            amount,
-                            decimals,
-                        }
-                        .pack()
-                    }
-                } else if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::Burn { amount }.pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::Burn { amount }.pack()
-                };
-
-                Ok(CompiledInstruction { program_id_index, accounts, data })
+            PARSED_DATA_FIELD_BURN_CHECKED => {
+                let (amount, decimals) = token_amount()?;
+                (
+                    pack!(BurnChecked { amount, decimals }),
+                    vec![
+                        index(PARSED_DATA_FIELD_ACCOUNT)?,
+                        index(PARSED_DATA_FIELD_MINT)?,
+                        index(PARSED_DATA_FIELD_AUTHORITY)?,
+                    ],
+                )
             }
-            PARSED_DATA_FIELD_CLOSE_ACCOUNT => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let destination = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DESTINATION)?;
-                let authority = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
-
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-                let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
-                let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
-
-                let data = if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::CloseAccount.pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::CloseAccount.pack()
+            PARSED_DATA_FIELD_BURN => {
+                let amount = Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT).unwrap_or(0);
+                let account_idx = index(PARSED_DATA_FIELD_ACCOUNT)?;
+                let authority_idx = index(PARSED_DATA_FIELD_AUTHORITY)?;
+                // Parsed non-checked burns may omit the mint, or name one missing from the key
+                // map; fall back to [source, authority].
+                let accounts = match index(PARSED_DATA_FIELD_MINT) {
+                    Ok(mint_idx) => vec![account_idx, mint_idx, authority_idx],
+                    Err(_) => vec![account_idx, authority_idx],
                 };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![account_idx, destination_idx, authority_idx],
-                    data,
-                })
+                (pack!(Burn { amount }), accounts)
             }
+            PARSED_DATA_FIELD_CLOSE_ACCOUNT => (
+                pack!(CloseAccount),
+                vec![
+                    index(PARSED_DATA_FIELD_ACCOUNT)?,
+                    index(PARSED_DATA_FIELD_DESTINATION)?,
+                    index(PARSED_DATA_FIELD_OWNER)?,
+                ],
+            ),
             PARSED_DATA_FIELD_APPROVE => {
-                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
-                let delegate = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DELEGATE)?;
-                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
                 let amount = Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT)?;
-
-                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
-                let delegate_idx = Self::get_account_index(account_keys_hashmap, &delegate)?;
-                let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
-
-                let data = if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::Approve { amount }.pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::Approve { amount }
-                        .pack()
-                };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![source_idx, delegate_idx, owner_idx],
-                    data,
-                })
+                (
+                    pack!(Approve { amount }),
+                    vec![
+                        index(PARSED_DATA_FIELD_SOURCE)?,
+                        index(PARSED_DATA_FIELD_DELEGATE)?,
+                        index(PARSED_DATA_FIELD_OWNER)?,
+                    ],
+                )
             }
             PARSED_DATA_FIELD_APPROVE_CHECKED => {
-                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
-                let delegate = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DELEGATE)?;
-                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
-                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
-
-                let token_amount = info.get(PARSED_DATA_FIELD_TOKEN_AMOUNT).ok_or_else(|| {
-                    KoraError::SerializationError("Missing 'tokenAmount' field".to_string())
-                })?;
-                let amount = Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_AMOUNT)?;
-                let decimals =
-                    Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_DECIMALS)? as u8;
-
-                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
-                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
-                let delegate_idx = Self::get_account_index(account_keys_hashmap, &delegate)?;
-                let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
-
-                let data = if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::ApproveChecked {
-                        amount,
-                        decimals,
-                    }
-                    .pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::ApproveChecked {
-                        amount,
-                        decimals,
-                    }
-                    .pack()
-                };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![source_idx, mint_idx, delegate_idx, owner_idx],
-                    data,
-                })
+                let (amount, decimals) = token_amount()?;
+                (
+                    pack!(ApproveChecked { amount, decimals }),
+                    vec![
+                        index(PARSED_DATA_FIELD_SOURCE)?,
+                        index(PARSED_DATA_FIELD_MINT)?,
+                        index(PARSED_DATA_FIELD_DELEGATE)?,
+                        index(PARSED_DATA_FIELD_OWNER)?,
+                    ],
+                )
             }
-            PARSED_DATA_FIELD_REVOKE => {
-                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
-                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
-
-                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
-                let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
-
-                let data = if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::Revoke.pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::Revoke.pack()
-                };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![source_idx, owner_idx],
-                    data,
-                })
-            }
+            PARSED_DATA_FIELD_REVOKE => (
+                pack!(Revoke),
+                vec![index(PARSED_DATA_FIELD_SOURCE)?, index(PARSED_DATA_FIELD_OWNER)?],
+            ),
             PARSED_DATA_FIELD_SET_AUTHORITY => {
                 // The parser names the target field by authority level: `account` for
                 // AccountOwner/CloseAccount, `mint` for all mint-level authority types
@@ -1791,20 +1675,9 @@ impl IxUtils {
                 } else {
                     PARSED_DATA_FIELD_MINT
                 };
-                let account = Self::get_field_as_pubkey(info, target_field)?;
-                let current_authority =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_AUTHORITY)?;
-
-                let new_authority = match info.get(PARSED_DATA_FIELD_NEW_AUTHORITY) {
-                    Some(v) if !v.is_null() => {
-                        Some(Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NEW_AUTHORITY)?)
-                    }
-                    _ => None,
-                };
-
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-                let current_authority_idx =
-                    Self::get_account_index(account_keys_hashmap, &current_authority)?;
+                let account_idx = index(target_field)?;
+                let current_authority_idx = index(PARSED_DATA_FIELD_AUTHORITY)?;
+                let new_authority = optional_pubkey(PARSED_DATA_FIELD_NEW_AUTHORITY)?;
 
                 // authority_type is dropped during parsing and never read downstream; any
                 // valid variant lets TokenInstruction::unpack succeed so the policy gate fires.
@@ -1823,80 +1696,33 @@ impl IxUtils {
                     }
                     .pack()
                 };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![account_idx, current_authority_idx],
-                    data,
-                })
+                (data, vec![account_idx, current_authority_idx])
             }
             PARSED_DATA_FIELD_MINT_TO => {
-                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let mint_authority =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT_AUTHORITY)?;
                 let amount = Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT)?;
-
-                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-                let mint_authority_idx =
-                    Self::get_account_index(account_keys_hashmap, &mint_authority)?;
-
-                let data = if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::MintTo { amount }.pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::MintTo { amount }
-                        .pack()
-                };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![mint_idx, account_idx, mint_authority_idx],
-                    data,
-                })
+                (
+                    pack!(MintTo { amount }),
+                    vec![
+                        index(PARSED_DATA_FIELD_MINT)?,
+                        index(PARSED_DATA_FIELD_ACCOUNT)?,
+                        index(PARSED_DATA_FIELD_MINT_AUTHORITY)?,
+                    ],
+                )
             }
             PARSED_DATA_FIELD_MINT_TO_CHECKED => {
-                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let mint_authority =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT_AUTHORITY)?;
-
-                let token_amount = info.get(PARSED_DATA_FIELD_TOKEN_AMOUNT).ok_or_else(|| {
-                    KoraError::SerializationError("Missing 'tokenAmount' field".to_string())
-                })?;
-                let amount = Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_AMOUNT)?;
-                let decimals =
-                    Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_DECIMALS)? as u8;
-
-                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-                let mint_authority_idx =
-                    Self::get_account_index(account_keys_hashmap, &mint_authority)?;
-
-                let data = if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::MintToChecked {
-                        amount,
-                        decimals,
-                    }
-                    .pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::MintToChecked {
-                        amount,
-                        decimals,
-                    }
-                    .pack()
-                };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![mint_idx, account_idx, mint_authority_idx],
-                    data,
-                })
+                let (amount, decimals) = token_amount()?;
+                (
+                    pack!(MintToChecked { amount, decimals }),
+                    vec![
+                        index(PARSED_DATA_FIELD_MINT)?,
+                        index(PARSED_DATA_FIELD_ACCOUNT)?,
+                        index(PARSED_DATA_FIELD_MINT_AUTHORITY)?,
+                    ],
+                )
             }
             PARSED_DATA_FIELD_INITIALIZE_MINT | PARSED_DATA_FIELD_INITIALIZE_MINT2 => {
-                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
-                let mint_authority =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT_AUTHORITY)?;
+                let mint_idx = index(PARSED_DATA_FIELD_MINT)?;
+                let mint_authority = pubkey(PARSED_DATA_FIELD_MINT_AUTHORITY)?;
                 let decimals =
                     u8::try_from(Self::get_field_as_u64(info, PARSED_DATA_FIELD_DECIMALS)?)
                         .map_err(|_| {
@@ -1904,115 +1730,49 @@ impl IxUtils {
                                 "Mint 'decimals' exceeds u8 range".to_string(),
                             )
                         })?;
-                let freeze_authority = match info.get(PARSED_DATA_FIELD_FREEZE_AUTHORITY) {
-                    Some(v) if !v.is_null() => {
-                        Some(Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_FREEZE_AUTHORITY)?)
-                    }
-                    _ => None,
-                };
-
-                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
+                let freeze_authority = optional_pubkey(PARSED_DATA_FIELD_FREEZE_AUTHORITY)?.into();
 
                 if instruction_type == PARSED_DATA_FIELD_INITIALIZE_MINT {
-                    let rent = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_RENT_SYSVAR)?;
-                    let rent_idx = Self::get_account_index(account_keys_hashmap, &rent)?;
-                    let data = if is_spl_token_program {
-                        spl_token_interface::instruction::TokenInstruction::InitializeMint {
-                            decimals,
-                            mint_authority,
-                            freeze_authority: freeze_authority.into(),
-                        }
-                        .pack()
-                    } else {
-                        spl_token_2022_interface::instruction::TokenInstruction::InitializeMint {
-                            decimals,
-                            mint_authority,
-                            freeze_authority: freeze_authority.into(),
-                        }
-                        .pack()
-                    };
-                    Ok(CompiledInstruction {
-                        program_id_index,
-                        accounts: vec![mint_idx, rent_idx],
-                        data,
-                    })
+                    let rent_idx = index(PARSED_DATA_FIELD_RENT_SYSVAR)?;
+                    (
+                        pack!(InitializeMint { decimals, mint_authority, freeze_authority }),
+                        vec![mint_idx, rent_idx],
+                    )
                 } else {
-                    let data = if is_spl_token_program {
-                        spl_token_interface::instruction::TokenInstruction::InitializeMint2 {
-                            decimals,
-                            mint_authority,
-                            freeze_authority: freeze_authority.into(),
-                        }
-                        .pack()
-                    } else {
-                        spl_token_2022_interface::instruction::TokenInstruction::InitializeMint2 {
-                            decimals,
-                            mint_authority,
-                            freeze_authority: freeze_authority.into(),
-                        }
-                        .pack()
-                    };
-                    Ok(CompiledInstruction { program_id_index, accounts: vec![mint_idx], data })
+                    (
+                        pack!(InitializeMint2 { decimals, mint_authority, freeze_authority }),
+                        vec![mint_idx],
+                    )
                 }
             }
-            PARSED_DATA_FIELD_INITIALIZE_ACCOUNT
-            | PARSED_DATA_FIELD_INITIALIZE_ACCOUNT2
-            | PARSED_DATA_FIELD_INITIALIZE_ACCOUNT3 => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
-                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
-
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
-
-                let (data, accounts) = match instruction_type {
-                    PARSED_DATA_FIELD_INITIALIZE_ACCOUNT => {
-                        // InitializeAccount: [account, mint, owner, rent]
-                        // Owner is in accounts, not data
-                        let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
-                        (vec![1], vec![account_idx, mint_idx, owner_idx])
-                    }
-                    PARSED_DATA_FIELD_INITIALIZE_ACCOUNT2 => {
-                        // InitializeAccount2: [account, mint, rent], owner in data
-                        let rent = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_RENT_SYSVAR)?;
-                        let rent_idx = Self::get_account_index(account_keys_hashmap, &rent)?;
-                        let data = if is_spl_token_program {
-                            spl_token_interface::instruction::TokenInstruction::InitializeAccount2 {
-                                owner,
-                            }
-                            .pack()
-                        } else {
-                            spl_token_2022_interface::instruction::TokenInstruction::InitializeAccount2 {
-                                owner,
-                            }
-                            .pack()
-                        };
-                        (data, vec![account_idx, mint_idx, rent_idx])
-                    }
-                    PARSED_DATA_FIELD_INITIALIZE_ACCOUNT3 => {
-                        // InitializeAccount3: [account, mint], owner in data
-                        let data = if is_spl_token_program {
-                            spl_token_interface::instruction::TokenInstruction::InitializeAccount3 {
-                                owner,
-                            }
-                            .pack()
-                        } else {
-                            spl_token_2022_interface::instruction::TokenInstruction::InitializeAccount3 {
-                                owner,
-                            }
-                            .pack()
-                        };
-                        (data, vec![account_idx, mint_idx])
-                    }
-                    _ => unreachable!(),
-                };
-
-                Ok(CompiledInstruction { program_id_index, accounts, data })
+            PARSED_DATA_FIELD_INITIALIZE_ACCOUNT => (
+                pack!(InitializeAccount),
+                vec![
+                    index(PARSED_DATA_FIELD_ACCOUNT)?,
+                    index(PARSED_DATA_FIELD_MINT)?,
+                    index(PARSED_DATA_FIELD_OWNER)?,
+                ],
+            ),
+            PARSED_DATA_FIELD_INITIALIZE_ACCOUNT2 => {
+                let owner = pubkey(PARSED_DATA_FIELD_OWNER)?;
+                (
+                    pack!(InitializeAccount2 { owner }),
+                    vec![
+                        index(PARSED_DATA_FIELD_ACCOUNT)?,
+                        index(PARSED_DATA_FIELD_MINT)?,
+                        index(PARSED_DATA_FIELD_RENT_SYSVAR)?,
+                    ],
+                )
+            }
+            PARSED_DATA_FIELD_INITIALIZE_ACCOUNT3 => {
+                let owner = pubkey(PARSED_DATA_FIELD_OWNER)?;
+                (
+                    pack!(InitializeAccount3 { owner }),
+                    vec![index(PARSED_DATA_FIELD_ACCOUNT)?, index(PARSED_DATA_FIELD_MINT)?],
+                )
             }
             PARSED_DATA_FIELD_INITIALIZE_MULTISIG | PARSED_DATA_FIELD_INITIALIZE_MULTISIG2 => {
-                let multisig = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MULTISIG_ACCOUNT)?;
-                let multisig_idx = Self::get_account_index(account_keys_hashmap, &multisig)?;
-
+                let multisig_idx = index(PARSED_DATA_FIELD_MULTISIG_ACCOUNT)?;
                 let m = u8::try_from(Self::get_field_as_u64(info, PARSED_DATA_FIELD_M)?)
                     .map_err(|_| {
                         KoraError::SerializationError(
@@ -2046,88 +1806,34 @@ impl IxUtils {
 
                 let (data, mut accounts) =
                     if instruction_type == PARSED_DATA_FIELD_INITIALIZE_MULTISIG {
-                        let rent = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_RENT_SYSVAR)?;
-                        let rent_idx = Self::get_account_index(account_keys_hashmap, &rent)?;
-                        let data = if is_spl_token_program {
-                            spl_token_interface::instruction::TokenInstruction::InitializeMultisig {
-                                m,
-                            }
-                            .pack()
-                        } else {
-                            spl_token_2022_interface::instruction::TokenInstruction::InitializeMultisig {
-                                m,
-                            }
-                            .pack()
-                        };
-                        (data, vec![multisig_idx, rent_idx])
+                        (
+                            pack!(InitializeMultisig { m }),
+                            vec![multisig_idx, index(PARSED_DATA_FIELD_RENT_SYSVAR)?],
+                        )
                     } else {
-                        let data = if is_spl_token_program {
-                            spl_token_interface::instruction::TokenInstruction::InitializeMultisig2 {
-                                m,
-                            }
-                            .pack()
-                        } else {
-                            spl_token_2022_interface::instruction::TokenInstruction::InitializeMultisig2 {
-                                m,
-                            }
-                            .pack()
-                        };
-                        (data, vec![multisig_idx])
+                        (pack!(InitializeMultisig2 { m }), vec![multisig_idx])
                     };
                 accounts.extend(signer_indices);
-
-                Ok(CompiledInstruction { program_id_index, accounts, data })
+                (data, accounts)
             }
-            PARSED_DATA_FIELD_FREEZE_ACCOUNT => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
-                let freeze_authority =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_FREEZE_AUTHORITY)?;
-
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
-                let freeze_authority_idx =
-                    Self::get_account_index(account_keys_hashmap, &freeze_authority)?;
-
-                let data = if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::FreezeAccount.pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::FreezeAccount.pack()
-                };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![account_idx, mint_idx, freeze_authority_idx],
-                    data,
-                })
-            }
-            PARSED_DATA_FIELD_THAW_ACCOUNT => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
-                let freeze_authority =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_FREEZE_AUTHORITY)?;
-
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
-                let freeze_authority_idx =
-                    Self::get_account_index(account_keys_hashmap, &freeze_authority)?;
-
-                let data = if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::ThawAccount.pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::ThawAccount.pack()
-                };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![account_idx, mint_idx, freeze_authority_idx],
-                    data,
-                })
-            }
+            PARSED_DATA_FIELD_FREEZE_ACCOUNT => (
+                pack!(FreezeAccount),
+                vec![
+                    index(PARSED_DATA_FIELD_ACCOUNT)?,
+                    index(PARSED_DATA_FIELD_MINT)?,
+                    index(PARSED_DATA_FIELD_FREEZE_AUTHORITY)?,
+                ],
+            ),
+            PARSED_DATA_FIELD_THAW_ACCOUNT => (
+                pack!(ThawAccount),
+                vec![
+                    index(PARSED_DATA_FIELD_ACCOUNT)?,
+                    index(PARSED_DATA_FIELD_MINT)?,
+                    index(PARSED_DATA_FIELD_FREEZE_AUTHORITY)?,
+                ],
+            ),
             PARSED_DATA_FIELD_GET_ACCOUNT_DATA_SIZE => {
-                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
-                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
-
+                let mint_idx = index(PARSED_DATA_FIELD_MINT)?;
                 let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::GetAccountDataSize.pack()
                 } else {
@@ -2137,46 +1843,13 @@ impl IxUtils {
                     }
                     .pack()
                 };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![mint_idx],
-                    data,
-                })
+                (data, vec![mint_idx])
             }
             PARSED_DATA_FIELD_INITIALIZE_IMMUTABLE_OWNER => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-
-                let data = if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::InitializeImmutableOwner
-                        .pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::InitializeImmutableOwner
-                        .pack()
-                };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![account_idx],
-                    data,
-                })
+                (pack!(InitializeImmutableOwner), vec![index(PARSED_DATA_FIELD_ACCOUNT)?])
             }
             PARSED_DATA_FIELD_SYNC_NATIVE => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-
-                let data = if is_spl_token_program {
-                    spl_token_interface::instruction::TokenInstruction::SyncNative.pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::SyncNative.pack()
-                };
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![account_idx],
-                    data,
-                })
+                (pack!(SyncNative), vec![index(PARSED_DATA_FIELD_ACCOUNT)?])
             }
             PARSED_DATA_FIELD_BATCH => {
                 let inner_instructions = info
@@ -2215,16 +1888,17 @@ impl IxUtils {
                     data.extend_from_slice(&inner.data);
                     accounts.extend_from_slice(&inner.accounts);
                 }
-
-                Ok(CompiledInstruction { program_id_index, accounts, data })
+                (data, accounts)
             }
             _ => {
-                Err(KoraError::InvalidTransaction(format!(
+                return Err(KoraError::InvalidTransaction(format!(
                     "Unrecognized SPL Token instruction type '{}' in CPI — cannot validate fee payer policy",
                     instruction_type
                 )))
             }
-        }
+        };
+
+        Ok(CompiledInstruction { program_id_index, accounts, data })
     }
 
     pub fn parse_system_instructions(
