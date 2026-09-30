@@ -85,31 +85,13 @@ impl BundleValidator {
             encoding: Some("base64".to_string()),
         };
 
-        let pre_execution_accounts_configs =
-            (0..bundle_size)
-                .map(|tx_idx| {
-                    if signed_set.contains(&tx_idx) {
-                        Some(fee_payer_account.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<Option<JitoBundleAccountConfig>>>();
-
-        let post_execution_accounts_configs =
-            (0..bundle_size)
-                .map(|tx_idx| {
-                    if signed_set.contains(&tx_idx) {
-                        Some(fee_payer_account.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<Option<JitoBundleAccountConfig>>>();
+        let accounts_configs: Vec<Option<JitoBundleAccountConfig>> = (0..bundle_size)
+            .map(|tx_idx| signed_set.contains(&tx_idx).then(|| fee_payer_account.clone()))
+            .collect();
 
         JitoBundleSimulationConfig {
-            pre_execution_accounts_configs: Some(pre_execution_accounts_configs),
-            post_execution_accounts_configs: Some(post_execution_accounts_configs),
+            pre_execution_accounts_configs: Some(accounts_configs.clone()),
+            post_execution_accounts_configs: Some(accounts_configs),
             transaction_encoding: Some("base64".to_string()),
             skip_sig_verify: Some(skip_sig_verify),
             replace_recent_blockhash: None,
