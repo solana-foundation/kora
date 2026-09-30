@@ -276,15 +276,15 @@ impl TransactionValidator {
         Ok(())
     }
 
-    fn validate_create_account_owner(&self, owner: &Pubkey) -> Result<(), KoraError> {
+    fn validate_owner_program(&self, instruction: &str, owner: &Pubkey) -> Result<(), KoraError> {
         if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
             return Err(KoraError::InvalidTransaction(format!(
-                "CreateAccount owner program {owner} is not in the allowed programs list"
+                "{instruction} owner program {owner} is not in the allowed programs list"
             )));
         }
         if self.disallowed_accounts.contains(owner) {
             return Err(KoraError::InvalidTransaction(format!(
-                "CreateAccount owner program {owner} is in the disallowed accounts list"
+                "{instruction} owner program {owner} is in the disallowed accounts list"
             )));
         }
         Ok(())
@@ -322,16 +322,7 @@ impl TransactionValidator {
             system_instructions.get(&ParsedSystemInstructionType::SystemAssign).unwrap_or(&vec![])
         {
             if let ParsedSystemInstructionData::SystemAssign { owner, .. } = instruction {
-                if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
-                    return Err(KoraError::InvalidTransaction(format!(
-                        "Assign owner program {owner} is not in the allowed programs list"
-                    )));
-                }
-                if self.disallowed_accounts.contains(owner) {
-                    return Err(KoraError::InvalidTransaction(format!(
-                        "Assign owner program {owner} is in the disallowed accounts list"
-                    )));
-                }
+                self.validate_owner_program("Assign", owner)?;
             }
         }
 
@@ -363,7 +354,7 @@ impl TransactionValidator {
                     ));
                 }
 
-                self.validate_create_account_owner(owner)?;
+                self.validate_owner_program("CreateAccount", owner)?;
             }
         }
 
