@@ -182,44 +182,29 @@ impl BundleValidator {
         tx_result: &JitoBundleSimulationTransactionResult,
         max_allowed_lamports: u64,
     ) -> Result<(), KoraError> {
-        let pre_accounts = tx_result.pre_execution_accounts.as_ref().ok_or_else(|| {
+        let error = |problem: &str| {
             KoraError::InvalidTransaction(format!(
-                "Bundle simulation did not return pre-execution accounts for signed transaction index {}",
-                signed_idx
+                "Bundle simulation {problem} for signed transaction index {signed_idx}"
             ))
-        })?;
-        let post_accounts = tx_result.post_execution_accounts.as_ref().ok_or_else(|| {
-            KoraError::InvalidTransaction(format!(
-                "Bundle simulation did not return post-execution accounts for signed transaction index {}",
-                signed_idx
-            ))
-        })?;
+        };
+        let pre_accounts = tx_result
+            .pre_execution_accounts
+            .as_ref()
+            .ok_or_else(|| error("did not return pre-execution accounts"))?;
+        let post_accounts = tx_result
+            .post_execution_accounts
+            .as_ref()
+            .ok_or_else(|| error("did not return post-execution accounts"))?;
 
-        let pre_account = pre_accounts.first().ok_or_else(|| {
-            KoraError::InvalidTransaction(format!(
-                "Bundle simulation returned empty pre-execution accounts for signed transaction index {}",
-                signed_idx
-            ))
-        })?;
-        let post_account = post_accounts.first().ok_or_else(|| {
-            KoraError::InvalidTransaction(format!(
-                "Bundle simulation returned empty post-execution accounts for signed transaction index {}",
-                signed_idx
-            ))
-        })?;
+        let pre_account =
+            pre_accounts.first().ok_or_else(|| error("returned empty pre-execution accounts"))?;
+        let post_account =
+            post_accounts.first().ok_or_else(|| error("returned empty post-execution accounts"))?;
 
-        let pre_lamports = Self::extract_lamports(pre_account).ok_or_else(|| {
-            KoraError::InvalidTransaction(format!(
-                "Bundle simulation pre-execution lamports missing for signed transaction index {}",
-                signed_idx
-            ))
-        })?;
-        let post_lamports = Self::extract_lamports(post_account).ok_or_else(|| {
-            KoraError::InvalidTransaction(format!(
-                "Bundle simulation post-execution lamports missing for signed transaction index {}",
-                signed_idx
-            ))
-        })?;
+        let pre_lamports = Self::extract_lamports(pre_account)
+            .ok_or_else(|| error("pre-execution lamports missing"))?;
+        let post_lamports = Self::extract_lamports(post_account)
+            .ok_or_else(|| error("post-execution lamports missing"))?;
 
         let observed_lamport_outflow = pre_lamports.saturating_sub(post_lamports);
 
