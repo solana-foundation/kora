@@ -20,9 +20,6 @@ impl CacheValidator {
             .await
             .map_err(|e| format!("Redis connection test failed: {e}"))?;
 
-        drop(conn);
-        drop(pool);
-
         Ok(())
     }
 
