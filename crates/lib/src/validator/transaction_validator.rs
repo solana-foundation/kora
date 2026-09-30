@@ -2,16 +2,9 @@ use crate::{
     config::{Config, FeePayerPolicy, ProgramsConfig},
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation, TransactionFeeUtil},
-    token::{
-        interface::TokenMint,
-        token::{TokenUtil, TransferHookValidationFlow},
-    },
+    token::{interface::TokenMint, token::TokenUtil},
     transaction::{
-        ParsedALTInstructionData, ParsedALTInstructionType,
-        ParsedBpfLoaderUpgradeableInstructionData, ParsedBpfLoaderUpgradeableInstructionType,
-        ParsedLoaderV4InstructionData, ParsedLoaderV4InstructionType, ParsedSPLInstructionData,
-        ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
-        Token2022AccountUsagePolicy, VersionedTransactionResolved,
+        ParsedSPLInstructionData, ParsedSystemInstructionData, VersionedTransactionResolved,
     },
     validator::parse_pubkey_set,
 };
@@ -21,6 +14,13 @@ use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 use std::collections::HashSet;
 
 use crate::fee::price::PriceModel;
+
+mod alt;
+mod bpf_loader_upgradeable;
+mod loader_v4;
+mod spl_token;
+mod system;
+mod token_2022;
 
 pub struct TransactionValidator {
     fee_payer_pubkey: Pubkey,
@@ -109,36 +109,6 @@ impl TransactionValidator {
         self.validate_transfer_amounts(config, transaction_resolved, rpc_client).await?;
         self.validate_disallowed_accounts(transaction_resolved)?;
         self.validate_fee_payer_usage(config, transaction_resolved)?;
-
-        Ok(())
-    }
-
-    pub(crate) fn validate_token2022_transfer_hook_signing_policies(
-        &self,
-        config: &Config,
-        transaction_resolved: &mut VersionedTransactionResolved,
-        transfer_hook_validation_flow: TransferHookValidationFlow,
-    ) -> Result<(), KoraError> {
-        if !TokenUtil::should_reject_mutable_transfer_hook(config, transfer_hook_validation_flow) {
-            return Ok(());
-        }
-
-        let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
-
-        deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenInitializeTransferHook,
-            ParsedSPLInstructionData::SplTokenInitializeTransferHook {
-                authority: Some(authority),
-                ..
-            } => *authority == self.fee_payer_pubkey,
-            "Fee payer cannot initialize mutable Token2022 TransferHook authority");
-
-        deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenTransferHookUpdate,
-            ParsedSPLInstructionData::SplTokenTransferHookUpdate {
-                authority,
-                multisig_signers,
-                ..
-            } => self.fee_payer_signs(authority, multisig_signers),
-            "Fee payer cannot authorize mutable Token2022 TransferHook updates");
 
         Ok(())
     }
@@ -276,20 +246,6 @@ impl TransactionValidator {
         *authority == self.fee_payer_pubkey || multisig_signers.contains(&self.fee_payer_pubkey)
     }
 
-    fn validate_owner_program(&self, instruction: &str, owner: &Pubkey) -> Result<(), KoraError> {
-        if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
-            return Err(KoraError::InvalidTransaction(format!(
-                "{instruction} owner program {owner} is not in the allowed programs list"
-            )));
-        }
-        if self.disallowed_accounts.contains(owner) {
-            return Err(KoraError::InvalidTransaction(format!(
-                "{instruction} owner program {owner} is in the disallowed accounts list"
-            )));
-        }
-        Ok(())
-    }
-
     fn validate_fee_payer_usage(
         &self,
         config: &Config,
@@ -297,402 +253,22 @@ impl TransactionValidator {
     ) -> Result<(), KoraError> {
         self.validate_ata_create_instructions(transaction_resolved)?;
 
-        let system_instructions = transaction_resolved.get_or_parse_system_instructions()?;
-
-        if !self.allow_durable_transactions
-            && system_instructions
-                .contains_key(&ParsedSystemInstructionType::SystemAdvanceNonceAccount)
-        {
-            return Err(KoraError::InvalidTransaction(
-                "Durable transactions (nonce-based) are not allowed".to_string(),
-            ));
-        }
-
-        deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemTransfer,
-            ParsedSystemInstructionData::SystemTransfer { sender, .. } =>
-            *sender == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.system.allow_transfer,
-            "Fee payer cannot be used for 'System Transfer'");
-
-        deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemAssign,
-            ParsedSystemInstructionData::SystemAssign { authority, .. } =>
-            *authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.system.allow_assign,
-            "Fee payer cannot be used for 'System Assign'");
-
-        // The owner allowlist/disallowed check holds for every Assign owner in a Kora-signed tx,
-        // not only when the fee payer is the reassigned account (parity with CreateAccount).
-        for instruction in
-            system_instructions.get(&ParsedSystemInstructionType::SystemAssign).unwrap_or(&vec![])
-        {
-            if let ParsedSystemInstructionData::SystemAssign { owner, .. } = instruction {
-                self.validate_owner_program("Assign", owner)?;
-            }
-        }
-
-        deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemAllocate,
-            ParsedSystemInstructionData::SystemAllocate { account } =>
-            *account == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.system.allow_allocate,
-            "Fee payer cannot be used for 'System Allocate'");
-
-        // allow_create_account gates Kora participating as the funder (payer), the seeded base
-        // signer, or the account being created (prefund brick). The owner allowlist/blocklist
-        // holds for every CreateAccount owner in a Kora-signed tx regardless of Kora's role.
-        for instruction in system_instructions
-            .get(&ParsedSystemInstructionType::SystemCreateAccount)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedSystemInstructionData::SystemCreateAccount {
-                payer,
-                owner,
-                base,
-                new_account,
-                ..
-            } = instruction
-            {
-                let fee_payer_participates = *payer == self.fee_payer_pubkey
-                    || *base == Some(self.fee_payer_pubkey)
-                    || *new_account == self.fee_payer_pubkey;
-                if fee_payer_participates && !self.fee_payer_policy.system.allow_create_account {
-                    return Err(KoraError::InvalidTransaction(
-                        "Fee payer cannot be used for 'System Create Account'".to_string(),
-                    ));
-                }
-
-                self.validate_owner_program("CreateAccount", owner)?;
-            }
-        }
-
-        deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemInitializeNonceAccount,
-            ParsedSystemInstructionData::SystemInitializeNonceAccount { nonce_authority, .. } =>
-            *nonce_authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.system.nonce.allow_initialize,
-            "Fee payer cannot be used for 'System Initialize Nonce Account'");
-
-        deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemAdvanceNonceAccount,
-            ParsedSystemInstructionData::SystemAdvanceNonceAccount { nonce_authority, .. } =>
-            *nonce_authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.system.nonce.allow_advance,
-            "Fee payer cannot be used for 'System Advance Nonce Account'");
-
-        deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemAuthorizeNonceAccount,
-            ParsedSystemInstructionData::SystemAuthorizeNonceAccount { nonce_authority, .. } =>
-            *nonce_authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.system.nonce.allow_authorize,
-            "Fee payer cannot be used for 'System Authorize Nonce Account'");
-
-        // Note: SystemUpgradeNonceAccount not validated - no authority parameter
-
-        deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemWithdrawNonceAccount,
-            ParsedSystemInstructionData::SystemWithdrawNonceAccount { nonce_authority, .. } =>
-            *nonce_authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.system.nonce.allow_withdraw,
-            "Fee payer cannot be used for 'System Withdraw Nonce Account'");
-
-        {
-            let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenTransfer,
-                ParsedSPLInstructionData::SplTokenTransfer { owner, multisig_signers, is_2022, .. } =>
-                self.fee_payer_signs(owner, multisig_signers),
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_transfer, "Transfer");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenApprove,
-                ParsedSPLInstructionData::SplTokenApprove { owner, multisig_signers, is_2022, .. } =>
-                self.fee_payer_signs(owner, multisig_signers),
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_approve, "Approve");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenBurn,
-                ParsedSPLInstructionData::SplTokenBurn { owner, multisig_signers, is_2022 } =>
-                self.fee_payer_signs(owner, multisig_signers),
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_burn, "Burn");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenCloseAccount,
-                ParsedSPLInstructionData::SplTokenCloseAccount { owner, multisig_signers, is_2022, .. } =>
-                self.fee_payer_signs(owner, multisig_signers),
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_close_account,
-                "Close Account");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenRevoke,
-                ParsedSPLInstructionData::SplTokenRevoke { owner, multisig_signers, is_2022 } =>
-                self.fee_payer_signs(owner, multisig_signers),
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_revoke, "Revoke");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenSetAuthority,
-                ParsedSPLInstructionData::SplTokenSetAuthority { authority, multisig_signers, is_2022, .. } =>
-                self.fee_payer_signs(authority, multisig_signers),
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_set_authority,
-                "SetAuthority");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenMintTo,
-                ParsedSPLInstructionData::SplTokenMintTo { mint_authority, multisig_signers, is_2022 } =>
-                self.fee_payer_signs(mint_authority, multisig_signers),
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_mint_to, "MintTo");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenInitializeMint,
-                ParsedSPLInstructionData::SplTokenInitializeMint { mint_authority, is_2022, .. } =>
-                *mint_authority == self.fee_payer_pubkey,
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_initialize_mint,
-                "InitializeMint");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenInitializeAccount,
-                ParsedSPLInstructionData::SplTokenInitializeAccount { owner, is_2022 } =>
-                *owner == self.fee_payer_pubkey,
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_initialize_account,
-                "InitializeAccount");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenInitializeMultisig,
-                ParsedSPLInstructionData::SplTokenInitializeMultisig { signers, is_2022 } =>
-                signers.contains(&self.fee_payer_pubkey),
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_initialize_multisig,
-                "InitializeMultisig");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenFreezeAccount,
-                ParsedSPLInstructionData::SplTokenFreezeAccount { freeze_authority, multisig_signers, is_2022 } =>
-                self.fee_payer_signs(freeze_authority, multisig_signers),
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_freeze_account,
-                "FreezeAccount");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenThawAccount,
-                ParsedSPLInstructionData::SplTokenThawAccount { freeze_authority, multisig_signers, is_2022 } =>
-                self.fee_payer_signs(freeze_authority, multisig_signers),
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_thaw_account,
-                "ThawAccount");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenWithdrawExcessLamports,
-                ParsedSPLInstructionData::SplTokenWithdrawExcessLamports { owner, multisig_signers, is_2022 } =>
-                self.fee_payer_signs(owner, multisig_signers),
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_withdraw_excess_lamports,
-                "WithdrawExcessLamports");
-
-            deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenUnwrapLamports,
-                ParsedSPLInstructionData::SplTokenUnwrapLamports { owner, multisig_signers, is_2022 } =>
-                self.fee_payer_signs(owner, multisig_signers),
-                unless token_policy(self.fee_payer_policy, *is_2022).allow_unwrap_lamports,
-                "UnwrapLamports");
-        }
-
-        let alt_instructions = transaction_resolved.get_or_parse_alt_instructions()?;
-
-        deny_fee_payer!(alt_instructions, ParsedALTInstructionType::AltCreateLookupTable,
-            ParsedALTInstructionData::AltCreateLookupTable {
-                lookup_table_authority,
-                payer_account,
-                ..
-            } => (*lookup_table_authority == self.fee_payer_pubkey
-                || *payer_account == self.fee_payer_pubkey),
-            unless self.fee_payer_policy.alt.allow_create,
-            "Fee payer cannot be used for 'ALT CreateLookupTable'");
-
-        deny_fee_payer!(alt_instructions, ParsedALTInstructionType::AltExtendLookupTable,
-            ParsedALTInstructionData::AltExtendLookupTable {
-                lookup_table_authority,
-                payer_account,
-                ..
-            } => (*lookup_table_authority == self.fee_payer_pubkey
-                || payer_account.is_some_and(|payer| payer == self.fee_payer_pubkey)),
-            unless self.fee_payer_policy.alt.allow_extend,
-            "Fee payer cannot be used for 'ALT ExtendLookupTable'");
-
-        deny_fee_payer!(alt_instructions, ParsedALTInstructionType::AltFreezeLookupTable,
-            ParsedALTInstructionData::AltFreezeLookupTable { lookup_table_authority, .. } =>
-            *lookup_table_authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.alt.allow_freeze,
-            "Fee payer cannot be used for 'ALT FreezeLookupTable'");
-
-        deny_fee_payer!(alt_instructions, ParsedALTInstructionType::AltDeactivateLookupTable,
-            ParsedALTInstructionData::AltDeactivateLookupTable { lookup_table_authority, .. } =>
-            *lookup_table_authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.alt.allow_deactivate,
-            "Fee payer cannot be used for 'ALT DeactivateLookupTable'");
-
-        deny_fee_payer!(alt_instructions, ParsedALTInstructionType::AltCloseLookupTable,
-            ParsedALTInstructionData::AltCloseLookupTable { lookup_table_authority, .. } =>
-            *lookup_table_authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.alt.allow_close,
-            "Fee payer cannot be used for 'ALT CloseLookupTable'");
-
-        // Validate Loader-v4 (BPF loader successor) instructions.
-        let loader_v4_instructions = transaction_resolved.get_or_parse_loader_v4_instructions()?;
-
-        deny_fee_payer!(loader_v4_instructions, ParsedLoaderV4InstructionType::Write,
-            ParsedLoaderV4InstructionData::Write { authority, .. } =>
-            *authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.loader_v4.allow_write,
-            "Fee payer cannot be used for 'Loader-v4 Write'");
-
-        deny_fee_payer!(loader_v4_instructions, ParsedLoaderV4InstructionType::Copy,
-            ParsedLoaderV4InstructionData::Copy { authority, .. } =>
-            *authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.loader_v4.allow_copy,
-            "Fee payer cannot be used for 'Loader-v4 Copy'");
-
-        deny_fee_payer!(loader_v4_instructions, ParsedLoaderV4InstructionType::SetProgramLength,
-            ParsedLoaderV4InstructionData::SetProgramLength { authority, recipient, .. } =>
-            (*authority == self.fee_payer_pubkey
-                || recipient.is_some_and(|r| r == self.fee_payer_pubkey)),
-            unless self.fee_payer_policy.loader_v4.allow_set_program_length,
-            "Fee payer cannot be used for 'Loader-v4 SetProgramLength'");
-
-        // Drainage guard: when the fee payer is the SetProgramLength authority, the recipient
-        // (if present) must be the fee payer. Otherwise shrink-to-zero or over-funded-growth
-        // refunds would flow to an attacker-controlled account, draining Kora's rent.
-        deny_fee_payer!(loader_v4_instructions, ParsedLoaderV4InstructionType::SetProgramLength,
-            ParsedLoaderV4InstructionData::SetProgramLength { authority, recipient, .. } =>
-            *authority == self.fee_payer_pubkey
-                && recipient.is_some_and(|r| r != self.fee_payer_pubkey),
-            "Loader-v4 SetProgramLength: when fee payer is the authority, \
-             recipient must also be the fee payer (drainage guard)");
-
-        deny_fee_payer!(loader_v4_instructions, ParsedLoaderV4InstructionType::Deploy,
-            ParsedLoaderV4InstructionData::Deploy { authority, .. } =>
-            *authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.loader_v4.allow_deploy,
-            "Fee payer cannot be used for 'Loader-v4 Deploy'");
-
-        deny_fee_payer!(loader_v4_instructions, ParsedLoaderV4InstructionType::Retract,
-            ParsedLoaderV4InstructionData::Retract { authority, .. } =>
-            *authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.loader_v4.allow_retract,
-            "Fee payer cannot be used for 'Loader-v4 Retract'");
-
-        // Both current_authority and new_authority are required signers in TransferAuthority.
-        // The fee payer's transaction-level signature satisfies either slot, so guard both:
-        // without the `new_authority` check, an attacker could craft a tx with
-        // current_authority=attacker and new_authority=fee_payer and silently transfer program
-        // authority to Kora (setting up later abuse if allow_write/allow_deploy are enabled).
-        deny_fee_payer!(loader_v4_instructions, ParsedLoaderV4InstructionType::TransferAuthority,
-            ParsedLoaderV4InstructionData::TransferAuthority {
-                current_authority, new_authority, ..
-            } => (*current_authority == self.fee_payer_pubkey
-                || *new_authority == self.fee_payer_pubkey),
-            unless self.fee_payer_policy.loader_v4.allow_transfer_authority,
-            "Fee payer cannot be used for 'Loader-v4 TransferAuthority'");
-
-        deny_fee_payer!(loader_v4_instructions, ParsedLoaderV4InstructionType::Finalize,
-            ParsedLoaderV4InstructionData::Finalize { current_authority, .. } =>
-            *current_authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.loader_v4.allow_finalize,
-            "Fee payer cannot be used for 'Loader-v4 Finalize'");
-
-        // Validate BPF Loader Upgradeable (loader-v3) instructions.
-        let bpf_v3_instructions =
-            transaction_resolved.get_or_parse_bpf_loader_upgradeable_instructions()?;
-
-        // InitializeBuffer: authority is optional. Only gated when present and == fee_payer.
-        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::InitializeBuffer,
-            ParsedBpfLoaderUpgradeableInstructionData::InitializeBuffer { authority, .. } =>
-            authority.is_some_and(|a| a == self.fee_payer_pubkey),
-            unless self.fee_payer_policy.bpf_loader_upgradeable.allow_initialize_buffer,
-            "Fee payer cannot be used for 'BPF Loader Upgradeable InitializeBuffer'");
-
-        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::Write,
-            ParsedBpfLoaderUpgradeableInstructionData::Write { authority, .. } =>
-            *authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.bpf_loader_upgradeable.allow_write,
-            "Fee payer cannot be used for 'BPF Loader Upgradeable Write'");
-
-        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::DeployWithMaxDataLen,
-            ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
-                payer, upgrade_authority, ..
-            } => (*payer == self.fee_payer_pubkey
-                || *upgrade_authority == self.fee_payer_pubkey),
-            unless self.fee_payer_policy.bpf_loader_upgradeable.allow_deploy_with_max_data_len,
-            "Fee payer cannot be used for 'BPF Loader Upgradeable DeployWithMaxDataLen'");
-
-        // Gate only on the upgrade_authority signing role. `spill` is a lamport recipient,
-        // not a signer — a user upgrading their own program can refund excess lamports to
-        // Kora without that being a Kora-as-authority operation.
-        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::Upgrade,
-            ParsedBpfLoaderUpgradeableInstructionData::Upgrade { upgrade_authority, .. } =>
-            *upgrade_authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.bpf_loader_upgradeable.allow_upgrade,
-            "Fee payer cannot be used for 'BPF Loader Upgradeable Upgrade'");
-
-        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::SetAuthority,
-            ParsedBpfLoaderUpgradeableInstructionData::SetAuthority {
-                current_authority, new_authority, ..
-            } => (*current_authority == self.fee_payer_pubkey
-                || new_authority.is_some_and(|n| n == self.fee_payer_pubkey)),
-            unless self.fee_payer_policy.bpf_loader_upgradeable.allow_set_authority,
-            "Fee payer cannot be used for 'BPF Loader Upgradeable SetAuthority'");
-
-        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::SetAuthorityChecked,
-            ParsedBpfLoaderUpgradeableInstructionData::SetAuthorityChecked {
-                current_authority, new_authority, ..
-            } => (*current_authority == self.fee_payer_pubkey
-                || *new_authority == self.fee_payer_pubkey),
-            unless self.fee_payer_policy.bpf_loader_upgradeable.allow_set_authority_checked,
-            "Fee payer cannot be used for 'BPF Loader Upgradeable SetAuthorityChecked'");
-
-        // Gate only on the authority signing role. `recipient` is a lamport sink, not a
-        // signer — a user closing their own buffer can legitimately refund lamports to Kora
-        // without that being a Kora-as-authority operation. The drainage guard below still
-        // catches the only real abuse vector: Kora as authority + foreign recipient.
-        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::Close,
-            ParsedBpfLoaderUpgradeableInstructionData::Close { authority, .. } =>
-            authority.is_some_and(|a| a == self.fee_payer_pubkey),
-            unless self.fee_payer_policy.bpf_loader_upgradeable.allow_close,
-            "Fee payer cannot be used for 'BPF Loader Upgradeable Close'");
-
-        // Drainage guard for Close: when the fee payer is the authority, the recipient must
-        // also be the fee payer. Otherwise the closed-account lamports flow to whoever the
-        // attacker put as recipient.
-        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::Close,
-            ParsedBpfLoaderUpgradeableInstructionData::Close { authority, recipient, .. } =>
-            authority.is_some_and(|a| a == self.fee_payer_pubkey)
-                && *recipient != self.fee_payer_pubkey,
-            "BPF Loader Upgradeable Close: when fee payer is the authority, \
-             recipient must also be the fee payer (drainage guard)");
-
-        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::ExtendProgram,
-            ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram { payer, .. } =>
-            payer.is_some_and(|p| p == self.fee_payer_pubkey),
-            unless self.fee_payer_policy.bpf_loader_upgradeable.allow_extend_program,
-            "Fee payer cannot be used for 'BPF Loader Upgradeable ExtendProgram'");
-
-        // ExtendProgramChecked: like ExtendProgram but the authority is also a required
-        // signer. Gate when fee_payer is either the authority or the (optional) payer.
-        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::ExtendProgramChecked,
-            ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
-                authority, payer, ..
-            } => (*authority == self.fee_payer_pubkey
-                || payer.is_some_and(|p| p == self.fee_payer_pubkey)),
-            unless self.fee_payer_policy.bpf_loader_upgradeable.allow_extend_program_checked,
-            "Fee payer cannot be used for 'BPF Loader Upgradeable ExtendProgramChecked'");
-
-        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::Migrate,
-            ParsedBpfLoaderUpgradeableInstructionData::Migrate { current_authority, .. } =>
-            *current_authority == self.fee_payer_pubkey,
-            unless self.fee_payer_policy.bpf_loader_upgradeable.allow_migrate,
-            "Fee payer cannot be used for 'BPF Loader Upgradeable Migrate'");
-
-        let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
-        deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenReallocate,
-            ParsedSPLInstructionData::SplTokenReallocate {
-                payer,
-                owner,
-                multisig_signers,
-                is_2022,
-                ..
-            } => *is_2022
-                && (*payer == self.fee_payer_pubkey
-                    || self.fee_payer_signs(owner, multisig_signers)),
-            "Token2022 Reallocate is not allowed when involving fee payer");
-
-        deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenPause,
-            ParsedSPLInstructionData::SplTokenPause { authority, multisig_signers } =>
-            self.fee_payer_signs(authority, multisig_signers),
-            unless self.fee_payer_policy.token_2022.allow_freeze_account,
-            "Fee payer cannot be used for Token2022 Pause");
-
-        deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenResume,
-            ParsedSPLInstructionData::SplTokenResume { authority, multisig_signers } =>
-            self.fee_payer_signs(authority, multisig_signers),
-            unless self.fee_payer_policy.token_2022.allow_thaw_account,
-            "Fee payer cannot be used for Token2022 Resume");
-
+        self.validate_system_fee_payer_usage(
+            transaction_resolved.get_or_parse_system_instructions()?,
+        )?;
+        self.validate_spl_token_fee_payer_usage(
+            transaction_resolved.get_or_parse_spl_instructions()?,
+        )?;
+        self.validate_alt_fee_payer_usage(transaction_resolved.get_or_parse_alt_instructions()?)?;
+        self.validate_loader_v4_fee_payer_usage(
+            transaction_resolved.get_or_parse_loader_v4_instructions()?,
+        )?;
+        self.validate_bpf_loader_upgradeable_fee_payer_usage(
+            transaction_resolved.get_or_parse_bpf_loader_upgradeable_instructions()?,
+        )?;
+        self.validate_token2022_fee_payer_usage(
+            transaction_resolved.get_or_parse_spl_instructions()?,
+        )?;
         self.validate_token2022_extension_security(config, transaction_resolved)?;
 
         Ok(())
@@ -851,58 +427,6 @@ impl TransactionValidator {
         self.disallowed_accounts.contains(account)
     }
 
-    fn validate_token2022_extension_security(
-        &self,
-        config: &Config,
-        transaction_resolved: &mut VersionedTransactionResolved,
-    ) -> Result<(), KoraError> {
-        for instruction in transaction_resolved.get_or_parse_token2022_security_instructions()? {
-            if matches!(
-                instruction.account_usage_policy,
-                Token2022AccountUsagePolicy::RejectIfFeePayerPresent
-            ) && instruction.accounts.contains(&self.fee_payer_pubkey)
-            {
-                return Err(KoraError::InvalidTransaction(format!(
-                    "Fee payer cannot be an account in {}",
-                    instruction.instruction_name
-                )));
-            }
-
-            if let Some(extension_type) = instruction.extension_type {
-                if config.validation.token_2022.is_mint_extension_blocked(extension_type)
-                    || config.validation.token_2022.is_account_extension_blocked(extension_type)
-                {
-                    return Err(KoraError::InvalidTransaction(format!(
-                        "Token2022 instruction '{}' is not allowed because extension '{extension_type:?}' is blocked",
-                        instruction.instruction_name
-                    )));
-                }
-            }
-
-            if instruction.uses_fee_payer_as_current_extension_authority(&self.fee_payer_pubkey)
-                && !self.fee_payer_policy.token_2022.allow_update_extension_authority
-            {
-                return Err(KoraError::InvalidTransaction(format!(
-                    "Fee payer cannot be used as the current Token2022 extension authority for '{}'",
-                    instruction.instruction_name
-                )));
-            }
-
-            if let Some(field) =
-                instruction.find_planted_fee_payer_authority(&self.fee_payer_pubkey)
-            {
-                if !self.fee_payer_policy.token_2022.allow_initialize_extension_authority {
-                    return Err(KoraError::InvalidTransaction(format!(
-                        "Fee payer cannot be planted as a Token2022 extension authority via {}",
-                        field.context
-                    )));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     async fn calculate_total_outflow(
         &self,
         config: &Config,
@@ -988,6 +512,7 @@ mod tests {
                 create_v1_message_with_instructions,
             },
         },
+        token::token::TransferHookValidationFlow,
         transaction::TransactionUtil,
     };
     use serial_test::serial;
