@@ -10,8 +10,11 @@ Commands are in the `justfile`. Config schema is `crates/lib/src/config.rs`. Rea
 
 ## Layout
 
-`validator/transaction_validator.rs` is ~7200 lines, and its logic sits above a very large inline
-test module starting at ~1050. Read the logic range, not the whole file.
+`validator/transaction_validator.rs` is ~6500 lines, and its logic sits above a very large inline
+test module starting at ~500. Read the logic range, not the whole file. The fee-payer policy checks
+it dispatches to live beside it in `validator/transaction_validator/`, one file per program
+(`system.rs`, `spl_token.rs`, `token_2022.rs`, `alt.rs`, `loader_v4.rs`,
+`bpf_loader_upgradeable.rs`), each a list of `deny_fee_payer!` calls (`validator/macros.rs`).
 
 Instruction parsing lives in `transaction/instruction_util/`, one file per program (`system.rs`,
 `spl_token.rs`, `alt.rs`, `loader_v4.rs`, `bpf_loader_upgradeable.rs`), plus `reconstruct.rs`,
@@ -38,13 +41,13 @@ not an error; the node still starts unprotected.
 
 ### Two drain guards are not flag-gated
 
-Do not go looking for a `fee_payer_policy` flag for these. They are unconditional in
-`validator/transaction_validator.rs`:
+Do not go looking for a `fee_payer_policy` flag for these. They are `deny_fee_payer!` calls with no
+`unless` clause:
 
-- BPF Loader Upgradeable `Close`: a fee-payer authority paired with a foreign recipient is always
-  rejected.
-- Loader v4 `SetProgramLength`: when the fee payer is the authority, the recipient must also be the
-  fee payer.
+- BPF Loader Upgradeable `Close` (`transaction_validator/bpf_loader_upgradeable.rs`): a fee-payer
+  authority paired with a foreign recipient is always rejected.
+- Loader v4 `SetProgramLength` (`transaction_validator/loader_v4.rs`): when the fee payer is the
+  authority, the recipient must also be the fee payer.
 
 ### Fee payer policy must fail closed
 
