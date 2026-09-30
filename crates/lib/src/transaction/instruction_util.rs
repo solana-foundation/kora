@@ -416,6 +416,17 @@ macro_rules! instruction_type {
     };
 }
 
+instruction_type!(ParsedSystemInstructionData => ParsedSystemInstructionType {
+    SystemTransfer,
+    SystemCreateAccount,
+    SystemWithdrawNonceAccount,
+    SystemAssign,
+    SystemAllocate,
+    SystemInitializeNonceAccount,
+    SystemAdvanceNonceAccount,
+    SystemAuthorizeNonceAccount,
+});
+
 instruction_type!(ParsedSPLInstructionData => ParsedSPLInstructionType {
     SplTokenTransfer,
     SplTokenBurn,
@@ -440,6 +451,39 @@ instruction_type!(ParsedSPLInstructionData => ParsedSPLInstructionType {
     SplTokenUnknownExtension,
 });
 
+instruction_type!(ParsedALTInstructionData => ParsedALTInstructionType {
+    AltCreateLookupTable,
+    AltExtendLookupTable,
+    AltFreezeLookupTable,
+    AltDeactivateLookupTable,
+    AltCloseLookupTable,
+});
+
+instruction_type!(ParsedLoaderV4InstructionData => ParsedLoaderV4InstructionType {
+    Write,
+    Copy,
+    SetProgramLength,
+    Deploy,
+    Retract,
+    TransferAuthority,
+    Finalize,
+});
+
+instruction_type!(
+    ParsedBpfLoaderUpgradeableInstructionData => ParsedBpfLoaderUpgradeableInstructionType {
+        InitializeBuffer,
+        Write,
+        DeployWithMaxDataLen,
+        Upgrade,
+        SetAuthority,
+        SetAuthorityChecked,
+        Close,
+        ExtendProgram,
+        ExtendProgramChecked,
+        Migrate,
+    }
+);
+
 macro_rules! validate_number_accounts {
     ($instruction:expr, $min_count:expr) => {
         if $instruction.accounts.len() < $min_count {
@@ -448,32 +492,6 @@ macro_rules! validate_number_accounts {
                 "Instruction doesn't have the required number of accounts",
             )));
         }
-    };
-}
-
-/// Macro to parse system instructions with validation and account extraction
-/// Usage: parse_system_instruction!(parsed_instructions, instruction, validate_module, EnumVariant, DataVariant { fields })
-macro_rules! parse_system_instruction {
-    // Simple version: separate constant module path and enum variant names
-    ($parsed:ident, $ix:ident, $const_mod:ident, $enum_variant:ident, $data_variant:ident { $($field:ident: $account_path:expr),* $(,)? }) => {
-        validate_number_accounts!($ix, instruction_indexes::$const_mod::REQUIRED_NUMBER_OF_ACCOUNTS);
-        $parsed
-            .entry(ParsedSystemInstructionType::$enum_variant)
-            .or_default()
-            .push(ParsedSystemInstructionData::$data_variant {
-                $($field: $ix.accounts[$account_path].pubkey,)*
-            });
-    };
-    // Version with extra fields (like lamports) that come from instruction data
-    ($parsed:ident, $ix:ident, $const_mod:ident, $enum_variant:ident, $data_variant:ident { $($data_field:ident: $data_val:expr),* ; $($field:ident: $account_path:expr),* $(,)? }) => {
-        validate_number_accounts!($ix, instruction_indexes::$const_mod::REQUIRED_NUMBER_OF_ACCOUNTS);
-        $parsed
-            .entry(ParsedSystemInstructionType::$enum_variant)
-            .or_default()
-            .push(ParsedSystemInstructionData::$data_variant {
-                $($data_field: $data_val,)*
-                $($field: $ix.accounts[$account_path].pubkey,)*
-            });
     };
 }
 
@@ -1911,165 +1929,140 @@ impl IxUtils {
         > = HashMap::new();
 
         for instruction in transaction.all_instructions.iter() {
-            let program_id = instruction.program_id;
+            if instruction.program_id != SYSTEM_PROGRAM_ID {
+                continue;
+            }
+            let key = |index: usize| instruction.accounts[index].pubkey;
 
-            if program_id == SYSTEM_PROGRAM_ID {
-                match bincode::deserialize::<SystemInstruction>(&instruction.data) {
-                    Ok(SystemInstruction::CreateAccount { lamports, owner, .. }) => {
-                        parse_system_instruction!(parsed_instructions, instruction, system_create_account, SystemCreateAccount, SystemCreateAccount {
-                            lamports: lamports, owner: owner, base: None;
-                            payer: instruction_indexes::system_create_account::PAYER_INDEX,
-                            new_account: instruction_indexes::system_create_account::NEW_ACCOUNT_INDEX
-                        });
-                    }
-                    Ok(SystemInstruction::CreateAccountWithSeed {
-                        lamports, owner, base, ..
-                    }) => {
-                        validate_number_accounts!(
-                            instruction,
-                            instruction_indexes::system_create_account::REQUIRED_NUMBER_OF_ACCOUNTS
-                        );
-                        parsed_instructions
-                            .entry(ParsedSystemInstructionType::SystemCreateAccount)
-                            .or_default()
-                            .push(ParsedSystemInstructionData::SystemCreateAccount {
-                                lamports,
-                                owner,
-                                payer: instruction.accounts
-                                    [instruction_indexes::system_create_account::PAYER_INDEX]
-                                    .pubkey,
-                                new_account: instruction.accounts
-                                    [instruction_indexes::system_create_account::NEW_ACCOUNT_INDEX]
-                                    .pubkey,
-                                base: Some(base),
-                            });
-                    }
-                    Ok(SystemInstruction::Transfer { lamports }) => {
-                        parse_system_instruction!(parsed_instructions, instruction, system_transfer, SystemTransfer, SystemTransfer {
-                            lamports: lamports;
-                            sender: instruction_indexes::system_transfer::SENDER_INDEX,
-                            receiver: instruction_indexes::system_transfer::RECEIVER_INDEX
-                        });
-                    }
-                    Ok(SystemInstruction::TransferWithSeed { lamports, .. }) => {
-                        // Note: uses system_transfer_with_seed for validation but maps to SystemTransfer type
-                        validate_number_accounts!(instruction, instruction_indexes::system_transfer_with_seed::REQUIRED_NUMBER_OF_ACCOUNTS);
-                        parsed_instructions
-                            .entry(ParsedSystemInstructionType::SystemTransfer)
-                            .or_default()
-                            .push(ParsedSystemInstructionData::SystemTransfer {
-                                lamports,
-                                sender: instruction.accounts[instruction_indexes::system_transfer_with_seed::SENDER_INDEX].pubkey,
-                                receiver: instruction.accounts[instruction_indexes::system_transfer_with_seed::RECEIVER_INDEX].pubkey,
-                            });
-                    }
-                    Ok(SystemInstruction::WithdrawNonceAccount(lamports)) => {
-                        parse_system_instruction!(parsed_instructions, instruction, system_withdraw_nonce_account, SystemWithdrawNonceAccount, SystemWithdrawNonceAccount {
-                            lamports: lamports;
-                            nonce_authority: instruction_indexes::system_withdraw_nonce_account::NONCE_AUTHORITY_INDEX,
-                            recipient: instruction_indexes::system_withdraw_nonce_account::RECIPIENT_INDEX
-                        });
-                    }
-                    Ok(SystemInstruction::Assign { owner }) => {
-                        parse_system_instruction!(
-                            parsed_instructions,
-                            instruction,
-                            system_assign,
-                            SystemAssign,
-                            SystemAssign {
-                                owner: owner;
-                                authority: instruction_indexes::system_assign::AUTHORITY_INDEX
-                            }
-                        );
-                    }
-                    Ok(SystemInstruction::AssignWithSeed { owner, .. }) => {
-                        // Note: uses system_assign_with_seed for validation but maps to SystemAssign type
-                        validate_number_accounts!(instruction, instruction_indexes::system_assign_with_seed::REQUIRED_NUMBER_OF_ACCOUNTS);
-                        parsed_instructions
-                            .entry(ParsedSystemInstructionType::SystemAssign)
-                            .or_default()
-                            .push(ParsedSystemInstructionData::SystemAssign {
-                                authority: instruction.accounts
-                                    [instruction_indexes::system_assign_with_seed::AUTHORITY_INDEX]
-                                    .pubkey,
-                                owner,
-                            });
-                    }
-                    Ok(SystemInstruction::Allocate { .. }) => {
-                        parse_system_instruction!(
-                            parsed_instructions,
-                            instruction,
-                            system_allocate,
-                            SystemAllocate,
-                            SystemAllocate {
-                                account: instruction_indexes::system_allocate::ACCOUNT_INDEX
-                            }
-                        );
-                    }
-                    Ok(SystemInstruction::AllocateWithSeed { .. }) => {
-                        // Note: uses system_allocate_with_seed for validation but maps to SystemAllocate type
-                        validate_number_accounts!(instruction, instruction_indexes::system_allocate_with_seed::REQUIRED_NUMBER_OF_ACCOUNTS);
-                        parsed_instructions
-                            .entry(ParsedSystemInstructionType::SystemAllocate)
-                            .or_default()
-                            .push(ParsedSystemInstructionData::SystemAllocate {
-                                account: instruction.accounts
-                                    [instruction_indexes::system_allocate_with_seed::ACCOUNT_INDEX]
-                                    .pubkey,
-                            });
-                    }
-                    Ok(SystemInstruction::InitializeNonceAccount(authority)) => {
-                        parse_system_instruction!(parsed_instructions, instruction, system_initialize_nonce_account, SystemInitializeNonceAccount, SystemInitializeNonceAccount {
-                            nonce_authority: authority;
-                            nonce_account: instruction_indexes::system_initialize_nonce_account::NONCE_ACCOUNT_INDEX
-                        });
-                    }
-                    Ok(SystemInstruction::AdvanceNonceAccount) => {
-                        parse_system_instruction!(parsed_instructions, instruction, system_advance_nonce_account, SystemAdvanceNonceAccount, SystemAdvanceNonceAccount {
-                            nonce_account: instruction_indexes::system_advance_nonce_account::NONCE_ACCOUNT_INDEX,
-                            nonce_authority: instruction_indexes::system_advance_nonce_account::NONCE_AUTHORITY_INDEX
-                        });
-                    }
-                    Ok(SystemInstruction::AuthorizeNonceAccount(new_authority)) => {
-                        parse_system_instruction!(parsed_instructions, instruction, system_authorize_nonce_account, SystemAuthorizeNonceAccount, SystemAuthorizeNonceAccount {
-                            new_authority: new_authority;
-                            nonce_account: instruction_indexes::system_authorize_nonce_account::NONCE_ACCOUNT_INDEX,
-                            nonce_authority: instruction_indexes::system_authorize_nonce_account::NONCE_AUTHORITY_INDEX
-                        });
-                    }
-                    // UpgradeNonceAccount: Not parsed - no authority parameter, cannot validate fee payer involvement
-                    // Anyone can upgrade any nonce account without signing
-                    Ok(SystemInstruction::UpgradeNonceAccount) => {}
-                    _ => {
-                        if let Some((lamports, owner)) =
-                            Self::parse_create_account_allow_prefund(&instruction.data)
-                        {
-                            let min_accounts = if lamports > 0 {
-                                instruction_indexes::system_create_account_allow_prefund::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_FUNDING
-                            } else {
-                                instruction_indexes::system_create_account_allow_prefund::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
-                            };
-                            validate_number_accounts!(instruction, min_accounts);
-                            let new_account = instruction.accounts[instruction_indexes::system_create_account_allow_prefund::NEW_ACCOUNT_INDEX].pubkey;
-                            let payer = if lamports > 0 {
-                                instruction.accounts[instruction_indexes::system_create_account_allow_prefund::FUNDING_INDEX].pubkey
-                            } else {
-                                new_account
-                            };
-                            parsed_instructions
-                                .entry(ParsedSystemInstructionType::SystemCreateAccount)
-                                .or_default()
-                                .push(ParsedSystemInstructionData::SystemCreateAccount {
-                                    lamports,
-                                    payer,
-                                    new_account,
-                                    owner,
-                                    base: None,
-                                });
-                        }
+            let data = match bincode::deserialize::<SystemInstruction>(&instruction.data) {
+                Ok(SystemInstruction::CreateAccount { lamports, owner, .. }) => {
+                    use instruction_indexes::system_create_account as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedSystemInstructionData::SystemCreateAccount {
+                        lamports,
+                        payer: key(ix::PAYER_INDEX),
+                        new_account: key(ix::NEW_ACCOUNT_INDEX),
+                        owner,
+                        base: None,
                     }
                 }
-            }
+                Ok(SystemInstruction::CreateAccountWithSeed { lamports, owner, base, .. }) => {
+                    use instruction_indexes::system_create_account as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedSystemInstructionData::SystemCreateAccount {
+                        lamports,
+                        payer: key(ix::PAYER_INDEX),
+                        new_account: key(ix::NEW_ACCOUNT_INDEX),
+                        owner,
+                        base: Some(base),
+                    }
+                }
+                Ok(SystemInstruction::Transfer { lamports }) => {
+                    use instruction_indexes::system_transfer as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedSystemInstructionData::SystemTransfer {
+                        lamports,
+                        sender: key(ix::SENDER_INDEX),
+                        receiver: key(ix::RECEIVER_INDEX),
+                    }
+                }
+                Ok(SystemInstruction::TransferWithSeed { lamports, .. }) => {
+                    use instruction_indexes::system_transfer_with_seed as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedSystemInstructionData::SystemTransfer {
+                        lamports,
+                        sender: key(ix::SENDER_INDEX),
+                        receiver: key(ix::RECEIVER_INDEX),
+                    }
+                }
+                Ok(SystemInstruction::WithdrawNonceAccount(lamports)) => {
+                    use instruction_indexes::system_withdraw_nonce_account as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedSystemInstructionData::SystemWithdrawNonceAccount {
+                        lamports,
+                        nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
+                        recipient: key(ix::RECIPIENT_INDEX),
+                    }
+                }
+                Ok(SystemInstruction::Assign { owner }) => {
+                    use instruction_indexes::system_assign as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedSystemInstructionData::SystemAssign {
+                        authority: key(ix::AUTHORITY_INDEX),
+                        owner,
+                    }
+                }
+                Ok(SystemInstruction::AssignWithSeed { owner, .. }) => {
+                    use instruction_indexes::system_assign_with_seed as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedSystemInstructionData::SystemAssign {
+                        authority: key(ix::AUTHORITY_INDEX),
+                        owner,
+                    }
+                }
+                Ok(SystemInstruction::Allocate { .. }) => {
+                    use instruction_indexes::system_allocate as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedSystemInstructionData::SystemAllocate { account: key(ix::ACCOUNT_INDEX) }
+                }
+                Ok(SystemInstruction::AllocateWithSeed { .. }) => {
+                    use instruction_indexes::system_allocate_with_seed as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedSystemInstructionData::SystemAllocate { account: key(ix::ACCOUNT_INDEX) }
+                }
+                Ok(SystemInstruction::InitializeNonceAccount(nonce_authority)) => {
+                    use instruction_indexes::system_initialize_nonce_account as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedSystemInstructionData::SystemInitializeNonceAccount {
+                        nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
+                        nonce_authority,
+                    }
+                }
+                Ok(SystemInstruction::AdvanceNonceAccount) => {
+                    use instruction_indexes::system_advance_nonce_account as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedSystemInstructionData::SystemAdvanceNonceAccount {
+                        nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
+                        nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
+                    }
+                }
+                Ok(SystemInstruction::AuthorizeNonceAccount(new_authority)) => {
+                    use instruction_indexes::system_authorize_nonce_account as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedSystemInstructionData::SystemAuthorizeNonceAccount {
+                        nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
+                        nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
+                        new_authority,
+                    }
+                }
+                // UpgradeNonceAccount: Not parsed - no authority parameter, cannot validate fee payer involvement
+                // Anyone can upgrade any nonce account without signing
+                Ok(SystemInstruction::UpgradeNonceAccount) => continue,
+                _ => {
+                    let Some((lamports, owner)) =
+                        Self::parse_create_account_allow_prefund(&instruction.data)
+                    else {
+                        continue;
+                    };
+                    use instruction_indexes::system_create_account_allow_prefund as ix;
+                    let min_accounts = if lamports > 0 {
+                        ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_FUNDING
+                    } else {
+                        ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
+                    };
+                    validate_number_accounts!(instruction, min_accounts);
+                    let new_account = key(ix::NEW_ACCOUNT_INDEX);
+                    let payer = if lamports > 0 { key(ix::FUNDING_INDEX) } else { new_account };
+                    ParsedSystemInstructionData::SystemCreateAccount {
+                        lamports,
+                        payer,
+                        new_account,
+                        owner,
+                        base: None,
+                    }
+                }
+            };
+            parsed_instructions.entry(data.instruction_type()).or_default().push(data);
         }
         Ok(parsed_instructions)
     }
@@ -2094,6 +2087,7 @@ impl IxUtils {
             if instruction.program_id != ADDRESS_LOOKUP_TABLE_PROGRAM_ID {
                 continue;
             }
+            let key = |index: usize| instruction.accounts[index].pubkey;
 
             let alt_ix = bincode::deserialize::<AddressLookupTableInstruction>(&instruction.data)
                 .map_err(|e| {
@@ -2103,120 +2097,59 @@ impl IxUtils {
                 ))
             })?;
 
-            match alt_ix {
+            let data = match alt_ix {
                 AddressLookupTableInstruction::CreateLookupTable { .. } => {
-                    validate_number_accounts!(
-                        instruction,
-                        instruction_indexes::alt_create_lookup_table::REQUIRED_NUMBER_OF_ACCOUNTS
-                    );
-
-                    parsed_instructions
-                        .entry(ParsedALTInstructionType::AltCreateLookupTable)
-                        .or_default()
-                        .push(ParsedALTInstructionData::AltCreateLookupTable {
-                            lookup_table_account: instruction.accounts
-                                [instruction_indexes::alt_create_lookup_table::LOOKUP_TABLE_ACCOUNT_INDEX]
-                                .pubkey,
-                            lookup_table_authority: instruction.accounts
-                                [instruction_indexes::alt_create_lookup_table::LOOKUP_TABLE_AUTHORITY_INDEX]
-                                .pubkey,
-                            payer_account: instruction.accounts
-                                [instruction_indexes::alt_create_lookup_table::PAYER_ACCOUNT_INDEX]
-                                .pubkey,
-                        });
+                    use instruction_indexes::alt_create_lookup_table as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedALTInstructionData::AltCreateLookupTable {
+                        lookup_table_account: key(ix::LOOKUP_TABLE_ACCOUNT_INDEX),
+                        lookup_table_authority: key(ix::LOOKUP_TABLE_AUTHORITY_INDEX),
+                        payer_account: key(ix::PAYER_ACCOUNT_INDEX),
+                    }
                 }
                 AddressLookupTableInstruction::ExtendLookupTable { .. } => {
+                    use instruction_indexes::alt_extend_lookup_table as ix;
                     let account_count = instruction.accounts.len();
-                    if account_count
-                        < instruction_indexes::alt_extend_lookup_table::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
-                        || account_count == 3
-                    {
+                    if account_count < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS || account_count == 3 {
                         return Err(KoraError::InvalidTransaction(format!(
                             "Instruction account mismatch: expected 2 or >=4 accounts, found {account_count}"
                         )));
                     }
-
-                    parsed_instructions
-                        .entry(ParsedALTInstructionType::AltExtendLookupTable)
-                        .or_default()
-                        .push(ParsedALTInstructionData::AltExtendLookupTable {
-                            lookup_table_account: instruction.accounts
-                                [instruction_indexes::alt_extend_lookup_table::LOOKUP_TABLE_ACCOUNT_INDEX]
-                                .pubkey,
-                            lookup_table_authority: instruction.accounts
-                                [instruction_indexes::alt_extend_lookup_table::LOOKUP_TABLE_AUTHORITY_INDEX]
-                                .pubkey,
-                            payer_account: if account_count
-                                >= instruction_indexes::alt_extend_lookup_table::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER
-                            {
-                                Some(
-                                    instruction.accounts
-                                        [instruction_indexes::alt_extend_lookup_table::OPTIONAL_PAYER_ACCOUNT_INDEX]
-                                        .pubkey,
-                                )
-                            } else {
-                                None
-                            },
-                        });
+                    ParsedALTInstructionData::AltExtendLookupTable {
+                        lookup_table_account: key(ix::LOOKUP_TABLE_ACCOUNT_INDEX),
+                        lookup_table_authority: key(ix::LOOKUP_TABLE_AUTHORITY_INDEX),
+                        payer_account: (account_count
+                            >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER)
+                            .then(|| key(ix::OPTIONAL_PAYER_ACCOUNT_INDEX)),
+                    }
                 }
                 AddressLookupTableInstruction::FreezeLookupTable => {
-                    validate_number_accounts!(
-                        instruction,
-                        instruction_indexes::alt_freeze_lookup_table::REQUIRED_NUMBER_OF_ACCOUNTS
-                    );
-
-                    parsed_instructions
-                        .entry(ParsedALTInstructionType::AltFreezeLookupTable)
-                        .or_default()
-                        .push(ParsedALTInstructionData::AltFreezeLookupTable {
-                            lookup_table_account: instruction.accounts
-                                [instruction_indexes::alt_freeze_lookup_table::LOOKUP_TABLE_ACCOUNT_INDEX]
-                                .pubkey,
-                            lookup_table_authority: instruction.accounts
-                                [instruction_indexes::alt_freeze_lookup_table::LOOKUP_TABLE_AUTHORITY_INDEX]
-                                .pubkey,
-                        });
+                    use instruction_indexes::alt_freeze_lookup_table as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedALTInstructionData::AltFreezeLookupTable {
+                        lookup_table_account: key(ix::LOOKUP_TABLE_ACCOUNT_INDEX),
+                        lookup_table_authority: key(ix::LOOKUP_TABLE_AUTHORITY_INDEX),
+                    }
                 }
                 AddressLookupTableInstruction::DeactivateLookupTable => {
-                    validate_number_accounts!(
-                        instruction,
-                        instruction_indexes::alt_deactivate_lookup_table::REQUIRED_NUMBER_OF_ACCOUNTS
-                    );
-
-                    parsed_instructions
-                        .entry(ParsedALTInstructionType::AltDeactivateLookupTable)
-                        .or_default()
-                        .push(ParsedALTInstructionData::AltDeactivateLookupTable {
-                            lookup_table_account: instruction.accounts
-                                [instruction_indexes::alt_deactivate_lookup_table::LOOKUP_TABLE_ACCOUNT_INDEX]
-                                .pubkey,
-                            lookup_table_authority: instruction.accounts
-                                [instruction_indexes::alt_deactivate_lookup_table::LOOKUP_TABLE_AUTHORITY_INDEX]
-                                .pubkey,
-                        });
+                    use instruction_indexes::alt_deactivate_lookup_table as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedALTInstructionData::AltDeactivateLookupTable {
+                        lookup_table_account: key(ix::LOOKUP_TABLE_ACCOUNT_INDEX),
+                        lookup_table_authority: key(ix::LOOKUP_TABLE_AUTHORITY_INDEX),
+                    }
                 }
                 AddressLookupTableInstruction::CloseLookupTable => {
-                    validate_number_accounts!(
-                        instruction,
-                        instruction_indexes::alt_close_lookup_table::REQUIRED_NUMBER_OF_ACCOUNTS
-                    );
-
-                    parsed_instructions
-                        .entry(ParsedALTInstructionType::AltCloseLookupTable)
-                        .or_default()
-                        .push(ParsedALTInstructionData::AltCloseLookupTable {
-                            lookup_table_account: instruction.accounts
-                                [instruction_indexes::alt_close_lookup_table::LOOKUP_TABLE_ACCOUNT_INDEX]
-                                .pubkey,
-                            lookup_table_authority: instruction.accounts
-                                [instruction_indexes::alt_close_lookup_table::LOOKUP_TABLE_AUTHORITY_INDEX]
-                                .pubkey,
-                            recipient: instruction.accounts
-                                [instruction_indexes::alt_close_lookup_table::RECIPIENT_INDEX]
-                                .pubkey,
-                        });
+                    use instruction_indexes::alt_close_lookup_table as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedALTInstructionData::AltCloseLookupTable {
+                        lookup_table_account: key(ix::LOOKUP_TABLE_ACCOUNT_INDEX),
+                        lookup_table_authority: key(ix::LOOKUP_TABLE_AUTHORITY_INDEX),
+                        recipient: key(ix::RECIPIENT_INDEX),
+                    }
                 }
-            }
+            };
+            parsed_instructions.entry(data.instruction_type()).or_default().push(data);
         }
 
         Ok(parsed_instructions)
@@ -2235,6 +2168,9 @@ impl IxUtils {
             if instruction.program_id != LOADER_V4_PROGRAM_ID {
                 continue;
             }
+            let key = |index: usize| instruction.accounts[index].pubkey;
+            let optional_key = |index: usize| instruction.accounts.get(index).map(|a| a.pubkey);
+            let account_count = instruction.accounts.len();
 
             let loader_ix = bincode::deserialize::<LoaderV4Instruction>(&instruction.data)
                 .map_err(|e| {
@@ -2244,170 +2180,83 @@ impl IxUtils {
                     ))
                 })?;
 
-            match loader_ix {
+            let data = match loader_ix {
                 LoaderV4Instruction::Write { offset, .. } => {
-                    validate_number_accounts!(
-                        instruction,
-                        instruction_indexes::loader_v4_write::REQUIRED_NUMBER_OF_ACCOUNTS
-                    );
-
-                    parsed_instructions
-                        .entry(ParsedLoaderV4InstructionType::Write)
-                        .or_default()
-                        .push(ParsedLoaderV4InstructionData::Write {
-                            program: instruction.accounts
-                                [instruction_indexes::loader_v4_write::PROGRAM_INDEX]
-                                .pubkey,
-                            authority: instruction.accounts
-                                [instruction_indexes::loader_v4_write::AUTHORITY_INDEX]
-                                .pubkey,
-                            offset,
-                        });
+                    use instruction_indexes::loader_v4_write as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedLoaderV4InstructionData::Write {
+                        program: key(ix::PROGRAM_INDEX),
+                        authority: key(ix::AUTHORITY_INDEX),
+                        offset,
+                    }
                 }
                 LoaderV4Instruction::Copy { destination_offset, source_offset, length } => {
-                    validate_number_accounts!(
-                        instruction,
-                        instruction_indexes::loader_v4_copy::REQUIRED_NUMBER_OF_ACCOUNTS
-                    );
-
-                    parsed_instructions
-                        .entry(ParsedLoaderV4InstructionType::Copy)
-                        .or_default()
-                        .push(ParsedLoaderV4InstructionData::Copy {
-                            destination_program: instruction.accounts
-                                [instruction_indexes::loader_v4_copy::DESTINATION_PROGRAM_INDEX]
-                                .pubkey,
-                            authority: instruction.accounts
-                                [instruction_indexes::loader_v4_copy::AUTHORITY_INDEX]
-                                .pubkey,
-                            source_program: instruction.accounts
-                                [instruction_indexes::loader_v4_copy::SOURCE_PROGRAM_INDEX]
-                                .pubkey,
-                            destination_offset,
-                            source_offset,
-                            length,
-                        });
+                    use instruction_indexes::loader_v4_copy as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedLoaderV4InstructionData::Copy {
+                        destination_program: key(ix::DESTINATION_PROGRAM_INDEX),
+                        authority: key(ix::AUTHORITY_INDEX),
+                        source_program: key(ix::SOURCE_PROGRAM_INDEX),
+                        destination_offset,
+                        source_offset,
+                        length,
+                    }
                 }
                 LoaderV4Instruction::SetProgramLength { new_size } => {
-                    let account_count = instruction.accounts.len();
-                    if account_count
-                        < instruction_indexes::loader_v4_set_program_length::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
-                    {
+                    use instruction_indexes::loader_v4_set_program_length as ix;
+                    if account_count < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
                         return Err(KoraError::InvalidTransaction(format!(
                             "Loader-v4 SetProgramLength has {account_count} accounts, expected at least 2"
                         )));
                     }
-
-                    let recipient = if account_count
-                        >= instruction_indexes::loader_v4_set_program_length::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_RECIPIENT
-                    {
-                        Some(
-                            instruction.accounts[instruction_indexes::loader_v4_set_program_length::OPTIONAL_RECIPIENT_INDEX]
-                                .pubkey,
-                        )
-                    } else {
-                        None
-                    };
-
-                    parsed_instructions
-                        .entry(ParsedLoaderV4InstructionType::SetProgramLength)
-                        .or_default()
-                        .push(ParsedLoaderV4InstructionData::SetProgramLength {
-                            program: instruction.accounts[instruction_indexes::loader_v4_set_program_length::PROGRAM_INDEX].pubkey,
-                            authority: instruction.accounts[instruction_indexes::loader_v4_set_program_length::AUTHORITY_INDEX].pubkey,
-                            recipient,
-                            new_size,
-                        });
+                    ParsedLoaderV4InstructionData::SetProgramLength {
+                        program: key(ix::PROGRAM_INDEX),
+                        authority: key(ix::AUTHORITY_INDEX),
+                        recipient: optional_key(ix::OPTIONAL_RECIPIENT_INDEX),
+                        new_size,
+                    }
                 }
                 LoaderV4Instruction::Deploy => {
-                    let account_count = instruction.accounts.len();
-                    if account_count
-                        < instruction_indexes::loader_v4_deploy::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
-                    {
+                    use instruction_indexes::loader_v4_deploy as ix;
+                    if account_count < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
                         return Err(KoraError::InvalidTransaction(format!(
                             "Loader-v4 Deploy has {account_count} accounts, expected at least 2"
                         )));
                     }
-
-                    let source_program = if account_count
-                        >= instruction_indexes::loader_v4_deploy::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_SOURCE
-                    {
-                        Some(
-                            instruction.accounts[instruction_indexes::loader_v4_deploy::OPTIONAL_SOURCE_PROGRAM_INDEX]
-                                .pubkey,
-                        )
-                    } else {
-                        None
-                    };
-
-                    parsed_instructions
-                        .entry(ParsedLoaderV4InstructionType::Deploy)
-                        .or_default()
-                        .push(ParsedLoaderV4InstructionData::Deploy {
-                            program: instruction.accounts
-                                [instruction_indexes::loader_v4_deploy::PROGRAM_INDEX]
-                                .pubkey,
-                            authority: instruction.accounts
-                                [instruction_indexes::loader_v4_deploy::AUTHORITY_INDEX]
-                                .pubkey,
-                            source_program,
-                        });
+                    ParsedLoaderV4InstructionData::Deploy {
+                        program: key(ix::PROGRAM_INDEX),
+                        authority: key(ix::AUTHORITY_INDEX),
+                        source_program: optional_key(ix::OPTIONAL_SOURCE_PROGRAM_INDEX),
+                    }
                 }
                 LoaderV4Instruction::Retract => {
-                    validate_number_accounts!(
-                        instruction,
-                        instruction_indexes::loader_v4_retract::REQUIRED_NUMBER_OF_ACCOUNTS
-                    );
-
-                    parsed_instructions
-                        .entry(ParsedLoaderV4InstructionType::Retract)
-                        .or_default()
-                        .push(ParsedLoaderV4InstructionData::Retract {
-                            program: instruction.accounts
-                                [instruction_indexes::loader_v4_retract::PROGRAM_INDEX]
-                                .pubkey,
-                            authority: instruction.accounts
-                                [instruction_indexes::loader_v4_retract::AUTHORITY_INDEX]
-                                .pubkey,
-                        });
+                    use instruction_indexes::loader_v4_retract as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedLoaderV4InstructionData::Retract {
+                        program: key(ix::PROGRAM_INDEX),
+                        authority: key(ix::AUTHORITY_INDEX),
+                    }
                 }
                 LoaderV4Instruction::TransferAuthority => {
-                    validate_number_accounts!(
-                        instruction,
-                        instruction_indexes::loader_v4_transfer_authority::REQUIRED_NUMBER_OF_ACCOUNTS
-                    );
-
-                    parsed_instructions
-                        .entry(ParsedLoaderV4InstructionType::TransferAuthority)
-                        .or_default()
-                        .push(ParsedLoaderV4InstructionData::TransferAuthority {
-                            program: instruction.accounts[instruction_indexes::loader_v4_transfer_authority::PROGRAM_INDEX].pubkey,
-                            current_authority: instruction.accounts[instruction_indexes::loader_v4_transfer_authority::CURRENT_AUTHORITY_INDEX].pubkey,
-                            new_authority: instruction.accounts[instruction_indexes::loader_v4_transfer_authority::NEW_AUTHORITY_INDEX].pubkey,
-                        });
+                    use instruction_indexes::loader_v4_transfer_authority as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedLoaderV4InstructionData::TransferAuthority {
+                        program: key(ix::PROGRAM_INDEX),
+                        current_authority: key(ix::CURRENT_AUTHORITY_INDEX),
+                        new_authority: key(ix::NEW_AUTHORITY_INDEX),
+                    }
                 }
                 LoaderV4Instruction::Finalize => {
-                    validate_number_accounts!(
-                        instruction,
-                        instruction_indexes::loader_v4_finalize::REQUIRED_NUMBER_OF_ACCOUNTS
-                    );
-
-                    parsed_instructions
-                        .entry(ParsedLoaderV4InstructionType::Finalize)
-                        .or_default()
-                        .push(ParsedLoaderV4InstructionData::Finalize {
-                            program: instruction.accounts
-                                [instruction_indexes::loader_v4_finalize::PROGRAM_INDEX]
-                                .pubkey,
-                            current_authority: instruction.accounts
-                                [instruction_indexes::loader_v4_finalize::CURRENT_AUTHORITY_INDEX]
-                                .pubkey,
-                            next_version: instruction.accounts
-                                [instruction_indexes::loader_v4_finalize::NEXT_VERSION_INDEX]
-                                .pubkey,
-                        });
+                    use instruction_indexes::loader_v4_finalize as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    ParsedLoaderV4InstructionData::Finalize {
+                        program: key(ix::PROGRAM_INDEX),
+                        current_authority: key(ix::CURRENT_AUTHORITY_INDEX),
+                        next_version: key(ix::NEXT_VERSION_INDEX),
+                    }
                 }
-            }
+            };
+            parsed_instructions.entry(data.instruction_type()).or_default().push(data);
         }
 
         Ok(parsed_instructions)
@@ -2431,6 +2280,17 @@ impl IxUtils {
             if instruction.program_id != BPF_LOADER_UPGRADEABLE_PROGRAM_ID {
                 continue;
             }
+            let key = |index: usize| instruction.accounts[index].pubkey;
+            let optional_key = |index: usize| instruction.accounts.get(index).map(|a| a.pubkey);
+            let account_count = instruction.accounts.len();
+            let require_min = |min: usize, name: &str| {
+                if account_count < min {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "BPF Loader Upgradeable {name} has {account_count} accounts, expected at least {min}"
+                    )));
+                }
+                Ok(())
+            };
 
             let parsed = bincode::deserialize::<UpgradeableLoaderInstruction>(&instruction.data)
                 .map_err(|e| {
@@ -2440,201 +2300,107 @@ impl IxUtils {
                     ))
                 })?;
 
-            match parsed {
+            let data = match parsed {
                 UpgradeableLoaderInstruction::InitializeBuffer => {
                     use instruction_indexes::bpf_loader_upgradeable_initialize_buffer as ix;
-                    let n = instruction.accounts.len();
-                    if n < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "BPF Loader Upgradeable InitializeBuffer has {n} accounts, expected at least {}",
-                            ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
-                        )));
+                    require_min(ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS, "InitializeBuffer")?;
+                    ParsedBpfLoaderUpgradeableInstructionData::InitializeBuffer {
+                        buffer: key(ix::BUFFER_INDEX),
+                        authority: optional_key(ix::OPTIONAL_AUTHORITY_INDEX),
                     }
-                    let authority = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_AUTHORITY {
-                        Some(instruction.accounts[ix::OPTIONAL_AUTHORITY_INDEX].pubkey)
-                    } else {
-                        None
-                    };
-                    parsed_instructions
-                        .entry(ParsedBpfLoaderUpgradeableInstructionType::InitializeBuffer)
-                        .or_default()
-                        .push(ParsedBpfLoaderUpgradeableInstructionData::InitializeBuffer {
-                            buffer: instruction.accounts[ix::BUFFER_INDEX].pubkey,
-                            authority,
-                        });
                 }
                 UpgradeableLoaderInstruction::Write { offset, .. } => {
                     use instruction_indexes::bpf_loader_upgradeable_write as ix;
                     validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    parsed_instructions
-                        .entry(ParsedBpfLoaderUpgradeableInstructionType::Write)
-                        .or_default()
-                        .push(ParsedBpfLoaderUpgradeableInstructionData::Write {
-                            buffer: instruction.accounts[ix::BUFFER_INDEX].pubkey,
-                            authority: instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
-                            offset,
-                        });
+                    ParsedBpfLoaderUpgradeableInstructionData::Write {
+                        buffer: key(ix::BUFFER_INDEX),
+                        authority: key(ix::AUTHORITY_INDEX),
+                        offset,
+                    }
                 }
                 UpgradeableLoaderInstruction::DeployWithMaxDataLen { max_data_len } => {
                     use instruction_indexes::bpf_loader_upgradeable_deploy_with_max_data_len as ix;
                     validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    parsed_instructions
-                        .entry(ParsedBpfLoaderUpgradeableInstructionType::DeployWithMaxDataLen)
-                        .or_default()
-                        .push(ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
-                            payer: instruction.accounts[ix::PAYER_INDEX].pubkey,
-                            program_data: instruction.accounts[ix::PROGRAM_DATA_INDEX].pubkey,
-                            program: instruction.accounts[ix::PROGRAM_INDEX].pubkey,
-                            buffer: instruction.accounts[ix::BUFFER_INDEX].pubkey,
-                            upgrade_authority: instruction.accounts[ix::UPGRADE_AUTHORITY_INDEX]
-                                .pubkey,
-                            max_data_len: max_data_len as u64,
-                        });
+                    ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
+                        payer: key(ix::PAYER_INDEX),
+                        program_data: key(ix::PROGRAM_DATA_INDEX),
+                        program: key(ix::PROGRAM_INDEX),
+                        buffer: key(ix::BUFFER_INDEX),
+                        upgrade_authority: key(ix::UPGRADE_AUTHORITY_INDEX),
+                        max_data_len: max_data_len as u64,
+                    }
                 }
                 UpgradeableLoaderInstruction::Upgrade => {
                     use instruction_indexes::bpf_loader_upgradeable_upgrade as ix;
                     validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    parsed_instructions
-                        .entry(ParsedBpfLoaderUpgradeableInstructionType::Upgrade)
-                        .or_default()
-                        .push(ParsedBpfLoaderUpgradeableInstructionData::Upgrade {
-                            program_data: instruction.accounts[ix::PROGRAM_DATA_INDEX].pubkey,
-                            program: instruction.accounts[ix::PROGRAM_INDEX].pubkey,
-                            buffer: instruction.accounts[ix::BUFFER_INDEX].pubkey,
-                            spill: instruction.accounts[ix::SPILL_INDEX].pubkey,
-                            upgrade_authority: instruction.accounts[ix::UPGRADE_AUTHORITY_INDEX]
-                                .pubkey,
-                        });
+                    ParsedBpfLoaderUpgradeableInstructionData::Upgrade {
+                        program_data: key(ix::PROGRAM_DATA_INDEX),
+                        program: key(ix::PROGRAM_INDEX),
+                        buffer: key(ix::BUFFER_INDEX),
+                        spill: key(ix::SPILL_INDEX),
+                        upgrade_authority: key(ix::UPGRADE_AUTHORITY_INDEX),
+                    }
                 }
                 UpgradeableLoaderInstruction::SetAuthority => {
                     use instruction_indexes::bpf_loader_upgradeable_set_authority as ix;
-                    let n = instruction.accounts.len();
-                    if n < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "BPF Loader Upgradeable SetAuthority has {n} accounts, expected at least {}",
-                            ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
-                        )));
+                    require_min(ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS, "SetAuthority")?;
+                    ParsedBpfLoaderUpgradeableInstructionData::SetAuthority {
+                        target: key(ix::TARGET_INDEX),
+                        current_authority: key(ix::CURRENT_AUTHORITY_INDEX),
+                        new_authority: optional_key(ix::OPTIONAL_NEW_AUTHORITY_INDEX),
                     }
-                    let new_authority = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_NEW_AUTHORITY {
-                        Some(instruction.accounts[ix::OPTIONAL_NEW_AUTHORITY_INDEX].pubkey)
-                    } else {
-                        None
-                    };
-                    parsed_instructions
-                        .entry(ParsedBpfLoaderUpgradeableInstructionType::SetAuthority)
-                        .or_default()
-                        .push(ParsedBpfLoaderUpgradeableInstructionData::SetAuthority {
-                            target: instruction.accounts[ix::TARGET_INDEX].pubkey,
-                            current_authority: instruction.accounts[ix::CURRENT_AUTHORITY_INDEX]
-                                .pubkey,
-                            new_authority,
-                        });
                 }
                 UpgradeableLoaderInstruction::SetAuthorityChecked => {
                     use instruction_indexes::bpf_loader_upgradeable_set_authority_checked as ix;
                     validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    parsed_instructions
-                        .entry(ParsedBpfLoaderUpgradeableInstructionType::SetAuthorityChecked)
-                        .or_default()
-                        .push(ParsedBpfLoaderUpgradeableInstructionData::SetAuthorityChecked {
-                            target: instruction.accounts[ix::TARGET_INDEX].pubkey,
-                            current_authority: instruction.accounts[ix::CURRENT_AUTHORITY_INDEX]
-                                .pubkey,
-                            new_authority: instruction.accounts[ix::NEW_AUTHORITY_INDEX].pubkey,
-                        });
+                    ParsedBpfLoaderUpgradeableInstructionData::SetAuthorityChecked {
+                        target: key(ix::TARGET_INDEX),
+                        current_authority: key(ix::CURRENT_AUTHORITY_INDEX),
+                        new_authority: key(ix::NEW_AUTHORITY_INDEX),
+                    }
                 }
                 UpgradeableLoaderInstruction::Close => {
                     use instruction_indexes::bpf_loader_upgradeable_close as ix;
-                    let n = instruction.accounts.len();
-                    if n < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "BPF Loader Upgradeable Close has {n} accounts, expected at least {}",
-                            ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
-                        )));
+                    require_min(ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS, "Close")?;
+                    ParsedBpfLoaderUpgradeableInstructionData::Close {
+                        target: key(ix::TARGET_INDEX),
+                        recipient: key(ix::RECIPIENT_INDEX),
+                        authority: optional_key(ix::OPTIONAL_AUTHORITY_INDEX),
+                        program: optional_key(ix::OPTIONAL_PROGRAM_INDEX),
                     }
-                    let authority = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_AUTHORITY {
-                        Some(instruction.accounts[ix::OPTIONAL_AUTHORITY_INDEX].pubkey)
-                    } else {
-                        None
-                    };
-                    let program = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PROGRAM {
-                        Some(instruction.accounts[ix::OPTIONAL_PROGRAM_INDEX].pubkey)
-                    } else {
-                        None
-                    };
-                    parsed_instructions
-                        .entry(ParsedBpfLoaderUpgradeableInstructionType::Close)
-                        .or_default()
-                        .push(ParsedBpfLoaderUpgradeableInstructionData::Close {
-                            target: instruction.accounts[ix::TARGET_INDEX].pubkey,
-                            recipient: instruction.accounts[ix::RECIPIENT_INDEX].pubkey,
-                            authority,
-                            program,
-                        });
                 }
                 UpgradeableLoaderInstruction::ExtendProgram { additional_bytes } => {
                     use instruction_indexes::bpf_loader_upgradeable_extend_program as ix;
-                    let n = instruction.accounts.len();
-                    if n < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "BPF Loader Upgradeable ExtendProgram has {n} accounts, expected at least {}",
-                            ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
-                        )));
+                    require_min(ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS, "ExtendProgram")?;
+                    ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram {
+                        program_data: key(ix::PROGRAM_DATA_INDEX),
+                        program: key(ix::PROGRAM_INDEX),
+                        payer: optional_key(ix::OPTIONAL_PAYER_INDEX),
+                        additional_bytes,
                     }
-                    let payer = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER {
-                        Some(instruction.accounts[ix::OPTIONAL_PAYER_INDEX].pubkey)
-                    } else {
-                        None
-                    };
-                    parsed_instructions
-                        .entry(ParsedBpfLoaderUpgradeableInstructionType::ExtendProgram)
-                        .or_default()
-                        .push(ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram {
-                            program_data: instruction.accounts[ix::PROGRAM_DATA_INDEX].pubkey,
-                            program: instruction.accounts[ix::PROGRAM_INDEX].pubkey,
-                            payer,
-                            additional_bytes,
-                        });
                 }
                 UpgradeableLoaderInstruction::Migrate => {
                     use instruction_indexes::bpf_loader_upgradeable_migrate as ix;
                     validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    parsed_instructions
-                        .entry(ParsedBpfLoaderUpgradeableInstructionType::Migrate)
-                        .or_default()
-                        .push(ParsedBpfLoaderUpgradeableInstructionData::Migrate {
-                            program_data: instruction.accounts[ix::PROGRAM_DATA_INDEX].pubkey,
-                            program: instruction.accounts[ix::PROGRAM_INDEX].pubkey,
-                            current_authority: instruction.accounts[ix::CURRENT_AUTHORITY_INDEX]
-                                .pubkey,
-                        });
+                    ParsedBpfLoaderUpgradeableInstructionData::Migrate {
+                        program_data: key(ix::PROGRAM_DATA_INDEX),
+                        program: key(ix::PROGRAM_INDEX),
+                        current_authority: key(ix::CURRENT_AUTHORITY_INDEX),
+                    }
                 }
                 UpgradeableLoaderInstruction::ExtendProgramChecked { additional_bytes } => {
                     use instruction_indexes::bpf_loader_upgradeable_extend_program_checked as ix;
-                    let n = instruction.accounts.len();
-                    if n < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "BPF Loader Upgradeable ExtendProgramChecked has {n} accounts, expected at least {}",
-                            ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
-                        )));
+                    require_min(ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS, "ExtendProgramChecked")?;
+                    ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
+                        program_data: key(ix::PROGRAM_DATA_INDEX),
+                        program: key(ix::PROGRAM_INDEX),
+                        authority: key(ix::AUTHORITY_INDEX),
+                        payer: optional_key(ix::OPTIONAL_PAYER_INDEX),
+                        additional_bytes,
                     }
-                    let payer = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER {
-                        Some(instruction.accounts[ix::OPTIONAL_PAYER_INDEX].pubkey)
-                    } else {
-                        None
-                    };
-                    parsed_instructions
-                        .entry(ParsedBpfLoaderUpgradeableInstructionType::ExtendProgramChecked)
-                        .or_default()
-                        .push(ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
-                            program_data: instruction.accounts[ix::PROGRAM_DATA_INDEX].pubkey,
-                            program: instruction.accounts[ix::PROGRAM_INDEX].pubkey,
-                            authority: instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
-                            payer,
-                            additional_bytes,
-                        });
                 }
-            }
+            };
+            parsed_instructions.entry(data.instruction_type()).or_default().push(data);
         }
 
         Ok(parsed_instructions)
