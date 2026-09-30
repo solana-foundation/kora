@@ -10,13 +10,13 @@ Commands are in the `justfile`. Config schema is `crates/lib/src/config.rs`. Rea
 
 ## Layout
 
-Two files are a quarter of the crate, and in both the logic sits above a very large inline test
-module. Read the logic range, not the whole file:
+`validator/transaction_validator.rs` is ~7200 lines, and its logic sits above a very large inline
+test module starting at ~1050. Read the logic range, not the whole file.
 
-| File | Lines | `mod tests` starts |
-|------|-------|--------------------|
-| `transaction/instruction_util.rs` | ~7300 | ~3870 |
-| `validator/transaction_validator.rs` | ~7200 | ~1050 |
+Instruction parsing lives in `transaction/instruction_util/`, one file per program (`system.rs`,
+`spl_token.rs`, `alt.rs`, `loader_v4.rs`, `bpf_loader_upgradeable.rs`), plus `reconstruct.rs`,
+which rebuilds raw instructions from the jsonParsed inner instructions simulation returns. Its
+tests are in `tests.rs`.
 
 Fee-payer-policy drain-safety property tests are the exception to that inline pattern: they are
 split one file per gated program under
