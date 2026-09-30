@@ -1187,7 +1187,7 @@ mod inline_tests {
         let sign_mock =
             mock_sign_and_send_success(&mut server, &Signature::new_unique().to_string())
                 .await
-                .expect(3);
+                .expect(1);
 
         let mock_rpc =
             DeployRpcMockBuilder::new().with_blockhash().with_signature_status(10).build();
@@ -1205,9 +1205,17 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
 
-        let res =
-            write_chunks(&ctx, &bytes, &buffer, &kora_pubkey, &mut state, &mut written_chunks, 3)
-                .await;
+        let res = write_chunks(
+            &ctx,
+            &bytes,
+            &buffer,
+            &kora_pubkey,
+            &mut state,
+            &mut written_chunks,
+            WRITE_CHUNK_SIZE,
+            3,
+        )
+        .await;
         assert!(res.is_ok());
         assert_eq!(written_chunks, 3);
         assert_eq!(state.as_ref().unwrap().written_chunks, 3);
@@ -1222,7 +1230,7 @@ mod inline_tests {
 
     #[tokio::test]
     async fn test_write_chunks_failure_at_second_chunk_triggers_cleanup_and_stops() {
-        let bytes = vec![7u8; WRITE_CHUNK_SIZE * 2 + 100];
+        let bytes = vec![7u8; WRITE_CHUNK_SIZE * 3 + 100];
         let buffer = Keypair::new();
         let kora_pubkey = Pubkey::new_unique();
 
@@ -1263,14 +1271,22 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
 
-        let res =
-            write_chunks(&ctx, &bytes, &buffer, &kora_pubkey, &mut state, &mut written_chunks, 3)
-                .await;
+        let res = write_chunks(
+            &ctx,
+            &bytes,
+            &buffer,
+            &kora_pubkey,
+            &mut state,
+            &mut written_chunks,
+            WRITE_CHUNK_SIZE,
+            4,
+        )
+        .await;
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("failed to write chunk"));
 
-        assert_eq!(written_chunks, 1);
-        assert_eq!(state.as_ref().unwrap().written_chunks, 1);
+        assert_eq!(written_chunks, 3);
+        assert_eq!(state.as_ref().unwrap().written_chunks, 3);
 
         assert!(!state_path.exists());
 
