@@ -477,6 +477,283 @@ macro_rules! parse_system_instruction {
     };
 }
 
+/// Emits the instruction arms spl-token and Token-2022 share. `TokenInstruction` resolves at
+/// the call site, so each program matches against its own interface crate.
+macro_rules! match_shared_token_instruction {
+    (
+        $token_ix:expr, $instruction:ident, $parsed:ident, $is_2022:expr,
+        { $($program_arms:tt)* }
+    ) => {
+        match $token_ix {
+            #[allow(deprecated)]
+            TokenInstruction::Transfer { amount } => {
+                use instruction_indexes::spl_token_transfer as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_token_transfer(
+                    &mut $parsed,
+                    $instruction,
+                    (
+                        ix::OWNER_INDEX,
+                        ix::SOURCE_ADDRESS_INDEX,
+                        ix::DESTINATION_ADDRESS_INDEX,
+                        ix::REQUIRED_NUMBER_OF_ACCOUNTS,
+                    ),
+                    amount,
+                    None,
+                    $is_2022,
+                );
+            }
+            TokenInstruction::TransferChecked { amount, .. } => {
+                use instruction_indexes::spl_token_transfer_checked as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_token_transfer(
+                    &mut $parsed,
+                    $instruction,
+                    (
+                        ix::OWNER_INDEX,
+                        ix::SOURCE_ADDRESS_INDEX,
+                        ix::DESTINATION_ADDRESS_INDEX,
+                        ix::REQUIRED_NUMBER_OF_ACCOUNTS,
+                    ),
+                    amount,
+                    Some($instruction.accounts[ix::MINT_INDEX].pubkey),
+                    $is_2022,
+                );
+            }
+            TokenInstruction::Burn { .. } => {
+                let owner = Self::parse_burn_owner_with_mint_fallback($instruction)?;
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenBurn {
+                        owner,
+                        multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::BurnChecked { .. } => {
+                use instruction_indexes::spl_token_burn as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenBurn {
+                        owner: $instruction.accounts[ix::OWNER_INDEX].pubkey,
+                        multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::CloseAccount => {
+                use instruction_indexes::spl_token_close_account as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenCloseAccount {
+                        owner: $instruction.accounts[ix::OWNER_INDEX].pubkey,
+                        account: $instruction.accounts[ix::ACCOUNT_INDEX].pubkey,
+                        destination: $instruction.accounts[ix::DESTINATION_INDEX].pubkey,
+                        multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::Approve { .. } => {
+                use instruction_indexes::spl_token_approve as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenApprove {
+                        owner: $instruction.accounts[ix::OWNER_INDEX].pubkey,
+                        multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::ApproveChecked { .. } => {
+                use instruction_indexes::spl_token_approve_checked as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenApprove {
+                        owner: $instruction.accounts[ix::OWNER_INDEX].pubkey,
+                        multisig_signers: Self::extract_multisig_signers($instruction, 4),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::Revoke => {
+                use instruction_indexes::spl_token_revoke as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenRevoke {
+                        owner: $instruction.accounts[ix::OWNER_INDEX].pubkey,
+                        multisig_signers: Self::extract_multisig_signers($instruction, 2),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::SetAuthority { new_authority, .. } => {
+                use instruction_indexes::spl_token_set_authority as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenSetAuthority {
+                        authority: $instruction.accounts[ix::CURRENT_AUTHORITY_INDEX].pubkey,
+                        new_authority: new_authority.into(),
+                        multisig_signers: Self::extract_multisig_signers($instruction, 2),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::MintTo { .. } => {
+                use instruction_indexes::spl_token_mint_to as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenMintTo {
+                        mint_authority: $instruction.accounts[ix::MINT_AUTHORITY_INDEX].pubkey,
+                        multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::MintToChecked { .. } => {
+                use instruction_indexes::spl_token_mint_to_checked as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenMintTo {
+                        mint_authority: $instruction.accounts[ix::MINT_AUTHORITY_INDEX].pubkey,
+                        multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::InitializeMint { mint_authority, freeze_authority, .. } => {
+                use instruction_indexes::spl_token_initialize_mint as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenInitializeMint {
+                        mint_authority,
+                        freeze_authority: freeze_authority.into(),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::InitializeMint2 { mint_authority, freeze_authority, .. } => {
+                use instruction_indexes::spl_token_initialize_mint2 as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenInitializeMint {
+                        mint_authority,
+                        freeze_authority: freeze_authority.into(),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::InitializeAccount => {
+                use instruction_indexes::spl_token_initialize_account as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenInitializeAccount {
+                        owner: $instruction.accounts[ix::OWNER_INDEX].pubkey,
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::InitializeAccount2 { owner } => {
+                use instruction_indexes::spl_token_initialize_account2 as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenInitializeAccount {
+                        owner,
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::InitializeAccount3 { owner } => {
+                use instruction_indexes::spl_token_initialize_account3 as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenInitializeAccount {
+                        owner,
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::InitializeMultisig { .. } => {
+                use instruction_indexes::spl_token_initialize_multisig as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                // Signers follow the multisig account and the rent sysvar.
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenInitializeMultisig {
+                        signers: Self::extract_multisig_signers($instruction, 2),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::InitializeMultisig2 { .. } => {
+                use instruction_indexes::spl_token_initialize_multisig2 as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenInitializeMultisig {
+                        signers: Self::extract_multisig_signers($instruction, 1),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::FreezeAccount => {
+                use instruction_indexes::spl_token_freeze_account as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenFreezeAccount {
+                        freeze_authority: $instruction.accounts[ix::FREEZE_AUTHORITY_INDEX].pubkey,
+                        multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::ThawAccount => {
+                use instruction_indexes::spl_token_thaw_account as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenThawAccount {
+                        freeze_authority: $instruction.accounts[ix::FREEZE_AUTHORITY_INDEX].pubkey,
+                        multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            TokenInstruction::WithdrawExcessLamports => {
+                use instruction_indexes::spl_token_withdraw_excess_lamports as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenWithdrawExcessLamports {
+                        owner: $instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
+                        multisig_signers: Self::extract_multisig_signers(
+                            $instruction,
+                            ix::MULTISIG_SIGNERS_START_INDEX,
+                        ),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
+            $($program_arms)*
+        }
+    };
+}
+
 pub struct IxUtils;
 
 pub const PARSED_DATA_FIELD_TYPE: &str = "type";
@@ -791,6 +1068,24 @@ impl IxUtils {
             .entry(instruction_data.instruction_type())
             .or_default()
             .push(instruction_data);
+    }
+
+    fn decode_token2022_extension_type<T: TryFrom<u8>>(
+        instruction: &Instruction,
+        extension: &str,
+    ) -> Result<T, KoraError> {
+        if instruction.data.len() < 2 {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Failed to parse Token-2022 {extension} instruction"
+            )));
+        }
+        spl_token_2022_interface::instruction::decode_instruction_type::<T>(&instruction.data[1..])
+            .map_err(|e| {
+                KoraError::InvalidTransaction(format!(
+                    "Failed to parse Token-2022 {extension} instruction: {}",
+                    sanitize_error!(e)
+                ))
+            })
     }
 
     fn push_parsed_token_transfer(
@@ -2869,338 +3164,45 @@ impl IxUtils {
             let program_id = instruction.program_id;
 
             if program_id == spl_token_interface::ID {
-                if let Ok(spl_ix) =
-                    spl_token_interface::instruction::TokenInstruction::unpack(&instruction.data)
-                {
-                    match spl_ix {
-                        spl_token_interface::instruction::TokenInstruction::Transfer { amount } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS);
+                use spl_token_interface::instruction::TokenInstruction;
 
-                            Self::push_parsed_token_transfer(
-                                &mut parsed_instructions,
-                                instruction,
-                                (
-                                    instruction_indexes::spl_token_transfer::OWNER_INDEX,
-                                    instruction_indexes::spl_token_transfer::SOURCE_ADDRESS_INDEX,
-                                    instruction_indexes::spl_token_transfer::DESTINATION_ADDRESS_INDEX,
-                                    instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS,
+                let Ok(spl_ix) = TokenInstruction::unpack(&instruction.data) else {
+                    continue;
+                };
+                match_shared_token_instruction!(spl_ix, instruction, parsed_instructions, false, {
+                    TokenInstruction::UnwrapLamports { .. } => {
+                        use instruction_indexes::spl_token_unwrap_lamports as ix;
+                        validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                        Self::push_parsed_spl_instruction(
+                            &mut parsed_instructions,
+                            ParsedSPLInstructionData::SplTokenUnwrapLamports {
+                                owner: instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
+                                multisig_signers: Self::extract_multisig_signers(
+                                    instruction,
+                                    ix::MULTISIG_SIGNERS_START_INDEX,
                                 ),
-                                amount,
-                                None,
-                                false,
-                            );
-                        }
-                        spl_token_interface::instruction::TokenInstruction::TransferChecked {
-                            amount,
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            Self::push_parsed_token_transfer(
-                                &mut parsed_instructions,
-                                instruction,
-                                (
-                                    instruction_indexes::spl_token_transfer_checked::OWNER_INDEX,
-                                    instruction_indexes::spl_token_transfer_checked::SOURCE_ADDRESS_INDEX,
-                                    instruction_indexes::spl_token_transfer_checked::DESTINATION_ADDRESS_INDEX,
-                                    instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS,
-                                ),
-                                amount,
-                                Some(
-                                    instruction.accounts
-                                        [instruction_indexes::spl_token_transfer_checked::MINT_INDEX]
-                                        .pubkey,
-                                ),
-                                false,
-                            );
-                        }
-                        spl_token_interface::instruction::TokenInstruction::Burn { .. } => {
-                            let owner = Self::parse_burn_owner_with_mint_fallback(instruction)?;
-                            Self::push_parsed_spl_instruction(
-                                &mut parsed_instructions,
-                                ParsedSPLInstructionData::SplTokenBurn {
-                                    owner,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: false,
-                                },
-                            );
-                        }
-                        spl_token_interface::instruction::TokenInstruction::BurnChecked { .. } => {
-                            validate_number_accounts!(
-                                instruction,
-                                instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
-                            );
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenBurn)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenBurn {
-                                    owner: instruction.accounts
-                                        [instruction_indexes::spl_token_burn::OWNER_INDEX]
-                                        .pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::CloseAccount { .. } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_close_account::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenCloseAccount)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenCloseAccount {
-                                    owner: instruction.accounts
-                                        [instruction_indexes::spl_token_close_account::OWNER_INDEX]
-                                        .pubkey,
-                                    account: instruction.accounts
-                                        [instruction_indexes::spl_token_close_account::ACCOUNT_INDEX]
-                                        .pubkey,
-                                    destination: instruction.accounts
-                                        [instruction_indexes::spl_token_close_account::DESTINATION_INDEX]
-                                        .pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::Approve { .. } => {
-                            validate_number_accounts!(
-                                instruction,
-                                instruction_indexes::spl_token_approve::REQUIRED_NUMBER_OF_ACCOUNTS
-                            );
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenApprove)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenApprove {
-                                    owner: instruction.accounts
-                                        [instruction_indexes::spl_token_approve::OWNER_INDEX]
-                                        .pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::ApproveChecked { .. } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_approve_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenApprove)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenApprove {
-                                    owner: instruction.accounts[instruction_indexes::spl_token_approve_checked::OWNER_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 4),
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::Revoke => {
-                            validate_number_accounts!(
-                                instruction,
-                                instruction_indexes::spl_token_revoke::REQUIRED_NUMBER_OF_ACCOUNTS
-                            );
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenRevoke)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenRevoke {
-                                    owner: instruction.accounts
-                                        [instruction_indexes::spl_token_revoke::OWNER_INDEX]
-                                        .pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 2),
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::SetAuthority {
-                            new_authority,
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_set_authority::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenSetAuthority)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenSetAuthority {
-                                    authority: instruction.accounts[instruction_indexes::spl_token_set_authority::CURRENT_AUTHORITY_INDEX].pubkey,
-                                    new_authority: new_authority.into(),
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 2),
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::MintTo { .. } => {
-                            validate_number_accounts!(
-                                instruction,
-                                instruction_indexes::spl_token_mint_to::REQUIRED_NUMBER_OF_ACCOUNTS
-                            );
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenMintTo)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenMintTo {
-                                    mint_authority: instruction.accounts[instruction_indexes::spl_token_mint_to::MINT_AUTHORITY_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::MintToChecked { .. } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_mint_to_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenMintTo)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenMintTo {
-                                    mint_authority: instruction.accounts[instruction_indexes::spl_token_mint_to_checked::MINT_AUTHORITY_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::InitializeMint {
-                            mint_authority,
-                            freeze_authority,
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_mint::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeMint)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeMint {
-                                    mint_authority,
-                                    freeze_authority: freeze_authority.into(),
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::InitializeMint2 {
-                            mint_authority,
-                            freeze_authority,
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_mint2::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeMint)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeMint {
-                                    mint_authority,
-                                    freeze_authority: freeze_authority.into(),
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::InitializeAccount => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeAccount)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeAccount {
-                                    owner: instruction.accounts[instruction_indexes::spl_token_initialize_account::OWNER_INDEX].pubkey,
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::InitializeAccount2 { owner } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account2::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeAccount)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeAccount {
-                                    owner,
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::InitializeAccount3 { owner } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account3::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeAccount)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeAccount {
-                                    owner,
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::InitializeMultisig { .. } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            // Extract signers from accounts (skip first 2: multisig + rent sysvar)
-                            let signers = Self::extract_multisig_signers(instruction, 2);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeMultisig)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeMultisig {
-                                    signers,
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::InitializeMultisig2 {
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig2::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            // Extract signers from accounts (skip first: multisig only)
-                            let signers = Self::extract_multisig_signers(instruction, 1);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeMultisig)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeMultisig {
-                                    signers,
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::FreezeAccount => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_freeze_account::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenFreezeAccount)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenFreezeAccount {
-                                    freeze_authority: instruction.accounts[instruction_indexes::spl_token_freeze_account::FREEZE_AUTHORITY_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::ThawAccount => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_thaw_account::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenThawAccount)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenThawAccount {
-                                    freeze_authority: instruction.accounts[instruction_indexes::spl_token_thaw_account::FREEZE_AUTHORITY_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::WithdrawExcessLamports => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_withdraw_excess_lamports::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            Self::push_parsed_spl_instruction(
-                                &mut parsed_instructions,
-                                ParsedSPLInstructionData::SplTokenWithdrawExcessLamports {
-                                    owner: instruction.accounts[instruction_indexes::spl_token_withdraw_excess_lamports::AUTHORITY_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, instruction_indexes::spl_token_withdraw_excess_lamports::MULTISIG_SIGNERS_START_INDEX),
-                                    is_2022: false,
-                                },
-                            );
-                        }
-                        spl_token_interface::instruction::TokenInstruction::UnwrapLamports { .. } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_unwrap_lamports::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            Self::push_parsed_spl_instruction(
-                                &mut parsed_instructions,
-                                ParsedSPLInstructionData::SplTokenUnwrapLamports {
-                                    owner: instruction.accounts[instruction_indexes::spl_token_unwrap_lamports::AUTHORITY_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, instruction_indexes::spl_token_unwrap_lamports::MULTISIG_SIGNERS_START_INDEX),
-                                    is_2022: false,
-                                },
-                            );
-                        }
-                        _ => {}
-                    };
-                }
+                                is_2022: false,
+                            },
+                        );
+                    }
+                    _ => {}
+                });
             } else if program_id == spl_token_2022_interface::ID {
-                let spl_ix = match spl_token_2022_interface::instruction::TokenInstruction::unpack(
-                    &instruction.data,
-                ) {
+                use spl_token_2022_interface::{
+                    extension::{
+                        pausable::instruction::{
+                            InitializeInstructionData as PausableInitialize, PausableInstruction,
+                        },
+                        transfer_fee::instruction::TransferFeeInstruction,
+                        transfer_hook::instruction::{
+                            InitializeInstructionData as TransferHookInitialize,
+                            TransferHookInstruction, UpdateInstructionData as TransferHookUpdate,
+                        },
+                    },
+                    instruction::{decode_instruction_data, TokenInstruction},
+                };
+
+                let spl_ix = match TokenInstruction::unpack(&instruction.data) {
                     Ok(spl_ix) => spl_ix,
                     Err(e) => {
                         // Token-2022 also processes opt-in token-metadata/token-group instructions, which
@@ -3242,558 +3244,189 @@ impl IxUtils {
                         )));
                     }
                 };
-                match spl_ix {
-                        #[allow(deprecated)]
-                        spl_token_2022_interface::instruction::TokenInstruction::Transfer { amount } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS);
 
-                            Self::push_parsed_token_transfer(
-                                &mut parsed_instructions,
-                                instruction,
-                                (
-                                    instruction_indexes::spl_token_transfer::OWNER_INDEX,
-                                    instruction_indexes::spl_token_transfer::SOURCE_ADDRESS_INDEX,
-                                    instruction_indexes::spl_token_transfer::DESTINATION_ADDRESS_INDEX,
-                                    instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS,
-                                ),
-                                amount,
-                                None,
-                                true,
-                            );
+                match_shared_token_instruction!(spl_ix, instruction, parsed_instructions, true, {
+                    TokenInstruction::TransferFeeExtension => {
+                        if instruction.data.len() < 2 {
+                            return Err(KoraError::InvalidTransaction(
+                                "Failed to parse Token-2022 TransferFee instruction".to_string(),
+                            ));
                         }
-                        spl_token_2022_interface::instruction::TokenInstruction::TransferChecked {
-                            amount,
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
+                        let transfer_fee_ix = TransferFeeInstruction::unpack(&instruction.data[1..])
+                            .map_err(|e| {
+                                KoraError::InvalidTransaction(format!(
+                                    "Failed to parse Token-2022 TransferFee instruction: {}",
+                                    sanitize_error!(e)
+                                ))
+                            })?;
 
-                            Self::push_parsed_token_transfer(
-                                &mut parsed_instructions,
-                                instruction,
-                                (
-                                    instruction_indexes::spl_token_transfer_checked::OWNER_INDEX,
-                                    instruction_indexes::spl_token_transfer_checked::SOURCE_ADDRESS_INDEX,
-                                    instruction_indexes::spl_token_transfer_checked::DESTINATION_ADDRESS_INDEX,
-                                    instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS,
-                                ),
-                                amount,
-                                Some(
-                                    instruction.accounts
-                                        [instruction_indexes::spl_token_transfer_checked::MINT_INDEX]
-                                        .pubkey,
-                                ),
-                                true,
-                            );
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::TransferFeeExtension => {
-                            if instruction.data.len() < 2 {
-                                return Err(KoraError::InvalidTransaction(
-                                    "Failed to parse Token-2022 TransferFee instruction".to_string(),
-                                ));
-                            }
-
-                            let transfer_fee_ix =
-                                spl_token_2022_interface::extension::transfer_fee::instruction::TransferFeeInstruction::unpack(
-                                    &instruction.data[1..],
-                                )
-                                .map_err(|e| {
-                                    KoraError::InvalidTransaction(format!(
-                                        "Failed to parse Token-2022 TransferFee instruction: {}",
-                                        sanitize_error!(e)
-                                    ))
-                                })?;
-
-                            match transfer_fee_ix {
-                                spl_token_2022_interface::extension::transfer_fee::instruction::TransferFeeInstruction::TransferCheckedWithFee {
+                        match transfer_fee_ix {
+                            TransferFeeInstruction::TransferCheckedWithFee { amount, .. } => {
+                                use instruction_indexes::spl_token_transfer_checked as ix;
+                                validate_number_accounts!(
+                                    instruction,
+                                    ix::REQUIRED_NUMBER_OF_ACCOUNTS
+                                );
+                                Self::push_parsed_token_transfer(
+                                    &mut parsed_instructions,
+                                    instruction,
+                                    (
+                                        ix::OWNER_INDEX,
+                                        ix::SOURCE_ADDRESS_INDEX,
+                                        ix::DESTINATION_ADDRESS_INDEX,
+                                        ix::REQUIRED_NUMBER_OF_ACCOUNTS,
+                                    ),
                                     amount,
-                                    ..
-                                } => {
-                                    validate_number_accounts!(
-                                        instruction,
-                                        instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS
-                                    );
-
-                                    Self::push_parsed_token_transfer(
-                                        &mut parsed_instructions,
-                                        instruction,
-                                        (
-                                            instruction_indexes::spl_token_transfer_checked::OWNER_INDEX,
-                                            instruction_indexes::spl_token_transfer_checked::SOURCE_ADDRESS_INDEX,
-                                            instruction_indexes::spl_token_transfer_checked::DESTINATION_ADDRESS_INDEX,
-                                            instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS,
-                                        ),
-                                        amount,
-                                        Some(
-                                            instruction.accounts
-                                                [instruction_indexes::spl_token_transfer_checked::MINT_INDEX]
-                                                .pubkey,
-                                        ),
-                                        true,
-                                    );
-                                }
-                                _ => {
-                                    Self::push_unhandled_token2022_extension(
-                                        &mut parsed_instructions,
-                                        instruction,
-                                    );
-                                }
+                                    Some(instruction.accounts[ix::MINT_INDEX].pubkey),
+                                    true,
+                                );
                             }
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::Burn { .. } => {
-                            let owner = Self::parse_burn_owner_with_mint_fallback(instruction)?;
-                            Self::push_parsed_spl_instruction(
-                                &mut parsed_instructions,
-                                ParsedSPLInstructionData::SplTokenBurn {
-                                    owner,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: true,
-                                },
-                            );
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::BurnChecked { .. } => {
-                            validate_number_accounts!(
-                                instruction,
-                                instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
-                            );
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenBurn)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenBurn {
-                                    owner: instruction.accounts
-                                        [instruction_indexes::spl_token_burn::OWNER_INDEX]
-                                        .pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::CloseAccount { .. } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_close_account::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenCloseAccount)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenCloseAccount {
-                                    owner: instruction.accounts
-                                        [instruction_indexes::spl_token_close_account::OWNER_INDEX]
-                                        .pubkey,
-                                    account: instruction.accounts
-                                        [instruction_indexes::spl_token_close_account::ACCOUNT_INDEX]
-                                        .pubkey,
-                                    destination: instruction.accounts
-                                        [instruction_indexes::spl_token_close_account::DESTINATION_INDEX]
-                                        .pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::Approve { .. } => {
-                            validate_number_accounts!(
-                                instruction,
-                                instruction_indexes::spl_token_approve::REQUIRED_NUMBER_OF_ACCOUNTS
-                            );
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenApprove)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenApprove {
-                                    owner: instruction.accounts
-                                        [instruction_indexes::spl_token_approve::OWNER_INDEX]
-                                        .pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::ApproveChecked {
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_approve_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenApprove)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenApprove {
-                                    owner: instruction.accounts[instruction_indexes::spl_token_approve_checked::OWNER_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 4),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::Revoke => {
-                            validate_number_accounts!(
-                                instruction,
-                                instruction_indexes::spl_token_revoke::REQUIRED_NUMBER_OF_ACCOUNTS
-                            );
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenRevoke)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenRevoke {
-                                    owner: instruction.accounts
-                                        [instruction_indexes::spl_token_revoke::OWNER_INDEX]
-                                        .pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 2),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::SetAuthority {
-                            new_authority,
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_set_authority::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenSetAuthority)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenSetAuthority {
-                                    authority: instruction.accounts[instruction_indexes::spl_token_set_authority::CURRENT_AUTHORITY_INDEX].pubkey,
-                                    new_authority: new_authority.into(),
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 2),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::MintTo { .. } => {
-                            validate_number_accounts!(
-                                instruction,
-                                instruction_indexes::spl_token_mint_to::REQUIRED_NUMBER_OF_ACCOUNTS
-                            );
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenMintTo)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenMintTo {
-                                    mint_authority: instruction.accounts[instruction_indexes::spl_token_mint_to::MINT_AUTHORITY_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::MintToChecked { .. } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_mint_to_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenMintTo)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenMintTo {
-                                    mint_authority: instruction.accounts[instruction_indexes::spl_token_mint_to_checked::MINT_AUTHORITY_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::InitializeMint {
-                            mint_authority,
-                            freeze_authority,
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_mint::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeMint)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeMint {
-                                    mint_authority,
-                                    freeze_authority: freeze_authority.into(),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::InitializeMint2 {
-                            mint_authority,
-                            freeze_authority,
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_mint2::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeMint)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeMint {
-                                    mint_authority,
-                                    freeze_authority: freeze_authority.into(),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::InitializeAccount => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeAccount)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeAccount {
-                                    owner: instruction.accounts[instruction_indexes::spl_token_initialize_account::OWNER_INDEX].pubkey,
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::InitializeAccount2 {
-                            owner,
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account2::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeAccount)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeAccount {
-                                    owner,
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::InitializeAccount3 {
-                            owner,
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account3::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeAccount)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeAccount {
-                                    owner,
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::InitializeMultisig {
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            // Extract signers from accounts (skip first 2: multisig + rent sysvar)
-                            let signers = Self::extract_multisig_signers(instruction, 2);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeMultisig)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeMultisig {
-                                    signers,
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::InitializeMultisig2 {
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig2::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            // Extract signers from accounts (skip first: multisig only)
-                            let signers = Self::extract_multisig_signers(instruction, 1);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenInitializeMultisig)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenInitializeMultisig {
-                                    signers,
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::FreezeAccount => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_freeze_account::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenFreezeAccount)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenFreezeAccount {
-                                    freeze_authority: instruction.accounts[instruction_indexes::spl_token_freeze_account::FREEZE_AUTHORITY_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::ThawAccount => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_thaw_account::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenThawAccount)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenThawAccount {
-                                    freeze_authority: instruction.accounts[instruction_indexes::spl_token_thaw_account::FREEZE_AUTHORITY_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 3),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::Reallocate {
-                            ..
-                        } => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_reallocate::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenReallocate)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenReallocate {
-                                    account: instruction.accounts[instruction_indexes::spl_token_reallocate::ACCOUNT_INDEX].pubkey,
-                                    payer: instruction.accounts[instruction_indexes::spl_token_reallocate::PAYER_INDEX].pubkey,
-                                    owner: instruction.accounts[instruction_indexes::spl_token_reallocate::OWNER_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, 4),
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::PausableExtension => {
-                            if instruction.data.len() < 2 {
-                                return Err(KoraError::InvalidTransaction(
-                                    "Failed to parse Token-2022 Pausable instruction".to_string(),
-                                ));
-                            }
-                            let pausable_ix =
-                                spl_token_2022_interface::instruction::decode_instruction_type::<
-                                    spl_token_2022_interface::extension::pausable::instruction::PausableInstruction,
-                                >(&instruction.data[1..])
-                                .map_err(|e| {
-                                    KoraError::InvalidTransaction(format!(
-                                        "Failed to parse Token-2022 Pausable instruction: {}",
-                                        sanitize_error!(e)
-                                    ))
-                                })?;
-
-                            match pausable_ix {
-                                spl_token_2022_interface::extension::pausable::instruction::PausableInstruction::Initialize => {
-                                    validate_number_accounts!(instruction, 1);
-
-                                    let initialize =
-                                        *spl_token_2022_interface::instruction::decode_instruction_data::<
-                                            spl_token_2022_interface::extension::pausable::instruction::InitializeInstructionData,
-                                        >(&instruction.data[1..])
-                                        .map_err(|e| {
-                                            KoraError::InvalidTransaction(format!(
-                                                "Failed to parse Token-2022 Pausable initialize instruction: {}",
-                                                sanitize_error!(e)
-                                            ))
-                                        })?;
-
-                                    Self::push_parsed_spl_instruction(
-                                        &mut parsed_instructions,
-                                        ParsedSPLInstructionData::SplTokenInitializePausable {
-                                            authority: initialize.authority,
-                                        },
-                                    );
-                                }
-                                spl_token_2022_interface::extension::pausable::instruction::PausableInstruction::Pause => {
-                                    validate_number_accounts!(instruction, 2);
-
-                                    Self::push_parsed_spl_instruction(
-                                        &mut parsed_instructions,
-                                        ParsedSPLInstructionData::SplTokenPause {
-                                            authority: instruction.accounts[1].pubkey,
-                                            multisig_signers: Self::extract_multisig_signers(
-                                                instruction,
-                                                2,
-                                            ),
-                                        },
-                                    );
-                                }
-                                spl_token_2022_interface::extension::pausable::instruction::PausableInstruction::Resume => {
-                                    validate_number_accounts!(instruction, 2);
-
-                                    Self::push_parsed_spl_instruction(
-                                        &mut parsed_instructions,
-                                        ParsedSPLInstructionData::SplTokenResume {
-                                            authority: instruction.accounts[1].pubkey,
-                                            multisig_signers: Self::extract_multisig_signers(
-                                                instruction,
-                                                2,
-                                            ),
-                                        },
-                                    );
-                                }
-                            }
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::TransferHookExtension => {
-                            if instruction.data.len() < 2 {
-                                return Err(KoraError::InvalidTransaction(
-                                    "Failed to parse Token-2022 TransferHook instruction"
-                                        .to_string(),
-                                ));
-                            }
-                            let transfer_hook_ix =
-                                spl_token_2022_interface::instruction::decode_instruction_type::<
-                                    spl_token_2022_interface::extension::transfer_hook::instruction::TransferHookInstruction,
-                                >(&instruction.data[1..])
-                                .map_err(|e| {
-                                    KoraError::InvalidTransaction(format!(
-                                        "Failed to parse Token-2022 TransferHook instruction: {}",
-                                        sanitize_error!(e)
-                                    ))
-                                })?;
-
-                            match transfer_hook_ix {
-                                spl_token_2022_interface::extension::transfer_hook::instruction::TransferHookInstruction::Initialize => {
-                                    validate_number_accounts!(instruction, 1);
-
-                                    let initialize =
-                                        *spl_token_2022_interface::instruction::decode_instruction_data::<
-                                            spl_token_2022_interface::extension::transfer_hook::instruction::InitializeInstructionData,
-                                        >(&instruction.data[1..])
-                                        .map_err(|e| {
-                                            KoraError::InvalidTransaction(format!(
-                                                "Failed to parse Token-2022 TransferHook initialize instruction: {}",
-                                                sanitize_error!(e)
-                                            ))
-                                        })?;
-
-                                    Self::push_parsed_spl_instruction(
-                                        &mut parsed_instructions,
-                                        ParsedSPLInstructionData::SplTokenInitializeTransferHook {
-                                            authority: initialize.authority.into(),
-                                            program_id: initialize.program_id.into(),
-                                        },
-                                    );
-                                }
-                                spl_token_2022_interface::extension::transfer_hook::instruction::TransferHookInstruction::Update => {
-                                    validate_number_accounts!(instruction, 2);
-
-                                    let update =
-                                        *spl_token_2022_interface::instruction::decode_instruction_data::<
-                                            spl_token_2022_interface::extension::transfer_hook::instruction::UpdateInstructionData,
-                                        >(&instruction.data[1..])
-                                        .map_err(|e| {
-                                            KoraError::InvalidTransaction(format!(
-                                                "Failed to parse Token-2022 TransferHook update instruction: {}",
-                                                sanitize_error!(e)
-                                            ))
-                                        })?;
-
-                                    Self::push_parsed_spl_instruction(
-                                        &mut parsed_instructions,
-                                        ParsedSPLInstructionData::SplTokenTransferHookUpdate {
-                                            authority: instruction.accounts[1].pubkey,
-                                            multisig_signers: Self::extract_multisig_signers(
-                                                instruction,
-                                                2,
-                                            ),
-                                            program_id: update.program_id.into(),
-                                        },
-                                    );
-                                }
-                            }
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::WithdrawExcessLamports => {
-                            validate_number_accounts!(instruction, instruction_indexes::spl_token_withdraw_excess_lamports::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                            Self::push_parsed_spl_instruction(
-                                &mut parsed_instructions,
-                                ParsedSPLInstructionData::SplTokenWithdrawExcessLamports {
-                                    owner: instruction.accounts[instruction_indexes::spl_token_withdraw_excess_lamports::AUTHORITY_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(instruction, instruction_indexes::spl_token_withdraw_excess_lamports::MULTISIG_SIGNERS_START_INDEX),
-                                    is_2022: true,
-                                },
-                            );
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::ConfidentialTransferExtension
-                        | spl_token_2022_interface::instruction::TokenInstruction::ConfidentialTransferFeeExtension
-                        | spl_token_2022_interface::instruction::TokenInstruction::ConfidentialMintBurnExtension => {
-                            let allowed = crate::state::get_config()
-                                .map(|c| c.validation.token_2022.allow_confidential_transfers)
-                                .unwrap_or(false);
-                            if allowed {
+                            _ => {
                                 Self::push_unhandled_token2022_extension(
                                     &mut parsed_instructions,
                                     instruction,
                                 );
-                            } else {
-                                return Err(KoraError::InvalidTransaction(
-                                    "Confidential Token-2022 instructions are not supported"
-                                        .to_string(),
-                                ));
                             }
                         }
-                        _ => {
-                            Self::push_unhandled_token2022_extension(
-                                &mut parsed_instructions,
-                                instruction,
-                            );
+                    }
+                    TokenInstruction::Reallocate { .. } => {
+                        use instruction_indexes::spl_token_reallocate as ix;
+                        validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                        Self::push_parsed_spl_instruction(
+                            &mut parsed_instructions,
+                            ParsedSPLInstructionData::SplTokenReallocate {
+                                account: instruction.accounts[ix::ACCOUNT_INDEX].pubkey,
+                                payer: instruction.accounts[ix::PAYER_INDEX].pubkey,
+                                owner: instruction.accounts[ix::OWNER_INDEX].pubkey,
+                                multisig_signers: Self::extract_multisig_signers(instruction, 4),
+                                is_2022: true,
+                            },
+                        );
+                    }
+                    TokenInstruction::PausableExtension => {
+                        match Self::decode_token2022_extension_type::<PausableInstruction>(
+                            instruction,
+                            "Pausable",
+                        )? {
+                            PausableInstruction::Initialize => {
+                                validate_number_accounts!(instruction, 1);
+                                let initialize = *decode_instruction_data::<PausableInitialize>(
+                                    &instruction.data[1..],
+                                )
+                                .map_err(|e| {
+                                    KoraError::InvalidTransaction(format!(
+                                        "Failed to parse Token-2022 Pausable initialize instruction: {}",
+                                        sanitize_error!(e)
+                                    ))
+                                })?;
+                                Self::push_parsed_spl_instruction(
+                                    &mut parsed_instructions,
+                                    ParsedSPLInstructionData::SplTokenInitializePausable {
+                                        authority: initialize.authority,
+                                    },
+                                );
+                            }
+                            PausableInstruction::Pause => {
+                                validate_number_accounts!(instruction, 2);
+                                Self::push_parsed_spl_instruction(
+                                    &mut parsed_instructions,
+                                    ParsedSPLInstructionData::SplTokenPause {
+                                        authority: instruction.accounts[1].pubkey,
+                                        multisig_signers: Self::extract_multisig_signers(
+                                            instruction,
+                                            2,
+                                        ),
+                                    },
+                                );
+                            }
+                            PausableInstruction::Resume => {
+                                validate_number_accounts!(instruction, 2);
+                                Self::push_parsed_spl_instruction(
+                                    &mut parsed_instructions,
+                                    ParsedSPLInstructionData::SplTokenResume {
+                                        authority: instruction.accounts[1].pubkey,
+                                        multisig_signers: Self::extract_multisig_signers(
+                                            instruction,
+                                            2,
+                                        ),
+                                    },
+                                );
+                            }
                         }
-                    };
+                    }
+                    TokenInstruction::TransferHookExtension => {
+                        match Self::decode_token2022_extension_type::<TransferHookInstruction>(
+                            instruction,
+                            "TransferHook",
+                        )? {
+                            TransferHookInstruction::Initialize => {
+                                validate_number_accounts!(instruction, 1);
+                                let initialize = *decode_instruction_data::<TransferHookInitialize>(
+                                    &instruction.data[1..],
+                                )
+                                .map_err(|e| {
+                                    KoraError::InvalidTransaction(format!(
+                                        "Failed to parse Token-2022 TransferHook initialize instruction: {}",
+                                        sanitize_error!(e)
+                                    ))
+                                })?;
+                                Self::push_parsed_spl_instruction(
+                                    &mut parsed_instructions,
+                                    ParsedSPLInstructionData::SplTokenInitializeTransferHook {
+                                        authority: initialize.authority.into(),
+                                        program_id: initialize.program_id.into(),
+                                    },
+                                );
+                            }
+                            TransferHookInstruction::Update => {
+                                validate_number_accounts!(instruction, 2);
+                                let update = *decode_instruction_data::<TransferHookUpdate>(
+                                    &instruction.data[1..],
+                                )
+                                .map_err(|e| {
+                                    KoraError::InvalidTransaction(format!(
+                                        "Failed to parse Token-2022 TransferHook update instruction: {}",
+                                        sanitize_error!(e)
+                                    ))
+                                })?;
+                                Self::push_parsed_spl_instruction(
+                                    &mut parsed_instructions,
+                                    ParsedSPLInstructionData::SplTokenTransferHookUpdate {
+                                        authority: instruction.accounts[1].pubkey,
+                                        multisig_signers: Self::extract_multisig_signers(
+                                            instruction,
+                                            2,
+                                        ),
+                                        program_id: update.program_id.into(),
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    TokenInstruction::ConfidentialTransferExtension
+                    | TokenInstruction::ConfidentialTransferFeeExtension
+                    | TokenInstruction::ConfidentialMintBurnExtension => {
+                        let allowed = crate::state::get_config()
+                            .map(|c| c.validation.token_2022.allow_confidential_transfers)
+                            .unwrap_or(false);
+                        if !allowed {
+                            return Err(KoraError::InvalidTransaction(
+                                "Confidential Token-2022 instructions are not supported"
+                                    .to_string(),
+                            ));
+                        }
+                        Self::push_unhandled_token2022_extension(
+                            &mut parsed_instructions,
+                            instruction,
+                        );
+                    }
+                    _ => {
+                        Self::push_unhandled_token2022_extension(
+                            &mut parsed_instructions,
+                            instruction,
+                        );
+                    }
+                });
             }
         }
         Ok(parsed_instructions)
