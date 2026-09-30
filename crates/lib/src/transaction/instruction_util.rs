@@ -404,6 +404,42 @@ pub enum ParsedBpfLoaderUpgradeableInstructionData {
     },
 }
 
+macro_rules! instruction_type {
+    ($data:ident => $ty:ident { $($variant:ident),* $(,)? }) => {
+        impl $data {
+            fn instruction_type(&self) -> $ty {
+                match self {
+                    $(Self::$variant { .. } => $ty::$variant,)*
+                }
+            }
+        }
+    };
+}
+
+instruction_type!(ParsedSPLInstructionData => ParsedSPLInstructionType {
+    SplTokenTransfer,
+    SplTokenBurn,
+    SplTokenCloseAccount,
+    SplTokenApprove,
+    SplTokenRevoke,
+    SplTokenSetAuthority,
+    SplTokenMintTo,
+    SplTokenInitializeMint,
+    SplTokenInitializeAccount,
+    SplTokenInitializeMultisig,
+    SplTokenFreezeAccount,
+    SplTokenThawAccount,
+    SplTokenReallocate,
+    SplTokenInitializePausable,
+    SplTokenPause,
+    SplTokenResume,
+    SplTokenInitializeTransferHook,
+    SplTokenTransferHookUpdate,
+    SplTokenWithdrawExcessLamports,
+    SplTokenUnwrapLamports,
+    SplTokenUnknownExtension,
+});
+
 macro_rules! validate_number_accounts {
     ($instruction:expr, $min_count:expr) => {
         if $instruction.accounts.len() < $min_count {
@@ -749,10 +785,12 @@ impl IxUtils {
 
     fn push_parsed_spl_instruction(
         parsed_instructions: &mut HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>,
-        instruction_type: ParsedSPLInstructionType,
         instruction_data: ParsedSPLInstructionData,
     ) {
-        parsed_instructions.entry(instruction_type).or_default().push(instruction_data);
+        parsed_instructions
+            .entry(instruction_data.instruction_type())
+            .or_default()
+            .push(instruction_data);
     }
 
     fn push_parsed_token_transfer(
@@ -766,7 +804,6 @@ impl IxUtils {
         let (owner_index, source_index, destination_index, multisig_start_index) = transfer_indexes;
         Self::push_parsed_spl_instruction(
             parsed_instructions,
-            ParsedSPLInstructionType::SplTokenTransfer,
             ParsedSPLInstructionData::SplTokenTransfer {
                 amount,
                 owner: instruction.accounts[owner_index].pubkey,
@@ -785,7 +822,6 @@ impl IxUtils {
     ) {
         Self::push_parsed_spl_instruction(
             parsed_instructions,
-            ParsedSPLInstructionType::SplTokenUnknownExtension,
             ParsedSPLInstructionData::SplTokenUnknownExtension {
                 accounts: instruction.accounts.iter().map(|a| a.pubkey).collect(),
             },
@@ -2882,7 +2918,6 @@ impl IxUtils {
                             let owner = Self::parse_burn_owner_with_mint_fallback(instruction)?;
                             Self::push_parsed_spl_instruction(
                                 &mut parsed_instructions,
-                                ParsedSPLInstructionType::SplTokenBurn,
                                 ParsedSPLInstructionData::SplTokenBurn {
                                     owner,
                                     multisig_signers: Self::extract_multisig_signers(instruction, 3),
@@ -3140,7 +3175,6 @@ impl IxUtils {
 
                             Self::push_parsed_spl_instruction(
                                 &mut parsed_instructions,
-                                ParsedSPLInstructionType::SplTokenWithdrawExcessLamports,
                                 ParsedSPLInstructionData::SplTokenWithdrawExcessLamports {
                                     owner: instruction.accounts[instruction_indexes::spl_token_withdraw_excess_lamports::AUTHORITY_INDEX].pubkey,
                                     multisig_signers: Self::extract_multisig_signers(instruction, instruction_indexes::spl_token_withdraw_excess_lamports::MULTISIG_SIGNERS_START_INDEX),
@@ -3153,7 +3187,6 @@ impl IxUtils {
 
                             Self::push_parsed_spl_instruction(
                                 &mut parsed_instructions,
-                                ParsedSPLInstructionType::SplTokenUnwrapLamports,
                                 ParsedSPLInstructionData::SplTokenUnwrapLamports {
                                     owner: instruction.accounts[instruction_indexes::spl_token_unwrap_lamports::AUTHORITY_INDEX].pubkey,
                                     multisig_signers: Self::extract_multisig_signers(instruction, instruction_indexes::spl_token_unwrap_lamports::MULTISIG_SIGNERS_START_INDEX),
@@ -3310,7 +3343,6 @@ impl IxUtils {
                             let owner = Self::parse_burn_owner_with_mint_fallback(instruction)?;
                             Self::push_parsed_spl_instruction(
                                 &mut parsed_instructions,
-                                ParsedSPLInstructionType::SplTokenBurn,
                                 ParsedSPLInstructionData::SplTokenBurn {
                                     owner,
                                     multisig_signers: Self::extract_multisig_signers(instruction, 3),
@@ -3621,7 +3653,6 @@ impl IxUtils {
 
                                     Self::push_parsed_spl_instruction(
                                         &mut parsed_instructions,
-                                        ParsedSPLInstructionType::SplTokenInitializePausable,
                                         ParsedSPLInstructionData::SplTokenInitializePausable {
                                             authority: initialize.authority,
                                         },
@@ -3632,7 +3663,6 @@ impl IxUtils {
 
                                     Self::push_parsed_spl_instruction(
                                         &mut parsed_instructions,
-                                        ParsedSPLInstructionType::SplTokenPause,
                                         ParsedSPLInstructionData::SplTokenPause {
                                             authority: instruction.accounts[1].pubkey,
                                             multisig_signers: Self::extract_multisig_signers(
@@ -3647,7 +3677,6 @@ impl IxUtils {
 
                                     Self::push_parsed_spl_instruction(
                                         &mut parsed_instructions,
-                                        ParsedSPLInstructionType::SplTokenResume,
                                         ParsedSPLInstructionData::SplTokenResume {
                                             authority: instruction.accounts[1].pubkey,
                                             multisig_signers: Self::extract_multisig_signers(
@@ -3694,7 +3723,6 @@ impl IxUtils {
 
                                     Self::push_parsed_spl_instruction(
                                         &mut parsed_instructions,
-                                        ParsedSPLInstructionType::SplTokenInitializeTransferHook,
                                         ParsedSPLInstructionData::SplTokenInitializeTransferHook {
                                             authority: initialize.authority.into(),
                                             program_id: initialize.program_id.into(),
@@ -3717,7 +3745,6 @@ impl IxUtils {
 
                                     Self::push_parsed_spl_instruction(
                                         &mut parsed_instructions,
-                                        ParsedSPLInstructionType::SplTokenTransferHookUpdate,
                                         ParsedSPLInstructionData::SplTokenTransferHookUpdate {
                                             authority: instruction.accounts[1].pubkey,
                                             multisig_signers: Self::extract_multisig_signers(
@@ -3735,7 +3762,6 @@ impl IxUtils {
 
                             Self::push_parsed_spl_instruction(
                                 &mut parsed_instructions,
-                                ParsedSPLInstructionType::SplTokenWithdrawExcessLamports,
                                 ParsedSPLInstructionData::SplTokenWithdrawExcessLamports {
                                     owner: instruction.accounts[instruction_indexes::spl_token_withdraw_excess_lamports::AUTHORITY_INDEX].pubkey,
                                     multisig_signers: Self::extract_multisig_signers(instruction, instruction_indexes::spl_token_withdraw_excess_lamports::MULTISIG_SIGNERS_START_INDEX),
