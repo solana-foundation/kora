@@ -2,7 +2,6 @@ use crate::{
     config::{Config, FeePayerPolicy, ProgramsConfig},
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation, TransactionFeeUtil},
-    oracle::PriceSource,
     token::{
         interface::TokenMint,
         token::{TokenUtil, TransferHookValidationFlow},
@@ -33,7 +32,6 @@ pub struct TransactionValidator {
     max_signatures: u64,
     allowed_tokens: HashSet<Pubkey>,
     disallowed_accounts: HashSet<Pubkey>,
-    _price_source: PriceSource,
     fee_payer_policy: FeePayerPolicy,
     allow_durable_transactions: bool,
 }
@@ -55,7 +53,6 @@ impl TransactionValidator {
             allow_all_programs,
             require_one_of_programs: parse_pubkey_set(&config.require_one_of_programs)?,
             max_signatures: config.max_signatures,
-            _price_source: config.price_source.clone(),
             allowed_tokens: parse_pubkey_set(&config.allowed_tokens)?,
             disallowed_accounts: parse_pubkey_set(&config.disallowed_accounts)?,
             fee_payer_policy: config.fee_payer_policy.clone(),
@@ -998,6 +995,7 @@ impl TransactionValidator {
 mod tests {
     use crate::{
         config::{Config, FeePayerPolicy, TransferHookPolicy},
+        oracle::PriceSource,
         state::{get_config, update_config},
         tests::{
             account_mock::{AccountMockBuilder, MintAccountMockBuilder, TokenAccountMockBuilder},
