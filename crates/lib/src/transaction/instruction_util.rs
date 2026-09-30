@@ -1419,306 +1419,122 @@ impl IxUtils {
             .get(PARSED_DATA_FIELD_INFO)
             .ok_or_else(|| KoraError::SerializationError("Missing 'info' field".to_string()))?;
 
-        match instruction_type {
-            PARSED_DATA_FIELD_TRANSFER => {
-                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
-                let destination = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DESTINATION)?;
-                let lamports = Self::get_field_as_u64(info, PARSED_DATA_FIELD_LAMPORTS)?;
+        let pubkey = |field: &str| Self::get_field_as_pubkey(info, field);
+        let index = |field: &str| -> Result<u8, KoraError> {
+            Self::get_account_index(account_keys_hashmap, &pubkey(field)?)
+        };
+        let number = |field: &str| Self::get_field_as_u64(info, field);
+        let seed = |field: &str| Self::get_field_as_str(info, field).map(str::to_string);
 
-                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
-                let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
-
-                let transfer_ix = SystemInstruction::Transfer { lamports };
-                let data = bincode::serialize(&transfer_ix).map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to serialize Transfer instruction: {}",
-                        e
-                    ))
-                })?;
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![source_idx, destination_idx],
-                    data,
-                })
-            }
-            PARSED_DATA_FIELD_CREATE_ACCOUNT => {
-                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
-                let new_account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NEW_ACCOUNT)?;
-                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
-                let lamports = Self::get_field_as_u64(info, PARSED_DATA_FIELD_LAMPORTS)?;
-                let space = Self::get_field_as_u64(info, PARSED_DATA_FIELD_SPACE)?;
-
-                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
-                let new_account_idx = Self::get_account_index(account_keys_hashmap, &new_account)?;
-
-                let create_ix = SystemInstruction::CreateAccount { lamports, space, owner };
-                let data = bincode::serialize(&create_ix).map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to serialize CreateAccount instruction: {}",
-                        e
-                    ))
-                })?;
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![source_idx, new_account_idx],
-                    data,
-                })
-            }
-            PARSED_DATA_FIELD_ASSIGN => {
-                let authority = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
-
-                let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
-
-                let assign_ix = SystemInstruction::Assign { owner };
-                let data = bincode::serialize(&assign_ix).map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to serialize Assign instruction: {}",
-                        e
-                    ))
-                })?;
-
-                Ok(CompiledInstruction { program_id_index, accounts: vec![authority_idx], data })
-            }
-            PARSED_DATA_FIELD_TRANSFER_WITH_SEED => {
-                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
-                let destination = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DESTINATION)?;
-                let lamports = Self::get_field_as_u64(info, PARSED_DATA_FIELD_LAMPORTS)?;
-                let source_base = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE_BASE)?;
-                let source_seed =
-                    Self::get_field_as_str(info, PARSED_DATA_FIELD_SOURCE_SEED)?.to_string();
-                let source_owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE_OWNER)?;
-
-                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
-                let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
-                let source_base_idx = Self::get_account_index(account_keys_hashmap, &source_base)?;
-
-                let transfer_ix = SystemInstruction::TransferWithSeed {
-                    lamports,
-                    from_seed: source_seed,
-                    from_owner: source_owner,
-                };
-                let data = bincode::serialize(&transfer_ix).map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to serialize TransferWithSeed instruction: {}",
-                        e
-                    ))
-                })?;
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![source_idx, source_base_idx, destination_idx],
-                    data,
-                })
-            }
-            PARSED_DATA_FIELD_CREATE_ACCOUNT_WITH_SEED => {
-                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
-                let new_account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NEW_ACCOUNT)?;
-                let base = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_BASE)?;
-                let seed = Self::get_field_as_str(info, PARSED_DATA_FIELD_SEED)?.to_string();
-                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
-                let lamports = Self::get_field_as_u64(info, PARSED_DATA_FIELD_LAMPORTS)?;
-                let space = Self::get_field_as_u64(info, PARSED_DATA_FIELD_SPACE)?;
-
-                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
-                let new_account_idx = Self::get_account_index(account_keys_hashmap, &new_account)?;
-                let base_idx = Self::get_account_index(account_keys_hashmap, &base)?;
-
-                let create_ix =
-                    SystemInstruction::CreateAccountWithSeed { base, seed, lamports, space, owner };
-                let data = bincode::serialize(&create_ix).map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to serialize CreateAccountWithSeed instruction: {}",
-                        e
-                    ))
-                })?;
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![source_idx, new_account_idx, base_idx],
-                    data,
-                })
-            }
-            PARSED_DATA_FIELD_ASSIGN_WITH_SEED => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let base = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_BASE)?;
-                let seed = Self::get_field_as_str(info, PARSED_DATA_FIELD_SEED)?.to_string();
-                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
-
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-                let base_idx = Self::get_account_index(account_keys_hashmap, &base)?;
-
-                let assign_ix = SystemInstruction::AssignWithSeed { base, seed, owner };
-                let data = bincode::serialize(&assign_ix).map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to serialize AssignWithSeed instruction: {}",
-                        e
-                    ))
-                })?;
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![account_idx, base_idx],
-                    data,
-                })
-            }
-            PARSED_DATA_FIELD_WITHDRAW_NONCE_ACCOUNT => {
-                let nonce_account =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_ACCOUNT)?;
-                let recipient = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DESTINATION)?;
-                let nonce_authority =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_AUTHORITY)?;
-                let lamports = Self::get_field_as_u64(info, PARSED_DATA_FIELD_LAMPORTS)?;
-
-                let nonce_account_idx =
-                    Self::get_account_index(account_keys_hashmap, &nonce_account)?;
-                let recipient_idx = Self::get_account_index(account_keys_hashmap, &recipient)?;
-                let nonce_authority_idx =
-                    Self::get_account_index(account_keys_hashmap, &nonce_authority)?;
-
-                let withdraw_ix = SystemInstruction::WithdrawNonceAccount(lamports);
-                let data = bincode::serialize(&withdraw_ix).map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to serialize WithdrawNonceAccount instruction: {}",
-                        e
-                    ))
-                })?;
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![nonce_account_idx, recipient_idx, nonce_authority_idx],
-                    data,
-                })
-            }
-            PARSED_DATA_FIELD_ALLOCATE => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let space = Self::get_field_as_u64(info, PARSED_DATA_FIELD_SPACE)?;
-
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-
-                let allocate_ix = SystemInstruction::Allocate { space };
-                let data = bincode::serialize(&allocate_ix).map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to serialize Allocate instruction: {}",
-                        e
-                    ))
-                })?;
-
-                Ok(CompiledInstruction { program_id_index, accounts: vec![account_idx], data })
-            }
-            PARSED_DATA_FIELD_ALLOCATE_WITH_SEED => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let base = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_BASE)?;
-                let seed = Self::get_field_as_str(info, PARSED_DATA_FIELD_SEED)?.to_string();
-                let space = Self::get_field_as_u64(info, PARSED_DATA_FIELD_SPACE)?;
-                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
-
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-                let base_idx = Self::get_account_index(account_keys_hashmap, &base)?;
-
-                let allocate_ix = SystemInstruction::AllocateWithSeed { base, seed, space, owner };
-                let data = bincode::serialize(&allocate_ix).map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to serialize AllocateWithSeed instruction: {}",
-                        e
-                    ))
-                })?;
-
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![account_idx, base_idx],
-                    data,
-                })
-            }
-            PARSED_DATA_FIELD_INITIALIZE_NONCE_ACCOUNT => {
-                let nonce_account =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_ACCOUNT)?;
-                let nonce_authority =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_AUTHORITY)?;
-
-                let nonce_account_idx =
-                    Self::get_account_index(account_keys_hashmap, &nonce_account)?;
-
-                let initialize_ix = SystemInstruction::InitializeNonceAccount(nonce_authority);
-                let data = bincode::serialize(&initialize_ix).map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to serialize InitializeNonceAccount instruction: {}",
-                        e
-                    ))
-                })?;
-
-                // Accounts: [nonce_account, recent_blockhashes_sysvar, rent_sysvar]
-                // We only have nonce_account in the hashmap for inner instructions
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![nonce_account_idx],
-                    data,
-                })
-            }
-            PARSED_DATA_FIELD_ADVANCE_NONCE_ACCOUNT => {
-                let nonce_account =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_ACCOUNT)?;
-                let nonce_authority =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_AUTHORITY)?;
-
-                let nonce_account_idx =
-                    Self::get_account_index(account_keys_hashmap, &nonce_account)?;
-                let nonce_authority_idx =
-                    Self::get_account_index(account_keys_hashmap, &nonce_authority)?;
-
-                let advance_ix = SystemInstruction::AdvanceNonceAccount;
-                let data = bincode::serialize(&advance_ix).map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to serialize AdvanceNonceAccount instruction: {}",
-                        e
-                    ))
-                })?;
-
-                // Accounts: [nonce_account, recent_blockhashes_sysvar, nonce_authority]
-                // We only include accounts that are in the hashmap (from inner instructions)
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![nonce_account_idx, nonce_authority_idx],
-                    data,
-                })
-            }
-            PARSED_DATA_FIELD_AUTHORIZE_NONCE_ACCOUNT => {
-                let nonce_account =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_ACCOUNT)?;
-                let nonce_authority =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_AUTHORITY)?;
-                let new_authority =
-                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NEW_AUTHORITY)?;
-
-                let nonce_account_idx =
-                    Self::get_account_index(account_keys_hashmap, &nonce_account)?;
-                let nonce_authority_idx =
-                    Self::get_account_index(account_keys_hashmap, &nonce_authority)?;
-
-                let authorize_ix = SystemInstruction::AuthorizeNonceAccount(new_authority);
-                let data = bincode::serialize(&authorize_ix).map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to serialize AuthorizeNonceAccount instruction: {}",
-                        e
-                    ))
-                })?;
-
-                // Accounts: [nonce_account, nonce_authority]
-                Ok(CompiledInstruction {
-                    program_id_index,
-                    accounts: vec![nonce_account_idx, nonce_authority_idx],
-                    data,
-                })
-            }
+        let (system_instruction, accounts) = match instruction_type {
+            PARSED_DATA_FIELD_TRANSFER => (
+                SystemInstruction::Transfer { lamports: number(PARSED_DATA_FIELD_LAMPORTS)? },
+                vec![index(PARSED_DATA_FIELD_SOURCE)?, index(PARSED_DATA_FIELD_DESTINATION)?],
+            ),
+            PARSED_DATA_FIELD_CREATE_ACCOUNT => (
+                SystemInstruction::CreateAccount {
+                    lamports: number(PARSED_DATA_FIELD_LAMPORTS)?,
+                    space: number(PARSED_DATA_FIELD_SPACE)?,
+                    owner: pubkey(PARSED_DATA_FIELD_OWNER)?,
+                },
+                vec![index(PARSED_DATA_FIELD_SOURCE)?, index(PARSED_DATA_FIELD_NEW_ACCOUNT)?],
+            ),
+            PARSED_DATA_FIELD_ASSIGN => (
+                SystemInstruction::Assign { owner: pubkey(PARSED_DATA_FIELD_OWNER)? },
+                vec![index(PARSED_DATA_FIELD_ACCOUNT)?],
+            ),
+            PARSED_DATA_FIELD_TRANSFER_WITH_SEED => (
+                SystemInstruction::TransferWithSeed {
+                    lamports: number(PARSED_DATA_FIELD_LAMPORTS)?,
+                    from_seed: seed(PARSED_DATA_FIELD_SOURCE_SEED)?,
+                    from_owner: pubkey(PARSED_DATA_FIELD_SOURCE_OWNER)?,
+                },
+                vec![
+                    index(PARSED_DATA_FIELD_SOURCE)?,
+                    index(PARSED_DATA_FIELD_SOURCE_BASE)?,
+                    index(PARSED_DATA_FIELD_DESTINATION)?,
+                ],
+            ),
+            PARSED_DATA_FIELD_CREATE_ACCOUNT_WITH_SEED => (
+                SystemInstruction::CreateAccountWithSeed {
+                    base: pubkey(PARSED_DATA_FIELD_BASE)?,
+                    seed: seed(PARSED_DATA_FIELD_SEED)?,
+                    lamports: number(PARSED_DATA_FIELD_LAMPORTS)?,
+                    space: number(PARSED_DATA_FIELD_SPACE)?,
+                    owner: pubkey(PARSED_DATA_FIELD_OWNER)?,
+                },
+                vec![
+                    index(PARSED_DATA_FIELD_SOURCE)?,
+                    index(PARSED_DATA_FIELD_NEW_ACCOUNT)?,
+                    index(PARSED_DATA_FIELD_BASE)?,
+                ],
+            ),
+            PARSED_DATA_FIELD_ASSIGN_WITH_SEED => (
+                SystemInstruction::AssignWithSeed {
+                    base: pubkey(PARSED_DATA_FIELD_BASE)?,
+                    seed: seed(PARSED_DATA_FIELD_SEED)?,
+                    owner: pubkey(PARSED_DATA_FIELD_OWNER)?,
+                },
+                vec![index(PARSED_DATA_FIELD_ACCOUNT)?, index(PARSED_DATA_FIELD_BASE)?],
+            ),
+            PARSED_DATA_FIELD_WITHDRAW_NONCE_ACCOUNT => (
+                SystemInstruction::WithdrawNonceAccount(number(PARSED_DATA_FIELD_LAMPORTS)?),
+                vec![
+                    index(PARSED_DATA_FIELD_NONCE_ACCOUNT)?,
+                    index(PARSED_DATA_FIELD_DESTINATION)?,
+                    index(PARSED_DATA_FIELD_NONCE_AUTHORITY)?,
+                ],
+            ),
+            PARSED_DATA_FIELD_ALLOCATE => (
+                SystemInstruction::Allocate { space: number(PARSED_DATA_FIELD_SPACE)? },
+                vec![index(PARSED_DATA_FIELD_ACCOUNT)?],
+            ),
+            PARSED_DATA_FIELD_ALLOCATE_WITH_SEED => (
+                SystemInstruction::AllocateWithSeed {
+                    base: pubkey(PARSED_DATA_FIELD_BASE)?,
+                    seed: seed(PARSED_DATA_FIELD_SEED)?,
+                    space: number(PARSED_DATA_FIELD_SPACE)?,
+                    owner: pubkey(PARSED_DATA_FIELD_OWNER)?,
+                },
+                vec![index(PARSED_DATA_FIELD_ACCOUNT)?, index(PARSED_DATA_FIELD_BASE)?],
+            ),
+            // The parsed form omits the recent-blockhashes and rent sysvars, so only the
+            // accounts present in the key map are emitted for the nonce instructions.
+            PARSED_DATA_FIELD_INITIALIZE_NONCE_ACCOUNT => (
+                SystemInstruction::InitializeNonceAccount(pubkey(
+                    PARSED_DATA_FIELD_NONCE_AUTHORITY,
+                )?),
+                vec![index(PARSED_DATA_FIELD_NONCE_ACCOUNT)?],
+            ),
+            PARSED_DATA_FIELD_ADVANCE_NONCE_ACCOUNT => (
+                SystemInstruction::AdvanceNonceAccount,
+                vec![
+                    index(PARSED_DATA_FIELD_NONCE_ACCOUNT)?,
+                    index(PARSED_DATA_FIELD_NONCE_AUTHORITY)?,
+                ],
+            ),
+            PARSED_DATA_FIELD_AUTHORIZE_NONCE_ACCOUNT => (
+                SystemInstruction::AuthorizeNonceAccount(pubkey(PARSED_DATA_FIELD_NEW_AUTHORITY)?),
+                vec![
+                    index(PARSED_DATA_FIELD_NONCE_ACCOUNT)?,
+                    index(PARSED_DATA_FIELD_NONCE_AUTHORITY)?,
+                ],
+            ),
             _ => {
-                Err(KoraError::InvalidTransaction(format!(
+                return Err(KoraError::InvalidTransaction(format!(
                     "Unrecognized system instruction type '{}' in CPI — cannot validate fee payer policy",
                     instruction_type
                 )))
             }
-        }
+        };
+
+        let data = bincode::serialize(&system_instruction).map_err(|e| {
+            KoraError::SerializationError(format!(
+                "Failed to serialize system instruction '{instruction_type}': {e}"
+            ))
+        })?;
+
+        Ok(CompiledInstruction { program_id_index, accounts, data })
     }
 
     fn reconstruct_spl_token_instruction(
