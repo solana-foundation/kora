@@ -1,7 +1,7 @@
 use crate::{
     constant::{RECAPTCHA_TIMEOUT_SECS, RECAPTCHA_VERIFY_URL},
     error::KoraError,
-    rpc_server::middleware_utils::build_response_with_graceful_error,
+    rpc_server::{auth::RejectionReason, middleware_utils::build_response_with_graceful_error},
     sanitize_error,
 };
 use http::{Response, StatusCode};
@@ -38,21 +38,18 @@ impl RecaptchaConfig {
         let token = match token {
             Some(t) if !t.is_empty() => t,
             _ => {
-                return Err(Box::new(build_response_with_graceful_error(
-                    None,
-                    StatusCode::UNAUTHORIZED,
-                    "",
-                )))
+                let mut resp =
+                    build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
+                resp.extensions_mut().insert(RejectionReason::AuthFailure);
+                return Err(Box::new(resp));
             }
         };
 
         if let Err(e) = self.verify_token(token).await {
             log::error!("reCAPTCHA verification error: {}", sanitize_error!(e));
-            return Err(Box::new(build_response_with_graceful_error(
-                None,
-                StatusCode::UNAUTHORIZED,
-                "",
-            )));
+            let mut resp = build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
+            resp.extensions_mut().insert(RejectionReason::AuthFailure);
+            return Err(Box::new(resp));
         }
 
         Ok(())

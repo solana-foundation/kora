@@ -10,6 +10,28 @@ use jsonrpsee::server::logger::Body;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RejectionReason {
+    AuthFailure,
+    // Reserved for (IdentityRateLimitLayer).
+    RateLimit,
+}
+
+impl RejectionReason {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RejectionReason::AuthFailure => "auth_failure",
+            RejectionReason::RateLimit => "rate_limit",
+        }
+    }
+}
+
+fn auth_rejection_response() -> Response<Body> {
+    let mut response = build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
+    response.extensions_mut().insert(RejectionReason::AuthFailure);
+    response
+}
+
 fn hash_key(key: &[u8]) -> [u8; 32] {
     Sha256::digest(key).into()
 }
@@ -96,9 +118,6 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            let unauthorized_response =
-                build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
-
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
             // Bypass auth for liveness endpoint
@@ -131,7 +150,7 @@ where
                 }
             }
 
-            Ok(unauthorized_response)
+            Ok(auth_rejection_response())
         })
     }
 }
@@ -191,9 +210,6 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            let unauthorized_response =
-                build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
-
             let signature_header = request.headers().get(X_HMAC_SIGNATURE).cloned();
             let timestamp_header = request.headers().get(X_TIMESTAMP).cloned();
 
@@ -211,7 +227,7 @@ where
             let (signature, timestamp) =
                 match (signature_header.as_ref(), timestamp_header.as_ref()) {
                     (Some(sig), Some(ts)) => (sig, ts),
-                    _ => return Ok(unauthorized_response),
+                    _ => return Ok(auth_rejection_response()),
                 };
 
             let signature = signature.to_str().unwrap_or("");
@@ -219,7 +235,7 @@ where
 
             let ts = match timestamp.parse::<i64>() {
                 Ok(ts) => ts,
-                Err(_) => return Ok(unauthorized_response),
+                Err(_) => return Ok(auth_rejection_response()),
             };
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -231,14 +247,14 @@ where
                 .as_secs() as i64;
 
             if (now - ts).abs() > max_timestamp_age {
-                return Ok(unauthorized_response);
+                return Ok(auth_rejection_response());
             }
 
             let body_str = match std::str::from_utf8(&body_bytes) {
                 Ok(s) => s,
                 Err(_) => {
                     log::error!("HMAC authentication failed: invalid UTF-8 in request body");
-                    return Ok(unauthorized_response);
+                    return Ok(auth_rejection_response());
                 }
             };
             let message = format!("{}{}", timestamp, body_str);
@@ -247,7 +263,7 @@ where
                 Ok(mac) => mac,
                 Err(_) => {
                     log::error!("HMAC authentication failed");
-                    return Ok(unauthorized_response);
+                    return Ok(auth_rejection_response());
                 }
             };
 
@@ -257,13 +273,13 @@ where
                 Ok(bytes) => bytes,
                 Err(_) => {
                     log::error!("HMAC signature hex decode failed");
-                    return Ok(unauthorized_response);
+                    return Ok(auth_rejection_response());
                 }
             };
 
             // Constant time comparison prevents timing attacks
             if mac.verify_slice(&signature_bytes).is_err() {
-                return Ok(unauthorized_response);
+                return Ok(auth_rejection_response());
             }
 
             let new_body = Body::from(body_bytes);
@@ -342,6 +358,10 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.extensions().get::<RejectionReason>(),
+            Some(&RejectionReason::AuthFailure)
+        );
     }
 
     #[tokio::test]
@@ -353,6 +373,10 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.extensions().get::<RejectionReason>(),
+            Some(&RejectionReason::AuthFailure)
+        );
     }
 
     #[tokio::test]
@@ -425,6 +449,10 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.extensions().get::<RejectionReason>(),
+            Some(&RejectionReason::AuthFailure)
+        );
     }
 
     #[tokio::test]
@@ -439,6 +467,10 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.extensions().get::<RejectionReason>(),
+            Some(&RejectionReason::AuthFailure)
+        );
     }
 
     #[tokio::test]
@@ -469,6 +501,10 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.extensions().get::<RejectionReason>(),
+            Some(&RejectionReason::AuthFailure)
+        );
     }
 
     #[tokio::test]
@@ -489,6 +525,10 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.extensions().get::<RejectionReason>(),
+            Some(&RejectionReason::AuthFailure)
+        );
     }
 
     #[tokio::test]
