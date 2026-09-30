@@ -586,95 +586,46 @@ impl IxUtils {
                 ))
             })?;
 
+        use spl_token_2022_interface::extension::ExtensionType;
+        use UiExtensionType as Ui;
+
         extension_types
             .into_iter()
             .map(|extension_type| {
                 Ok(match extension_type {
-                    UiExtensionType::Uninitialized => {
-                        spl_token_2022_interface::extension::ExtensionType::Uninitialized
+                    Ui::Uninitialized => ExtensionType::Uninitialized,
+                    Ui::TransferFeeConfig => ExtensionType::TransferFeeConfig,
+                    Ui::TransferFeeAmount => ExtensionType::TransferFeeAmount,
+                    Ui::MintCloseAuthority => ExtensionType::MintCloseAuthority,
+                    Ui::ConfidentialTransferMint => ExtensionType::ConfidentialTransferMint,
+                    Ui::ConfidentialTransferAccount => ExtensionType::ConfidentialTransferAccount,
+                    Ui::DefaultAccountState => ExtensionType::DefaultAccountState,
+                    Ui::ImmutableOwner => ExtensionType::ImmutableOwner,
+                    Ui::MemoTransfer => ExtensionType::MemoTransfer,
+                    Ui::NonTransferable => ExtensionType::NonTransferable,
+                    Ui::InterestBearingConfig => ExtensionType::InterestBearingConfig,
+                    Ui::CpiGuard => ExtensionType::CpiGuard,
+                    Ui::PermanentDelegate => ExtensionType::PermanentDelegate,
+                    Ui::NonTransferableAccount => ExtensionType::NonTransferableAccount,
+                    Ui::TransferHook => ExtensionType::TransferHook,
+                    Ui::TransferHookAccount => ExtensionType::TransferHookAccount,
+                    Ui::ConfidentialTransferFeeConfig => {
+                        ExtensionType::ConfidentialTransferFeeConfig
                     }
-                    UiExtensionType::TransferFeeConfig => {
-                        spl_token_2022_interface::extension::ExtensionType::TransferFeeConfig
+                    Ui::ConfidentialTransferFeeAmount => {
+                        ExtensionType::ConfidentialTransferFeeAmount
                     }
-                    UiExtensionType::TransferFeeAmount => {
-                        spl_token_2022_interface::extension::ExtensionType::TransferFeeAmount
-                    }
-                    UiExtensionType::MintCloseAuthority => {
-                        spl_token_2022_interface::extension::ExtensionType::MintCloseAuthority
-                    }
-                    UiExtensionType::ConfidentialTransferMint => {
-                        spl_token_2022_interface::extension::ExtensionType::ConfidentialTransferMint
-                    }
-                    UiExtensionType::ConfidentialTransferAccount => {
-                        spl_token_2022_interface::extension::ExtensionType::ConfidentialTransferAccount
-                    }
-                    UiExtensionType::DefaultAccountState => {
-                        spl_token_2022_interface::extension::ExtensionType::DefaultAccountState
-                    }
-                    UiExtensionType::ImmutableOwner => {
-                        spl_token_2022_interface::extension::ExtensionType::ImmutableOwner
-                    }
-                    UiExtensionType::MemoTransfer => {
-                        spl_token_2022_interface::extension::ExtensionType::MemoTransfer
-                    }
-                    UiExtensionType::NonTransferable => {
-                        spl_token_2022_interface::extension::ExtensionType::NonTransferable
-                    }
-                    UiExtensionType::InterestBearingConfig => {
-                        spl_token_2022_interface::extension::ExtensionType::InterestBearingConfig
-                    }
-                    UiExtensionType::CpiGuard => {
-                        spl_token_2022_interface::extension::ExtensionType::CpiGuard
-                    }
-                    UiExtensionType::PermanentDelegate => {
-                        spl_token_2022_interface::extension::ExtensionType::PermanentDelegate
-                    }
-                    UiExtensionType::NonTransferableAccount => {
-                        spl_token_2022_interface::extension::ExtensionType::NonTransferableAccount
-                    }
-                    UiExtensionType::TransferHook => {
-                        spl_token_2022_interface::extension::ExtensionType::TransferHook
-                    }
-                    UiExtensionType::TransferHookAccount => {
-                        spl_token_2022_interface::extension::ExtensionType::TransferHookAccount
-                    }
-                    UiExtensionType::ConfidentialTransferFeeConfig => {
-                        spl_token_2022_interface::extension::ExtensionType::ConfidentialTransferFeeConfig
-                    }
-                    UiExtensionType::ConfidentialTransferFeeAmount => {
-                        spl_token_2022_interface::extension::ExtensionType::ConfidentialTransferFeeAmount
-                    }
-                    UiExtensionType::MetadataPointer => {
-                        spl_token_2022_interface::extension::ExtensionType::MetadataPointer
-                    }
-                    UiExtensionType::TokenMetadata => {
-                        spl_token_2022_interface::extension::ExtensionType::TokenMetadata
-                    }
-                    UiExtensionType::GroupPointer => {
-                        spl_token_2022_interface::extension::ExtensionType::GroupPointer
-                    }
-                    UiExtensionType::GroupMemberPointer => {
-                        spl_token_2022_interface::extension::ExtensionType::GroupMemberPointer
-                    }
-                    UiExtensionType::TokenGroup => {
-                        spl_token_2022_interface::extension::ExtensionType::TokenGroup
-                    }
-                    UiExtensionType::TokenGroupMember => {
-                        spl_token_2022_interface::extension::ExtensionType::TokenGroupMember
-                    }
-                    UiExtensionType::ConfidentialMintBurn => {
-                        spl_token_2022_interface::extension::ExtensionType::ConfidentialMintBurn
-                    }
-                    UiExtensionType::ScaledUiAmount => {
-                        spl_token_2022_interface::extension::ExtensionType::ScaledUiAmount
-                    }
-                    UiExtensionType::Pausable => {
-                        spl_token_2022_interface::extension::ExtensionType::Pausable
-                    }
-                    UiExtensionType::PausableAccount => {
-                        spl_token_2022_interface::extension::ExtensionType::PausableAccount
-                    }
-                    UiExtensionType::PermissionedBurn => {
+                    Ui::MetadataPointer => ExtensionType::MetadataPointer,
+                    Ui::TokenMetadata => ExtensionType::TokenMetadata,
+                    Ui::GroupPointer => ExtensionType::GroupPointer,
+                    Ui::GroupMemberPointer => ExtensionType::GroupMemberPointer,
+                    Ui::TokenGroup => ExtensionType::TokenGroup,
+                    Ui::TokenGroupMember => ExtensionType::TokenGroupMember,
+                    Ui::ConfidentialMintBurn => ExtensionType::ConfidentialMintBurn,
+                    Ui::ScaledUiAmount => ExtensionType::ScaledUiAmount,
+                    Ui::Pausable => ExtensionType::Pausable,
+                    Ui::PausableAccount => ExtensionType::PausableAccount,
+                    Ui::PermissionedBurn => {
                         return Err(KoraError::InvalidTransaction(
                             "Unsupported Token-2022 extension type 'PermissionedBurn'".to_string(),
                         ))
