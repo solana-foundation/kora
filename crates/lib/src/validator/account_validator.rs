@@ -31,76 +31,38 @@ impl AccountType {
         let mut should_be_owned_by: Option<Pubkey> = None;
 
         match self {
-            AccountType::Mint => match account.owner {
-                ref owner if *owner == SPL_TOKEN_PROGRAM_ID => {
-                    should_be_executable = Some(false);
-
-                    if account.data.len() < Mint::LEN {
-                        return Err(KoraError::InternalServerError(format!(
-                            "Account {account_pubkey} has invalid data for a Mint account: data too short"
-                        )));
+            AccountType::Mint => {
+                match account.owner {
+                    owner if owner == SPL_TOKEN_PROGRAM_ID => {
+                        check_packed::<Mint>(account, account_pubkey, "Mint")?
                     }
-                    Mint::unpack_from_slice(&account.data).map_err(|e| {
-                        KoraError::InternalServerError(format!(
-                            "Account {account_pubkey} has invalid data for a Mint account: {e}"
-                        ))
-                    })?;
-                }
-                ref owner if *owner == TOKEN_2022_PROGRAM_ID => {
-                    should_be_executable = Some(false);
-
-                    if account.data.len() < Token2022Mint::LEN {
-                        return Err(KoraError::InternalServerError(format!(
-                            "Account {account_pubkey} has invalid data for a Mint account: data too short"
-                        )));
+                    owner if owner == TOKEN_2022_PROGRAM_ID => {
+                        check_packed::<Token2022Mint>(account, account_pubkey, "Mint")?
                     }
-                    Token2022Mint::unpack_from_slice(&account.data).map_err(|e| {
-                        KoraError::InternalServerError(format!(
-                            "Account {account_pubkey} has invalid data for a Mint account: {e}"
-                        ))
-                    })?;
-                }
-                _ => {
-                    return Err(KoraError::InternalServerError(format!(
+                    _ => {
+                        return Err(KoraError::InternalServerError(format!(
                             "Account {account_pubkey} is not owned by a token program, cannot be a Mint"
                         )));
+                    }
                 }
-            },
-            AccountType::TokenAccount => match account.owner {
-                ref owner if *owner == SPL_TOKEN_PROGRAM_ID => {
-                    should_be_executable = Some(false);
-
-                    if account.data.len() < SplTokenAccount::LEN {
+                should_be_executable = Some(false);
+            }
+            AccountType::TokenAccount => {
+                match account.owner {
+                    owner if owner == SPL_TOKEN_PROGRAM_ID => {
+                        check_packed::<SplTokenAccount>(account, account_pubkey, "TokenAccount")?
+                    }
+                    owner if owner == TOKEN_2022_PROGRAM_ID => {
+                        check_packed::<Token2022Account>(account, account_pubkey, "TokenAccount")?
+                    }
+                    _ => {
                         return Err(KoraError::InternalServerError(format!(
-                            "Account {account_pubkey} has invalid data for a TokenAccount account: data too short"
+                            "Account {account_pubkey} is not owned by a token program, cannot be a TokenAccount"
                         )));
                     }
-                    SplTokenAccount::unpack_from_slice(&account.data).map_err(|e| {
-                        KoraError::InternalServerError(format!(
-                            "Account {account_pubkey} has invalid data for a TokenAccount account: {e}"
-                        ))
-                    })?;
                 }
-                ref owner if *owner == TOKEN_2022_PROGRAM_ID => {
-                    should_be_executable = Some(false);
-
-                    if account.data.len() < Token2022Account::LEN {
-                        return Err(KoraError::InternalServerError(format!(
-                            "Account {account_pubkey} has invalid data for a TokenAccount account: data too short"
-                        )));
-                    }
-                    Token2022Account::unpack_from_slice(&account.data).map_err(|e| {
-                        KoraError::InternalServerError(format!(
-                            "Account {account_pubkey} has invalid data for a TokenAccount account: {e}"
-                        ))
-                    })?;
-                }
-                _ => {
-                    return Err(KoraError::InternalServerError(format!(
-                                "Account {account_pubkey} is not owned by a token program, cannot be a TokenAccount"
-                            )));
-                }
-            },
+                should_be_executable = Some(false);
+            }
             AccountType::System => {
                 should_be_owned_by = Some(SYSTEM_PROGRAM_ID);
             }
@@ -129,6 +91,24 @@ impl AccountType {
 
         Ok(())
     }
+}
+
+fn check_packed<T: Pack>(
+    account: &Account,
+    account_pubkey: &Pubkey,
+    kind: &str,
+) -> Result<(), KoraError> {
+    if account.data.len() < T::LEN {
+        return Err(KoraError::InternalServerError(format!(
+            "Account {account_pubkey} has invalid data for a {kind} account: data too short"
+        )));
+    }
+    T::unpack_from_slice(&account.data).map_err(|e| {
+        KoraError::InternalServerError(format!(
+            "Account {account_pubkey} has invalid data for a {kind} account: {e}"
+        ))
+    })?;
+    Ok(())
 }
 
 pub async fn validate_account(
