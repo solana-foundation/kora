@@ -116,13 +116,15 @@ pub trait VersionedTransactionOps {
     fn verified_signers(&self) -> HashSet<Pubkey>;
     fn find_signer_position(&self, signer_pubkey: &Pubkey) -> Result<usize, KoraError>;
 
+    /// Returns the signed transaction, its base64 encoding, and whether a Lighthouse
+    /// assertion was appended to the message before signing.
     async fn sign_transaction(
         &mut self,
         config: &Config,
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
         will_send: bool,
-    ) -> Result<(VersionedTransaction, String), KoraError>;
+    ) -> Result<(VersionedTransaction, String, bool), KoraError>;
     async fn sign_and_send_transaction(
         &mut self,
         config: &Config,
@@ -395,7 +397,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         selected_signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
         will_send: bool,
-    ) -> Result<(VersionedTransaction, String), KoraError> {
+    ) -> Result<(VersionedTransaction, String, bool), KoraError> {
         let fee_payer = selected_signer.pubkey();
         let validator = TransactionValidator::new(config, fee_payer)?;
 
@@ -463,7 +465,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let estimated_fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, self).await?;
         validator.validate_lamport_fee(estimated_fee)?;
 
-        LighthouseUtil::add_fee_payer_assertion(
+        let lighthouse_assertion_added = LighthouseUtil::add_fee_payer_assertion(
             &mut transaction,
             rpc_client,
             &fee_payer,
@@ -526,7 +528,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
         let encoded = TransactionUtil::encode_versioned_transaction(&transaction)?;
 
-        Ok((transaction, encoded))
+        Ok((transaction, encoded, lighthouse_assertion_added))
     }
 
     async fn sign_and_send_transaction(
@@ -537,7 +539,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         respond_after: RespondAfter,
     ) -> Result<(String, String), KoraError> {
         // Payment validation is handled in sign_transaction
-        let (transaction, encoded) =
+        let (transaction, encoded, _lighthouse_assertion_added) =
             self.sign_transaction(config, signer, rpc_client, true).await?;
 
         // Validation already simulated the transaction, so the fast modes skip
