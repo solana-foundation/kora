@@ -7,6 +7,7 @@ use crate::{
     config::Config,
     fee::fee::TransactionFeeUtil,
     transaction::TransactionUtil,
+    validator::parse_pubkey_set,
     KoraError,
 };
 use regex::Regex;
@@ -132,9 +133,8 @@ impl BundleValidator {
         }
 
         let allow_all_programs = config.validation.allowed_programs.is_all();
-        let allowed_programs =
-            Self::parse_pubkey_set(config.validation.allowed_programs.as_slice())?;
-        let disallowed_programs = Self::parse_pubkey_set(&config.validation.disallowed_accounts)?;
+        let allowed_programs = parse_pubkey_set(config.validation.allowed_programs.as_slice())?;
+        let disallowed_programs = parse_pubkey_set(&config.validation.disallowed_accounts)?;
         let signed_set: HashSet<usize> = signed_indices.iter().copied().collect();
 
         for (tx_idx, tx_result) in simulation_result.transaction_results.iter().enumerate() {
@@ -260,20 +260,6 @@ impl BundleValidator {
         }
 
         Ok(())
-    }
-
-    fn parse_pubkey_set(pubkeys: &[String]) -> Result<HashSet<Pubkey>, KoraError> {
-        pubkeys
-            .iter()
-            .map(|pubkey| {
-                Pubkey::from_str(pubkey).map_err(|e| {
-                    KoraError::InternalServerError(format!(
-                        "Invalid public key `{}` in config: {}",
-                        pubkey, e
-                    ))
-                })
-            })
-            .collect::<Result<HashSet<Pubkey>, KoraError>>()
     }
 
     fn extract_invoked_programs(logs: &[String]) -> Result<HashSet<Pubkey>, KoraError> {

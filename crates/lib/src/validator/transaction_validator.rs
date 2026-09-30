@@ -14,11 +14,12 @@ use crate::{
         ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
         Token2022AccountUsagePolicy, VersionedTransactionResolved,
     },
+    validator::parse_pubkey_set,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
-use std::{collections::HashSet, str::FromStr};
+use std::collections::HashSet;
 
 use crate::fee::price::PriceModel;
 
@@ -43,32 +44,8 @@ impl TransactionValidator {
 
         let (allow_all_programs, allowed_programs) = match &config.allowed_programs {
             ProgramsConfig::All => (true, HashSet::new()),
-            ProgramsConfig::Allowlist(programs) => (
-                false,
-                programs
-                    .iter()
-                    .map(|addr| {
-                        Pubkey::from_str(addr).map_err(|e| {
-                            KoraError::InternalServerError(format!(
-                                "Invalid program address in config: {e}"
-                            ))
-                        })
-                    })
-                    .collect::<Result<HashSet<Pubkey>, KoraError>>()?,
-            ),
+            ProgramsConfig::Allowlist(programs) => (false, parse_pubkey_set(programs)?),
         };
-
-        let require_one_of_programs = config
-            .require_one_of_programs
-            .iter()
-            .map(|addr| {
-                Pubkey::from_str(addr).map_err(|e| {
-                    KoraError::InternalServerError(format!(
-                        "Invalid program address in require_one_of_programs config: {e}"
-                    ))
-                })
-            })
-            .collect::<Result<HashSet<Pubkey>, KoraError>>()?;
 
         Ok(Self {
             fee_payer_pubkey,
@@ -76,27 +53,11 @@ impl TransactionValidator {
             max_priority_fee_lamports: config.max_priority_fee_lamports,
             allowed_programs,
             allow_all_programs,
-            require_one_of_programs,
+            require_one_of_programs: parse_pubkey_set(&config.require_one_of_programs)?,
             max_signatures: config.max_signatures,
             _price_source: config.price_source.clone(),
-            allowed_tokens: config
-                .allowed_tokens
-                .iter()
-                .map(|addr| Pubkey::from_str(addr))
-                .collect::<Result<HashSet<Pubkey>, _>>()
-                .map_err(|e| {
-                    KoraError::InternalServerError(format!("Invalid allowed token address: {e}"))
-                })?,
-            disallowed_accounts: config
-                .disallowed_accounts
-                .iter()
-                .map(|addr| Pubkey::from_str(addr))
-                .collect::<Result<HashSet<Pubkey>, _>>()
-                .map_err(|e| {
-                    KoraError::InternalServerError(format!(
-                        "Invalid disallowed account address: {e}"
-                    ))
-                })?,
+            allowed_tokens: parse_pubkey_set(&config.allowed_tokens)?,
+            disallowed_accounts: parse_pubkey_set(&config.disallowed_accounts)?,
             fee_payer_policy: config.fee_payer_policy.clone(),
             allow_durable_transactions: config.allow_durable_transactions,
         })
@@ -1061,6 +1022,7 @@ mod tests {
     };
     use serial_test::serial;
     use spl_pod::optional_keys::OptionalNonZeroPubkey;
+    use std::str::FromStr;
 
     use super::*;
     use crate::constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR;
