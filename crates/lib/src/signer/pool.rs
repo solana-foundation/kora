@@ -24,7 +24,6 @@ pub(crate) struct HealthState {
     pub(crate) consecutive_failures: u32,
     pub(crate) is_healthy: bool,
     pub(crate) last_failed_at: Option<std::time::Instant>,
-    pub(crate) probe_in_flight: bool,
     pub(crate) probe_started_at: Option<std::time::Instant>,
 }
 
@@ -34,7 +33,6 @@ impl Default for HealthState {
             consecutive_failures: 0,
             is_healthy: true,
             last_failed_at: None,
-            probe_in_flight: false,
             probe_started_at: None,
         }
     }
@@ -111,7 +109,6 @@ impl SignerWithMetadata {
             }
             health.is_healthy = false;
             health.last_failed_at = Some(std::time::Instant::now());
-            health.probe_in_flight = false;
             health.probe_started_at = None;
         }
     }
@@ -126,28 +123,13 @@ impl SignerWithMetadata {
     }
 
     fn release_stale_probe_lock_if_needed(&self, health: &mut HealthState, probe_lease: Duration) {
-        if !health.probe_in_flight {
-            return;
-        }
-
-        match health.probe_started_at {
-            Some(started_at) if started_at.elapsed() >= probe_lease => {
-                log::warn!(
-                    "Releasing stale probe lock for signer '{}' after {}ms lease timeout",
-                    self.name,
-                    probe_lease.as_millis()
-                );
-                health.probe_in_flight = false;
-                health.probe_started_at = None;
-            }
-            None => {
-                log::warn!(
-                    "Signer '{}' had probe_in_flight=true without probe_started_at; clearing stale lock",
-                    self.name
-                );
-                health.probe_in_flight = false;
-            }
-            _ => {}
+        if health.probe_started_at.is_some_and(|started_at| started_at.elapsed() >= probe_lease) {
+            log::warn!(
+                "Releasing stale probe lock for signer '{}' after {}ms lease timeout",
+                self.name,
+                probe_lease.as_millis()
+            );
+            health.probe_started_at = None;
         }
     }
 
@@ -175,9 +157,7 @@ impl SignerWithMetadata {
             return false;
         }
 
-        health.is_healthy
-            || !health.probe_in_flight
-            || self.is_probe_lock_stale(health, probe_lease)
+        health.is_healthy || self.is_probe_lock_stale(health, probe_lease)
     }
 
     fn is_probe_eligible_with_lock(&self, health: &mut HealthState, probe_lease: Duration) -> bool {
@@ -190,7 +170,7 @@ impl SignerWithMetadata {
         }
 
         self.release_stale_probe_lock_if_needed(health, probe_lease);
-        !health.probe_in_flight
+        health.probe_started_at.is_none()
     }
 
     fn is_eligible_for_selection(&self, probe_lease: Duration) -> bool {
@@ -209,7 +189,6 @@ impl SignerWithMetadata {
         }
 
         log::debug!("Probing recovery for signer '{}'", self.name());
-        health.probe_in_flight = true;
         health.probe_started_at = Some(std::time::Instant::now());
         true
     }
@@ -558,7 +537,7 @@ impl SignerPool {
                     pubkey
                 ))
             })?;
-        Ok(signer_meta.health.lock().probe_in_flight)
+        Ok(signer_meta.health.lock().probe_started_at.is_some())
     }
 
     /// Select a signer by public key without mutating recovery probe state.
@@ -784,7 +763,7 @@ mod tests {
 
         let selected_signer = pool.select_signer_by_pubkey(&meta.signer.pubkey().to_string());
         assert!(selected_signer.is_ok());
-        assert!(!meta.health.lock().probe_in_flight);
+        assert!(meta.health.lock().probe_started_at.is_none());
 
         let pinned_signer = pool.get_signer_by_pubkey(&meta.signer.pubkey().to_string());
         assert!(pinned_signer.is_ok());
@@ -865,7 +844,7 @@ mod tests {
             Some(std::time::Instant::now() - std::time::Duration::from_secs(31));
 
         assert!(pool.select_signer_by_pubkey(&pubkey).is_ok());
-        assert!(!meta.health.lock().probe_in_flight);
+        assert!(meta.health.lock().probe_started_at.is_none());
         assert!(pool.get_signer_by_pubkey(&pubkey).is_ok());
     }
 
@@ -897,7 +876,7 @@ mod tests {
         // Stale lock should be cleared automatically and signer should become selectable again.
         let healthy_after_lease = pool.eligible_signers().unwrap();
         assert_eq!(healthy_after_lease.len(), 2);
-        assert!(meta.health.lock().probe_in_flight);
+        assert!(meta.health.lock().probe_started_at.is_some());
         assert!(pool.get_signer_by_pubkey(&meta.signer.pubkey().to_string()).is_ok());
     }
 
