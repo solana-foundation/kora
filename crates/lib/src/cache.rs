@@ -129,18 +129,10 @@ impl CacheUtil {
         rpc_client: &RpcClient,
         pubkey: &Pubkey,
     ) -> Result<Account, KoraError> {
-        match rpc_client.get_account(pubkey).await {
-            Ok(account) => Ok(account),
-            Err(e) => {
-                let kora_error = e.into();
-                match kora_error {
-                    KoraError::AccountNotFound(_) => {
-                        Err(KoraError::AccountNotFound(pubkey.to_string()))
-                    }
-                    other_error => Err(other_error),
-                }
-            }
-        }
+        rpc_client.get_account(pubkey).await.map_err(|e| match KoraError::from(e) {
+            KoraError::AccountNotFound(_) => KoraError::AccountNotFound(pubkey.to_string()),
+            other_error => other_error,
+        })
     }
 
     async fn get_from_cache(pool: &Pool, key: &str) -> Result<Option<CachedAccount>, KoraError> {
@@ -631,19 +623,14 @@ impl CacheUtil {
         rpc_client: &RpcClient,
         pubkeys: &[Pubkey],
     ) -> Result<Vec<Account>, KoraError> {
-        match rpc_client.get_multiple_accounts(pubkeys).await {
-            Ok(accounts_opt) => {
-                let mut result = Vec::with_capacity(pubkeys.len());
-                for (i, acc_opt) in accounts_opt.into_iter().enumerate() {
-                    match acc_opt {
-                        Some(acc) => result.push(acc),
-                        None => return Err(KoraError::AccountNotFound(pubkeys[i].to_string())),
-                    }
-                }
-                Ok(result)
-            }
-            Err(e) => Err(e.into()),
-        }
+        let accounts_opt = rpc_client.get_multiple_accounts(pubkeys).await?;
+        accounts_opt
+            .into_iter()
+            .zip(pubkeys)
+            .map(|(acc_opt, pubkey)| {
+                acc_opt.ok_or_else(|| KoraError::AccountNotFound(pubkey.to_string()))
+            })
+            .collect()
     }
 
     /// Get multiple accounts, using Redis cache when available.
@@ -711,10 +698,7 @@ impl CacheUtil {
 
         if !misses.is_empty() {
             let miss_pubkeys: Vec<Pubkey> = misses.iter().map(|(_, pk)| *pk).collect();
-            let accounts_opt = match rpc_client.get_multiple_accounts(&miss_pubkeys).await {
-                Ok(a) => a,
-                Err(e) => return Err(e.into()),
-            };
+            let accounts_opt = rpc_client.get_multiple_accounts(&miss_pubkeys).await?;
 
             let mut pipe = redis::pipe();
             let mut has_pipe_ops = false;
