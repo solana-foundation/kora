@@ -607,33 +607,11 @@ impl TokenUtil {
                 .ok_or_else(|| KoraError::RpcError(format!("No decimals data for mint {mint}")))?;
 
             for amount in transfers {
-                // Convert token amount to lamports value using Decimal
-                let amount_decimal = Decimal::from_u64(*amount).ok_or_else(|| {
-                    KoraError::ValidationError("Invalid transfer amount".to_string())
-                })?;
-                let decimals_scale = decimal_scale(*decimals)?;
-                let lamports_per_sol = Decimal::from_u64(LAMPORTS_PER_SOL).ok_or_else(|| {
-                    KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string())
-                })?;
-
-                // Calculate: (amount * price * LAMPORTS_PER_SOL) / 10^decimals
-                // Multiply before divide to preserve precision
-                let lamports_decimal = amount_decimal.checked_mul(price.price)
-                    .and_then(|result| result.checked_mul(lamports_per_sol))
-                    .and_then(|result| result.checked_div(decimals_scale))
-                    .ok_or_else(|| {
-                        log::error!("Token value calculation overflow: amount={}, price={}, decimals={}, lamports_per_sol={}",
-                            amount,
-                            price.price,
-                            decimals,
-                            lamports_per_sol
-                        );
-                        KoraError::ValidationError("Token value calculation overflow".to_string())
-                    })?;
-
-                let lamports = lamports_decimal.floor().to_u64().ok_or_else(|| {
-                    KoraError::ValidationError("Lamports value overflow".to_string())
-                })?;
+                let lamports = Self::calculate_token_value_in_lamports_from_price(
+                    *amount,
+                    price.price,
+                    *decimals,
+                )?;
 
                 total_lamports = total_lamports.checked_add(lamports).ok_or_else(|| {
                     log::error!("SPL outflow calculation overflow");
