@@ -36,8 +36,8 @@ uncovered. Run them with `cargo test -p kora-lib --lib fee_payer_policy_props`.
 assertion mutates the message, so it can only be appended on paths where the client re-signs
 afterwards: `signTransaction` and `signBundle`.
 
-`config_validator.rs` warns when lighthouse is enabled alongside those methods. It is a warning,
-not an error; the node still starts unprotected.
+`validator/config_validator/transactions.rs` warns when lighthouse is enabled alongside those
+methods. It is a warning, not an error; the node still starts unprotected.
 
 ### Two drain guards are not flag-gated
 
