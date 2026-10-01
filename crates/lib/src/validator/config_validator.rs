@@ -798,39 +798,28 @@ impl ConfigValidator {
         }
 
         if !skip_rpc_validation {
-            for program_str in &config.validation.allowed_programs {
-                if let Ok(program_pubkey) = Pubkey::from_str(program_str) {
-                    if let Err(e) = validate_account(
-                        config,
-                        rpc_client,
-                        &program_pubkey,
-                        Some(AccountType::Program),
-                    )
-                    .await
-                    {
-                        errors.push(format!("Program {program_str} validation failed: {e}"));
-                    }
-                }
-            }
-
-            for token_str in &config.validation.allowed_tokens {
-                if let Ok(token_pubkey) = Pubkey::from_str(token_str) {
-                    if let Err(e) =
-                        validate_account(config, rpc_client, &token_pubkey, Some(AccountType::Mint))
-                            .await
-                    {
-                        errors.push(format!("Token {token_str} validation failed: {e}"));
-                    }
-                }
-            }
-
-            for token_str in &config.validation.allowed_spl_paid_tokens {
-                if let Ok(token_pubkey) = Pubkey::from_str(token_str) {
-                    if let Err(e) =
-                        validate_account(config, rpc_client, &token_pubkey, Some(AccountType::Mint))
-                            .await
-                    {
-                        errors.push(format!("SPL paid token {token_str} validation failed: {e}"));
+            let accounts = [
+                ("Program", config.validation.allowed_programs.as_slice(), AccountType::Program),
+                ("Token", config.validation.allowed_tokens.as_slice(), AccountType::Mint),
+                (
+                    "SPL paid token",
+                    config.validation.allowed_spl_paid_tokens.as_slice(),
+                    AccountType::Mint,
+                ),
+            ];
+            for (label, pubkeys, account_type) in accounts {
+                for pubkey_str in pubkeys {
+                    if let Ok(pubkey) = Pubkey::from_str(pubkey_str) {
+                        if let Err(e) = validate_account(
+                            config,
+                            rpc_client,
+                            &pubkey,
+                            Some(account_type.clone()),
+                        )
+                        .await
+                        {
+                            errors.push(format!("{label} {pubkey_str} validation failed: {e}"));
+                        }
                     }
                 }
             }
