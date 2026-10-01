@@ -36,7 +36,6 @@ pub struct UsageTracker {
     enabled: bool,
     store: Arc<dyn UsageStore>,
     rules: Vec<UsageRule>,
-    instruction_rule_indices: Vec<usize>,
     fallback_if_unavailable: bool,
 }
 
@@ -47,21 +46,7 @@ impl UsageTracker {
         rules: Vec<UsageRule>,
         fallback_if_unavailable: bool,
     ) -> Self {
-        // Pre-compute instruction rule indices at initialization
-        let instruction_rule_indices: Vec<usize> =
-            rules
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, rule)| {
-                    if matches!(rule, UsageRule::Instruction(_)) {
-                        Some(idx)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-        Self { enabled, store, rules, instruction_rule_indices, fallback_if_unavailable }
+        Self { enabled, store, rules, fallback_if_unavailable }
     }
 
     fn get_usage_limiter() -> Result<Option<&'static UsageTracker>, KoraError> {
@@ -78,7 +63,7 @@ impl UsageTracker {
     }
 
     fn has_instruction_rules(&self) -> bool {
-        !self.instruction_rule_indices.is_empty()
+        self.rules.iter().any(|rule| rule.as_instruction().is_some())
     }
 
     async fn owner_signed_or_authorized_by_multisig(
@@ -113,50 +98,35 @@ impl UsageTracker {
             return Ok(false);
         }
 
-        let (required_signers, multisig_members): (usize, HashSet<Pubkey>) = if is_2022 {
+        let multisig = if is_2022 {
             if owner_account.owner != spl_token_2022_interface::id() {
                 return Ok(false);
             }
 
-            let Ok(multisig) =
-                spl_token_2022_interface::state::Multisig::unpack(&owner_account.data)
-            else {
-                return Ok(false);
-            };
-
-            (
-                multisig.m as usize,
-                multisig
-                    .signers
-                    .iter()
-                    .take(multisig.n as usize)
-                    .copied()
-                    .filter(|signer| *signer != Pubkey::default())
-                    .collect(),
-            )
+            spl_token_2022_interface::state::Multisig::unpack(&owner_account.data)
+                .map(|multisig| (multisig.m, multisig.n, multisig.signers))
         } else {
             if owner_account.owner != spl_token_interface::id() {
                 return Ok(false);
             }
 
-            let Ok(multisig) = spl_token_interface::state::Multisig::unpack(&owner_account.data)
-            else {
-                return Ok(false);
-            };
-
-            (
-                multisig.m as usize,
-                multisig
-                    .signers
-                    .iter()
-                    .take(multisig.n as usize)
-                    .copied()
-                    .filter(|signer| *signer != Pubkey::default())
-                    .collect(),
-            )
+            spl_token_interface::state::Multisig::unpack(&owner_account.data)
+                .map(|multisig| (multisig.m, multisig.n, multisig.signers))
         };
 
-        Ok(verified_instruction_signers.intersection(&multisig_members).count() >= required_signers)
+        let Ok((required_signers, signer_count, signers)) = multisig else {
+            return Ok(false);
+        };
+
+        let multisig_members: HashSet<Pubkey> = signers
+            .iter()
+            .take(signer_count as usize)
+            .copied()
+            .filter(|signer| *signer != Pubkey::default())
+            .collect();
+
+        Ok(verified_instruction_signers.intersection(&multisig_members).count()
+            >= required_signers as usize)
     }
 
     async fn extract_user_from_payment_instruction(
@@ -212,17 +182,8 @@ impl UsageTracker {
                 {
                     // Key usage by the funding wallet (the source token account's owner), not the
                     // transfer authority, which can be a rotatable delegate or multisig member.
-                    let source_account = match CacheUtil::get_account(
-                        config,
-                        rpc_client,
-                        source_address,
-                        true,
-                    )
-                    .await
-                    {
-                        Ok(account) => account,
-                        Err(e) => return Err(e),
-                    };
+                    let source_account =
+                        CacheUtil::get_account(config, rpc_client, source_address, true).await?;
                     let source_token_program =
                         TokenType::get_token_program_from_owner(&source_account.owner)?;
                     let source_token_account =
@@ -249,33 +210,10 @@ impl UsageTracker {
             return Ok(LimiterResult::Allowed);
         }
 
-        let instruction_rules: Vec<&InstructionRule> = self
-            .instruction_rule_indices
-            .iter()
-            .filter_map(|&idx| self.rules[idx].as_instruction())
-            .collect();
-
-        let instruction_counts = if !instruction_rules.is_empty() {
-            InstructionRule::count_all_rules(&instruction_rules, ctx)
-        } else {
-            Vec::new()
-        };
-
-        let ix_idx_set: HashSet<usize> = self.instruction_rule_indices.iter().copied().collect();
-
-        let mut rule_increments = Vec::with_capacity(self.rules.len());
-        let mut instruction_count_idx = 0;
-
-        for (idx, _rule) in self.rules.iter().enumerate() {
-            let increment_count = if ix_idx_set.contains(&idx) {
-                let count = instruction_counts[instruction_count_idx];
-                instruction_count_idx += 1;
-                count
-            } else {
-                1
-            };
-            rule_increments.push(increment_count);
-        }
+        let instruction_rules: Vec<&InstructionRule> =
+            self.rules.iter().filter_map(UsageRule::as_instruction).collect();
+        let mut instruction_counts =
+            InstructionRule::count_all_rules(&instruction_rules, ctx).into_iter();
 
         let mut pending_increments = Vec::with_capacity(self.rules.len());
 
@@ -285,8 +223,13 @@ impl UsageTracker {
         // bypassing the limit.
         ctx.timestamp = Self::current_timestamp();
 
-        for (idx, rule) in self.rules.iter().enumerate() {
-            let increment_count = rule_increments[idx];
+        for rule in &self.rules {
+            let increment_count = match rule {
+                UsageRule::Instruction(_) => instruction_counts
+                    .next()
+                    .expect("count_all_rules returns one count per instruction rule"),
+                UsageRule::Transaction(_) => 1,
+            };
             if increment_count == 0 {
                 continue;
             }

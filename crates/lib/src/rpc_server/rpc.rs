@@ -46,6 +46,14 @@ pub struct OpenApiSpec {
     pub response: RefOr<Schema>,
 }
 
+fn log_response<T: std::fmt::Debug>(
+    label: &str,
+    result: Result<T, KoraError>,
+) -> Result<T, KoraError> {
+    info!("{label} response: {result:?}");
+    result
+}
+
 impl KoraRpc {
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self { rpc_client }
@@ -57,9 +65,7 @@ impl KoraRpc {
 
     pub async fn liveness(&self) -> Result<(), KoraError> {
         info!("Liveness request received");
-        let result = Ok(());
-        info!("Liveness response: {result:?}");
-        result
+        log_response("Liveness", Ok(()))
     }
 
     pub async fn estimate_transaction_fee(
@@ -67,9 +73,10 @@ impl KoraRpc {
         request: EstimateTransactionFeeRequest,
     ) -> Result<EstimateTransactionFeeResponse, KoraError> {
         info!("Estimate transaction fee request: {request:?}");
-        let result = estimate_transaction_fee(&self.rpc_client, request).await;
-        info!("Estimate transaction fee response: {result:?}");
-        result
+        log_response(
+            "Estimate transaction fee",
+            estimate_transaction_fee(&self.rpc_client, request).await,
+        )
     }
 
     pub async fn estimate_bundle_fee(
@@ -77,23 +84,17 @@ impl KoraRpc {
         request: EstimateBundleFeeRequest,
     ) -> Result<EstimateBundleFeeResponse, KoraError> {
         info!("Estimate bundle fee request: {request:?}");
-        let result = estimate_bundle_fee(&self.rpc_client, request).await;
-        info!("Estimate bundle fee response: {result:?}");
-        result
+        log_response("Estimate bundle fee", estimate_bundle_fee(&self.rpc_client, request).await)
     }
 
     pub async fn get_supported_tokens(&self) -> Result<GetSupportedTokensResponse, KoraError> {
         info!("Get supported tokens request received");
-        let result = get_supported_tokens().await;
-        info!("Get supported tokens response: {result:?}");
-        result
+        log_response("Get supported tokens", get_supported_tokens().await)
     }
 
     pub async fn get_payer_signer(&self) -> Result<GetPayerSignerResponse, KoraError> {
         info!("Get payer signer request received");
-        let result = get_payer_signer().await;
-        info!("Get payer signer response: {result:?}");
-        result
+        log_response("Get payer signer", get_payer_signer().await)
     }
 
     pub async fn sign_transaction(
@@ -101,9 +102,7 @@ impl KoraRpc {
         request: SignTransactionRequest,
     ) -> Result<SignTransactionResponse, KoraError> {
         info!("Sign transaction request: {request:?}");
-        let result = sign_transaction(&self.rpc_client, request).await;
-        info!("Sign transaction response: {result:?}");
-        result
+        log_response("Sign transaction", sign_transaction(&self.rpc_client, request).await)
     }
 
     pub async fn sign_and_send_transaction(
@@ -111,9 +110,10 @@ impl KoraRpc {
         request: SignAndSendTransactionRequest,
     ) -> Result<SignAndSendTransactionResponse, KoraError> {
         info!("Sign and send transaction request: {request:?}");
-        let result = sign_and_send_transaction(&self.rpc_client, request).await;
-        info!("Sign and send transaction response: {result:?}");
-        result
+        log_response(
+            "Sign and send transaction",
+            sign_and_send_transaction(&self.rpc_client, request).await,
+        )
     }
 
     #[deprecated(since = "2.2.0", note = "Use getPaymentInstruction instead for fee payment flows")]
@@ -124,29 +124,22 @@ impl KoraRpc {
         info!("Transfer transaction request: {request:?}");
         #[allow(deprecated)]
         let result = transfer_transaction(&self.rpc_client, request).await;
-        info!("Transfer transaction response: {result:?}");
-        result
+        log_response("Transfer transaction", result)
     }
 
     pub async fn get_blockhash(&self) -> Result<GetBlockhashResponse, KoraError> {
         info!("Get blockhash request received");
-        let result = get_blockhash(&self.rpc_client).await;
-        info!("Get blockhash response: {result:?}");
-        result
+        log_response("Get blockhash", get_blockhash(&self.rpc_client).await)
     }
 
     pub async fn get_config(&self) -> Result<GetConfigResponse, KoraError> {
         info!("Get config request received");
-        let result = get_config().await;
-        info!("Get config response: {result:?}");
-        result
+        log_response("Get config", get_config().await)
     }
 
     pub async fn get_version(&self) -> Result<GetVersionResponse, KoraError> {
         info!("Get version request received");
-        let result = get_version().await;
-        info!("Get version response: {result:?}");
-        result
+        log_response("Get version", get_version().await)
     }
 
     pub async fn sign_bundle(
@@ -154,9 +147,7 @@ impl KoraRpc {
         request: SignBundleRequest,
     ) -> Result<SignBundleResponse, KoraError> {
         info!("Sign bundle request: {request:?}");
-        let result = sign_bundle(&self.rpc_client, request).await;
-        info!("Sign bundle response: {result:?}");
-        result
+        log_response("Sign bundle", sign_bundle(&self.rpc_client, request).await)
     }
 
     pub async fn sign_and_send_bundle(
@@ -164,9 +155,7 @@ impl KoraRpc {
         request: SignAndSendBundleRequest,
     ) -> Result<SignAndSendBundleResponse, KoraError> {
         info!("Sign and send bundle request: {request:?}");
-        let result = sign_and_send_bundle(&self.rpc_client, request).await;
-        info!("Sign and send bundle response: {result:?}");
-        result
+        log_response("Sign and send bundle", sign_and_send_bundle(&self.rpc_client, request).await)
     }
 
     #[cfg(feature = "docs")]
