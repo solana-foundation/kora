@@ -89,25 +89,8 @@ impl JitoBundleSimulationResult {
             }
         };
 
-        let pre_execution_accounts = match value.get("preExecutionAccounts") {
-            None | Some(Value::Null) => None,
-            Some(Value::Array(accounts)) => Some(accounts.clone()),
-            _ => {
-                return Err(JitoError::ApiError(
-                    "Invalid preExecutionAccounts in simulateBundle response".to_string(),
-                ))
-            }
-        };
-
-        let post_execution_accounts = match value.get("postExecutionAccounts") {
-            None | Some(Value::Null) => None,
-            Some(Value::Array(accounts)) => Some(accounts.clone()),
-            _ => {
-                return Err(JitoError::ApiError(
-                    "Invalid postExecutionAccounts in simulateBundle response".to_string(),
-                ))
-            }
-        };
+        let pre_execution_accounts = Self::parse_accounts(&value, "preExecutionAccounts")?;
+        let post_execution_accounts = Self::parse_accounts(&value, "postExecutionAccounts")?;
 
         Ok(JitoBundleSimulationTransactionResult {
             err: value.get("err").filter(|err| !err.is_null()).cloned(),
@@ -118,6 +101,14 @@ impl JitoBundleSimulationResult {
             units_consumed: value.get("unitsConsumed").and_then(Value::as_u64),
             return_data: value.get("returnData").filter(|data| !data.is_null()).cloned(),
         })
+    }
+
+    fn parse_accounts(value: &Value, key: &str) -> Result<Option<Vec<Value>>, JitoError> {
+        match value.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::Array(accounts)) => Ok(Some(accounts.clone())),
+            _ => Err(JitoError::ApiError(format!("Invalid {key} in simulateBundle response"))),
+        }
     }
 
     fn from_rpc_result(result: Value) -> Result<Self, JitoError> {
