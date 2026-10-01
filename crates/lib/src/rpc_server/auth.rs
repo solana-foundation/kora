@@ -26,10 +26,14 @@ impl RejectionReason {
     }
 }
 
-fn auth_rejection_response() -> Response<Body> {
+pub(crate) fn auth_rejection_response() -> Response<Body> {
     let mut response = build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
     response.extensions_mut().insert(RejectionReason::AuthFailure);
     response
+}
+
+fn is_liveness_request(body_bytes: &[u8]) -> bool {
+    get_jsonrpc_method(body_bytes).as_deref() == Some("liveness")
 }
 
 fn hash_key(key: &[u8]) -> [u8; 32] {
@@ -53,15 +57,10 @@ impl std::fmt::Debug for ClientIdentity {
     }
 }
 
+#[derive(Clone)]
 struct KeyEntry {
     identity: String,
     hash: [u8; 32],
-}
-
-impl Clone for KeyEntry {
-    fn clone(&self) -> Self {
-        Self { identity: self.identity.clone(), hash: self.hash }
-    }
 }
 
 #[derive(Clone)]
@@ -121,30 +120,24 @@ where
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
             // Bypass auth for liveness endpoint
-            if let Some(method) = get_jsonrpc_method(&body_bytes) {
-                if method == "liveness" {
-                    let new_body = Body::from(body_bytes);
-                    let new_request = Request::from_parts(parts, new_body);
-                    return inner.call(new_request).await;
-                }
+            if is_liveness_request(&body_bytes) {
+                return inner.call(Request::from_parts(parts, Body::from(body_bytes))).await;
             }
 
             let mut req = Request::from_parts(parts, Body::from(body_bytes));
             if let Some(provided_key) = req.headers().get(X_API_KEY) {
-                let mut is_valid = false;
-                let mut matched_id = String::new();
+                let mut matched_id = None;
                 let provided_hash = hash_key(provided_key.as_bytes());
 
                 for entry in api_keys.iter() {
                     let matches: bool = provided_hash.ct_eq(&entry.hash).into();
 
                     if matches {
-                        is_valid = true;
-                        matched_id = entry.identity.clone();
+                        matched_id = Some(entry.identity.clone());
                     }
                 }
 
-                if is_valid {
+                if let Some(matched_id) = matched_id {
                     req.extensions_mut().insert(ClientIdentity(format!("apikey:{}", matched_id)));
                     return inner.call(req).await;
                 }
@@ -216,12 +209,8 @@ where
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
             // Bypass auth for liveness endpoint
-            if let Some(method) = get_jsonrpc_method(&body_bytes) {
-                if method == "liveness" {
-                    let new_body = Body::from(body_bytes);
-                    let new_request = Request::from_parts(parts, new_body);
-                    return inner.call(new_request).await;
-                }
+            if is_liveness_request(&body_bytes) {
+                return inner.call(Request::from_parts(parts, Body::from(body_bytes))).await;
             }
 
             let (signature, timestamp) =

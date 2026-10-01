@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, MutexGuard},
+};
 
 use async_trait::async_trait;
 use deadpool_redis::{Connection, Pool};
@@ -237,6 +240,15 @@ impl InMemoryUsageStore {
         Self { data: Mutex::new(HashMap::new()) }
     }
 
+    fn lock(&self) -> Result<MutexGuard<'_, HashMap<String, UsageEntry>>, KoraError> {
+        self.data.lock().map_err(|e| {
+            KoraError::InternalServerError(sanitize_error!(format!(
+                "Failed to lock usage store: {}",
+                e
+            )))
+        })
+    }
+
     fn current_timestamp() -> u64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -254,24 +266,14 @@ impl Default for InMemoryUsageStore {
 #[async_trait]
 impl UsageStore for InMemoryUsageStore {
     async fn increment(&self, key: &str) -> Result<u32, KoraError> {
-        let mut data = self.data.lock().map_err(|e| {
-            KoraError::InternalServerError(sanitize_error!(format!(
-                "Failed to lock usage store: {}",
-                e
-            )))
-        })?;
+        let mut data = self.lock()?;
         let entry = data.entry(key.to_string()).or_insert(UsageEntry { count: 0, expiry: None });
         entry.count += 1;
         Ok(entry.count)
     }
 
     async fn increment_with_expiry(&self, key: &str, expires_at: u64) -> Result<u32, KoraError> {
-        let mut data = self.data.lock().map_err(|e| {
-            KoraError::InternalServerError(sanitize_error!(format!(
-                "Failed to lock usage store: {}",
-                e
-            )))
-        })?;
+        let mut data = self.lock()?;
 
         let now = Self::current_timestamp();
         let entry = data.entry(key.to_string()).or_insert(UsageEntry { count: 0, expiry: None });
@@ -291,12 +293,7 @@ impl UsageStore for InMemoryUsageStore {
     }
 
     async fn get(&self, key: &str) -> Result<u32, KoraError> {
-        let data = self.data.lock().map_err(|e| {
-            KoraError::InternalServerError(sanitize_error!(format!(
-                "Failed to lock usage store: {}",
-                e
-            )))
-        })?;
+        let data = self.lock()?;
 
         if let Some(entry) = data.get(key) {
             // Check if expired
@@ -318,12 +315,7 @@ impl UsageStore for InMemoryUsageStore {
         max: u64,
         expiry: Option<u64>,
     ) -> Result<bool, KoraError> {
-        let mut data = self.data.lock().map_err(|e| {
-            KoraError::InternalServerError(sanitize_error!(format!(
-                "Failed to lock usage store: {}",
-                e
-            )))
-        })?;
+        let mut data = self.lock()?;
 
         let now = Self::current_timestamp();
         let entry = data.entry(key.to_string()).or_insert(UsageEntry { count: 0, expiry: None });
@@ -353,12 +345,7 @@ impl UsageStore for InMemoryUsageStore {
         &self,
         entries: &[(String, u64, u64, Option<u64>)],
     ) -> Result<bool, KoraError> {
-        let mut data = self.data.lock().map_err(|e| {
-            KoraError::InternalServerError(sanitize_error!(format!(
-                "Failed to lock usage store: {}",
-                e
-            )))
-        })?;
+        let mut data = self.lock()?;
 
         let now = Self::current_timestamp();
 
@@ -400,12 +387,7 @@ impl UsageStore for InMemoryUsageStore {
     }
 
     async fn clear(&self) -> Result<(), KoraError> {
-        let mut data = self.data.lock().map_err(|e| {
-            KoraError::InternalServerError(sanitize_error!(format!(
-                "Failed to lock usage store: {}",
-                e
-            )))
-        })?;
+        let mut data = self.lock()?;
         data.clear();
         Ok(())
     }
