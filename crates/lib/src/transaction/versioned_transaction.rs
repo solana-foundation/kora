@@ -141,18 +141,6 @@ impl VersionedTransactionResolved {
         sig_verify: bool,
         alt_cache: AltCache<'_>,
     ) -> Result<Self, KoraError> {
-        let mut resolved = Self {
-            transaction: transaction.clone(),
-            all_account_keys: vec![],
-            all_instructions: vec![],
-            parsed_system_instructions: None,
-            parsed_spl_instructions: None,
-            parsed_alt_instructions: None,
-            parsed_loader_v4_instructions: None,
-            parsed_bpf_loader_upgradeable_instructions: None,
-            parsed_token2022_security_instructions: None,
-        };
-
         let resolved_addresses = match &transaction.message {
             VersionedMessage::Legacy(_) => {
                 // Legacy transactions don't have lookup tables
@@ -174,15 +162,13 @@ impl VersionedTransactionResolved {
         };
 
         let mut all_account_keys = transaction.message.static_account_keys().to_vec();
-        all_account_keys.extend(resolved_addresses.clone());
-        resolved.all_account_keys = all_account_keys.clone();
+        all_account_keys.extend(resolved_addresses);
 
         let outer_instructions =
             IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys)?;
 
+        let mut resolved = Self::new(transaction.clone(), all_account_keys, outer_instructions);
         let inner_instructions = resolved.fetch_inner_instructions(rpc_client, sig_verify).await?;
-
-        resolved.all_instructions.extend(outer_instructions);
         resolved.all_instructions.extend(inner_instructions);
 
         Ok(resolved)
@@ -192,20 +178,28 @@ impl VersionedTransactionResolved {
     pub fn from_kora_built_transaction(
         transaction: &VersionedTransaction,
     ) -> Result<Self, KoraError> {
-        Ok(Self {
-            transaction: transaction.clone(),
-            all_account_keys: transaction.message.static_account_keys().to_vec(),
-            all_instructions: IxUtils::uncompile_instructions(
-                transaction.message.instructions(),
-                transaction.message.static_account_keys(),
-            )?,
+        let all_account_keys = transaction.message.static_account_keys().to_vec();
+        let all_instructions =
+            IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys)?;
+        Ok(Self::new(transaction.clone(), all_account_keys, all_instructions))
+    }
+
+    fn new(
+        transaction: VersionedTransaction,
+        all_account_keys: Vec<Pubkey>,
+        all_instructions: Vec<Instruction>,
+    ) -> Self {
+        Self {
+            transaction,
+            all_account_keys,
+            all_instructions,
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
             parsed_alt_instructions: None,
             parsed_loader_v4_instructions: None,
             parsed_bpf_loader_upgradeable_instructions: None,
             parsed_token2022_security_instructions: None,
-        })
+        }
     }
 
     async fn fetch_inner_instructions(
