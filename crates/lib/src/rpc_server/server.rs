@@ -209,28 +209,28 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
 
 macro_rules! register_method_if_enabled {
     // For methods without parameters
-    ($module:expr, $enabled_methods:expr, $field:ident, $method_name:expr, $rpc_method:ident) => {
-        if $enabled_methods.$field {
+    ($module:expr, $enabled_methods:expr, $method:ident, $method_name:expr) => {
+        if $enabled_methods.$method {
             let _ = $module.register_async_method(
                 $method_name,
                 |_rpc_params, rpc_context| async move {
                     let rpc = rpc_context.as_ref();
-                    rpc.$rpc_method().await.map_err(Into::into)
+                    rpc.$method().await.map_err(Into::into)
                 },
             );
         }
     };
 
     // For methods with parameters
-    ($module:expr, $enabled_methods:expr, $field:ident, $method_name:expr, $rpc_method:ident, with_params) => {
-        if $enabled_methods.$field {
+    ($module:expr, $enabled_methods:expr, $method:ident, $method_name:expr, with_params) => {
+        if $enabled_methods.$method {
             #[allow(deprecated)]
             let _ =
                 $module.register_async_method($method_name, |rpc_params, rpc_context| async move {
                     let rpc = rpc_context.as_ref();
                     let params = rpc_params.parse()?;
                     #[allow(deprecated)]
-                    rpc.$rpc_method(params).await.map_err(Into::into)
+                    rpc.$method(params).await.map_err(Into::into)
                 });
         }
     };
@@ -240,14 +240,13 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
     let mut module = RpcModule::new(rpc.clone());
     let enabled_methods = &get_config()?.kora.enabled_methods;
 
-    register_method_if_enabled!(module, enabled_methods, liveness, "liveness", liveness);
+    register_method_if_enabled!(module, enabled_methods, liveness, "liveness");
 
     register_method_if_enabled!(
         module,
         enabled_methods,
         estimate_transaction_fee,
         "estimateTransactionFee",
-        estimate_transaction_fee,
         with_params
     );
     register_method_if_enabled!(
@@ -255,29 +254,20 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
         enabled_methods,
         estimate_bundle_fee,
         "estimateBundleFee",
-        estimate_bundle_fee,
         with_params
     );
     register_method_if_enabled!(
         module,
         enabled_methods,
         get_supported_tokens,
-        "getSupportedTokens",
-        get_supported_tokens
+        "getSupportedTokens"
     );
-    register_method_if_enabled!(
-        module,
-        enabled_methods,
-        get_payer_signer,
-        "getPayerSigner",
-        get_payer_signer
-    );
+    register_method_if_enabled!(module, enabled_methods, get_payer_signer, "getPayerSigner");
     register_method_if_enabled!(
         module,
         enabled_methods,
         sign_transaction,
         "signTransaction",
-        sign_transaction,
         with_params
     );
     register_method_if_enabled!(
@@ -285,7 +275,6 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
         enabled_methods,
         sign_and_send_transaction,
         "signAndSendTransaction",
-        sign_and_send_transaction,
         with_params
     );
     register_method_if_enabled!(
@@ -293,32 +282,17 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
         enabled_methods,
         transfer_transaction,
         "transferTransaction",
-        transfer_transaction,
         with_params
     );
-    register_method_if_enabled!(
-        module,
-        enabled_methods,
-        get_blockhash,
-        "getBlockhash",
-        get_blockhash
-    );
-    register_method_if_enabled!(module, enabled_methods, get_config, "getConfig", get_config);
-    register_method_if_enabled!(module, enabled_methods, get_version, "getVersion", get_version);
-    register_method_if_enabled!(
-        module,
-        enabled_methods,
-        sign_bundle,
-        "signBundle",
-        sign_bundle,
-        with_params
-    );
+    register_method_if_enabled!(module, enabled_methods, get_blockhash, "getBlockhash");
+    register_method_if_enabled!(module, enabled_methods, get_config, "getConfig");
+    register_method_if_enabled!(module, enabled_methods, get_version, "getVersion");
+    register_method_if_enabled!(module, enabled_methods, sign_bundle, "signBundle", with_params);
     register_method_if_enabled!(
         module,
         enabled_methods,
         sign_and_send_bundle,
         "signAndSendBundle",
-        sign_and_send_bundle,
         with_params
     );
 
