@@ -273,37 +273,31 @@ impl VersionedTransactionResolved {
         &mut self,
     ) -> Result<&HashMap<ParsedSystemInstructionType, Vec<ParsedSystemInstructionData>>, KoraError>
     {
-        if self.parsed_system_instructions.is_none() {
-            self.parsed_system_instructions = Some(IxUtils::parse_system_instructions(self)?);
-        }
-
-        self.parsed_system_instructions.as_ref().ok_or_else(|| {
-            KoraError::SerializationError("Parsed system instructions not found".to_string())
-        })
+        let parsed = match self.parsed_system_instructions.take() {
+            Some(parsed) => parsed,
+            None => IxUtils::parse_system_instructions(self)?,
+        };
+        Ok(self.parsed_system_instructions.insert(parsed))
     }
 
     pub fn get_or_parse_spl_instructions(
         &mut self,
     ) -> Result<&HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>, KoraError> {
-        if self.parsed_spl_instructions.is_none() {
-            self.parsed_spl_instructions = Some(IxUtils::parse_token_instructions(self)?);
-        }
-
-        self.parsed_spl_instructions.as_ref().ok_or_else(|| {
-            KoraError::SerializationError("Parsed SPL instructions not found".to_string())
-        })
+        let parsed = match self.parsed_spl_instructions.take() {
+            Some(parsed) => parsed,
+            None => IxUtils::parse_token_instructions(self)?,
+        };
+        Ok(self.parsed_spl_instructions.insert(parsed))
     }
 
     pub fn get_or_parse_alt_instructions(
         &mut self,
     ) -> Result<&HashMap<ParsedALTInstructionType, Vec<ParsedALTInstructionData>>, KoraError> {
-        if self.parsed_alt_instructions.is_none() {
-            self.parsed_alt_instructions = Some(IxUtils::parse_alt_instructions(self)?);
-        }
-
-        self.parsed_alt_instructions.as_ref().ok_or_else(|| {
-            KoraError::SerializationError("Parsed ALT instructions not found".to_string())
-        })
+        let parsed = match self.parsed_alt_instructions.take() {
+            Some(parsed) => parsed,
+            None => IxUtils::parse_alt_instructions(self)?,
+        };
+        Ok(self.parsed_alt_instructions.insert(parsed))
     }
 
     pub fn get_or_parse_loader_v4_instructions(
@@ -312,13 +306,11 @@ impl VersionedTransactionResolved {
         &HashMap<ParsedLoaderV4InstructionType, Vec<ParsedLoaderV4InstructionData>>,
         KoraError,
     > {
-        if self.parsed_loader_v4_instructions.is_none() {
-            self.parsed_loader_v4_instructions = Some(IxUtils::parse_loader_v4_instructions(self)?);
-        }
-
-        self.parsed_loader_v4_instructions.as_ref().ok_or_else(|| {
-            KoraError::SerializationError("Parsed Loader-v4 instructions not found".to_string())
-        })
+        let parsed = match self.parsed_loader_v4_instructions.take() {
+            Some(parsed) => parsed,
+            None => IxUtils::parse_loader_v4_instructions(self)?,
+        };
+        Ok(self.parsed_loader_v4_instructions.insert(parsed))
     }
 
     pub fn get_or_parse_bpf_loader_upgradeable_instructions(
@@ -330,30 +322,21 @@ impl VersionedTransactionResolved {
         >,
         KoraError,
     > {
-        if self.parsed_bpf_loader_upgradeable_instructions.is_none() {
-            self.parsed_bpf_loader_upgradeable_instructions =
-                Some(IxUtils::parse_bpf_loader_upgradeable_instructions(self)?);
-        }
-        self.parsed_bpf_loader_upgradeable_instructions.as_ref().ok_or_else(|| {
-            KoraError::SerializationError(
-                "Parsed BPF Loader Upgradeable instructions not found".to_string(),
-            )
-        })
+        let parsed = match self.parsed_bpf_loader_upgradeable_instructions.take() {
+            Some(parsed) => parsed,
+            None => IxUtils::parse_bpf_loader_upgradeable_instructions(self)?,
+        };
+        Ok(self.parsed_bpf_loader_upgradeable_instructions.insert(parsed))
     }
 
     pub fn get_or_parse_token2022_security_instructions(
         &mut self,
     ) -> Result<&Vec<Token2022SecurityInstruction>, KoraError> {
-        if self.parsed_token2022_security_instructions.is_none() {
-            self.parsed_token2022_security_instructions =
-                Some(Token2022SecurityParser::parse(&self.all_instructions)?);
-        }
-
-        self.parsed_token2022_security_instructions.as_ref().ok_or_else(|| {
-            KoraError::SerializationError(
-                "Parsed Token-2022 security instructions not found".to_string(),
-            )
-        })
+        let parsed = match self.parsed_token2022_security_instructions.take() {
+            Some(parsed) => parsed,
+            None => Token2022SecurityParser::parse(&self.all_instructions)?,
+        };
+        Ok(self.parsed_token2022_security_instructions.insert(parsed))
     }
 }
 
