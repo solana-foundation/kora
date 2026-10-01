@@ -26,7 +26,7 @@ impl RejectionReason {
     }
 }
 
-fn auth_rejection_response() -> Response<Body> {
+pub(crate) fn auth_rejection_response() -> Response<Body> {
     let mut response = build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
     response.extensions_mut().insert(RejectionReason::AuthFailure);
     response
