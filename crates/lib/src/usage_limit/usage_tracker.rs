@@ -98,50 +98,35 @@ impl UsageTracker {
             return Ok(false);
         }
 
-        let (required_signers, multisig_members): (usize, HashSet<Pubkey>) = if is_2022 {
+        let multisig = if is_2022 {
             if owner_account.owner != spl_token_2022_interface::id() {
                 return Ok(false);
             }
 
-            let Ok(multisig) =
-                spl_token_2022_interface::state::Multisig::unpack(&owner_account.data)
-            else {
-                return Ok(false);
-            };
-
-            (
-                multisig.m as usize,
-                multisig
-                    .signers
-                    .iter()
-                    .take(multisig.n as usize)
-                    .copied()
-                    .filter(|signer| *signer != Pubkey::default())
-                    .collect(),
-            )
+            spl_token_2022_interface::state::Multisig::unpack(&owner_account.data)
+                .map(|multisig| (multisig.m, multisig.n, multisig.signers))
         } else {
             if owner_account.owner != spl_token_interface::id() {
                 return Ok(false);
             }
 
-            let Ok(multisig) = spl_token_interface::state::Multisig::unpack(&owner_account.data)
-            else {
-                return Ok(false);
-            };
-
-            (
-                multisig.m as usize,
-                multisig
-                    .signers
-                    .iter()
-                    .take(multisig.n as usize)
-                    .copied()
-                    .filter(|signer| *signer != Pubkey::default())
-                    .collect(),
-            )
+            spl_token_interface::state::Multisig::unpack(&owner_account.data)
+                .map(|multisig| (multisig.m, multisig.n, multisig.signers))
         };
 
-        Ok(verified_instruction_signers.intersection(&multisig_members).count() >= required_signers)
+        let Ok((required_signers, signer_count, signers)) = multisig else {
+            return Ok(false);
+        };
+
+        let multisig_members: HashSet<Pubkey> = signers
+            .iter()
+            .take(signer_count as usize)
+            .copied()
+            .filter(|signer| *signer != Pubkey::default())
+            .collect();
+
+        Ok(verified_instruction_signers.intersection(&multisig_members).count()
+            >= required_signers as usize)
     }
 
     async fn extract_user_from_payment_instruction(
