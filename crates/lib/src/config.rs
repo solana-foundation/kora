@@ -870,36 +870,18 @@ where
         Vec(Vec<String>),
     }
 
-    let opt = Option::<ApiKeys>::deserialize(deserializer)?;
-    match opt {
-        Some(ApiKeys::String(s)) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(vec![trimmed.to_string()]))
-            }
-        }
-        Some(ApiKeys::Vec(v)) => {
-            let filtered: Vec<String> = v
-                .into_iter()
-                .filter_map(|s| {
-                    let trimmed = s.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(trimmed.to_string())
-                    }
-                })
-                .collect();
-            if filtered.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(filtered))
-            }
-        }
-        None => Ok(None),
-    }
+    let keys = match Option::<ApiKeys>::deserialize(deserializer)? {
+        Some(ApiKeys::String(key)) => vec![key],
+        Some(ApiKeys::Vec(keys)) => keys,
+        None => vec![],
+    };
+    let keys: Vec<String> = keys
+        .iter()
+        .map(|key| key.trim())
+        .filter(|key| !key.is_empty())
+        .map(str::to_string)
+        .collect();
+    Ok((!keys.is_empty()).then_some(keys))
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
