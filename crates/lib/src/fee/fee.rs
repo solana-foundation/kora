@@ -289,14 +289,10 @@ impl FeeConfigUtil {
                     )
                     .await?;
 
-                    Ok(TotalFeeCalculation::new(
-                        fixed_fee_lamports,
-                        fee_calculation.base_fee,
-                        fee_calculation.kora_signature_fee,
-                        fee_calculation.fee_payer_outflow,
-                        fee_calculation.payment_instruction_fee,
-                        fee_calculation.transfer_fee_amount,
-                    ))
+                    Ok(TotalFeeCalculation {
+                        total_fee_lamports: fixed_fee_lamports,
+                        ..fee_calculation
+                    })
                 } else {
                     Ok(TotalFeeCalculation::new_fixed(fixed_fee_lamports))
                 }
@@ -318,14 +314,7 @@ impl FeeConfigUtil {
                     .get_required_lamports_with_margin(fee_calculation.total_fee_lamports)
                     .await?;
 
-                Ok(TotalFeeCalculation::new(
-                    total_fee_lamports,
-                    fee_calculation.base_fee,
-                    fee_calculation.kora_signature_fee,
-                    fee_calculation.fee_payer_outflow,
-                    fee_calculation.payment_instruction_fee,
-                    fee_calculation.transfer_fee_amount,
-                ))
+                Ok(TotalFeeCalculation { total_fee_lamports, ..fee_calculation })
             }
         }
     }
