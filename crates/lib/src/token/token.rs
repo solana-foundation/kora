@@ -642,72 +642,15 @@ impl TokenUtil {
         destination_address: &Pubkey,
         mint: &Pubkey,
     ) -> Result<(), KoraError> {
-        let token2022_config = &config.validation.token_2022;
-
-        let token_program = Token2022Program::new();
-
-        // Get mint account data and validate mint extensions (force refresh in case extensions are added)
-        let mint_account = CacheUtil::get_account(config, rpc_client, mint, true).await?;
-        let mint_data = mint_account.data;
-
-        // Unpack the mint state with extensions
-        let mint_state = token_program.unpack_mint(mint, &mint_data)?;
-
-        let mint_with_extensions =
-            mint_state.as_any().downcast_ref::<Token2022Mint>().ok_or_else(|| {
-                KoraError::SerializationError("Failed to downcast mint state.".to_string())
-            })?;
-
-        // Check each extension type present on the mint
-        for extension_type in mint_with_extensions.get_extension_types() {
-            if token2022_config.is_mint_extension_blocked(*extension_type) {
-                return Err(KoraError::ValidationError(format!(
-                    "Blocked mint extension found on mint account {mint}",
-                )));
-            }
-        }
-
-        // Check source account extensions (force refresh in case extensions are added)
-        let source_account =
-            CacheUtil::get_account(config, rpc_client, source_address, true).await?;
-        let source_data = source_account.data;
-
-        let source_state = token_program.unpack_token_account(&source_data)?;
-
-        let source_with_extensions =
-            source_state.as_any().downcast_ref::<Token2022Account>().ok_or_else(|| {
-                KoraError::SerializationError("Failed to downcast source state.".to_string())
-            })?;
-
-        for extension_type in source_with_extensions.get_extension_types() {
-            if token2022_config.is_account_extension_blocked(*extension_type) {
-                return Err(KoraError::ValidationError(format!(
-                    "Blocked account extension found on source account {source_address}",
-                )));
-            }
-        }
-
-        // Check destination account extensions (force refresh in case extensions are added)
-        let destination_account =
-            CacheUtil::get_account(config, rpc_client, destination_address, true).await?;
-        let destination_data = destination_account.data;
-
-        let destination_state = token_program.unpack_token_account(&destination_data)?;
-
-        let destination_with_extensions =
-            destination_state.as_any().downcast_ref::<Token2022Account>().ok_or_else(|| {
-                KoraError::SerializationError("Failed to downcast destination state.".to_string())
-            })?;
-
-        for extension_type in destination_with_extensions.get_extension_types() {
-            if token2022_config.is_account_extension_blocked(*extension_type) {
-                return Err(KoraError::ValidationError(format!(
-                    "Blocked account extension found on destination account {destination_address}",
-                )));
-            }
-        }
-
-        Ok(())
+        Self::validate_token2022_partial_for_ata_creation(config, rpc_client, source_address, mint)
+            .await?;
+        Self::validate_token2022_account_extensions(
+            config,
+            rpc_client,
+            destination_address,
+            "destination",
+        )
+        .await
     }
 
     /// Validate Token2022 extensions for payment when destination ATA is being created.
@@ -738,20 +681,28 @@ impl TokenUtil {
             }
         }
 
-        // Check source account extensions
-        let source_account =
-            CacheUtil::get_account(config, rpc_client, source_address, true).await?;
-        let source_state = token_program.unpack_token_account(&source_account.data)?;
+        Self::validate_token2022_account_extensions(config, rpc_client, source_address, "source")
+            .await
+    }
 
-        let source_with_extensions =
-            source_state.as_any().downcast_ref::<Token2022Account>().ok_or_else(|| {
-                KoraError::SerializationError("Failed to downcast source state.".to_string())
+    async fn validate_token2022_account_extensions(
+        config: &Config,
+        rpc_client: &RpcClient,
+        address: &Pubkey,
+        label: &str,
+    ) -> Result<(), KoraError> {
+        let account = CacheUtil::get_account(config, rpc_client, address, true).await?;
+        let state = Token2022Program::new().unpack_token_account(&account.data)?;
+
+        let with_extensions =
+            state.as_any().downcast_ref::<Token2022Account>().ok_or_else(|| {
+                KoraError::SerializationError(format!("Failed to downcast {label} state."))
             })?;
 
-        for extension_type in source_with_extensions.get_extension_types() {
-            if token2022_config.is_account_extension_blocked(*extension_type) {
+        for extension_type in with_extensions.get_extension_types() {
+            if config.validation.token_2022.is_account_extension_blocked(*extension_type) {
                 return Err(KoraError::ValidationError(format!(
-                    "Blocked account extension found on source account {source_address}",
+                    "Blocked account extension found on {label} account {address}",
                 )));
             }
         }
