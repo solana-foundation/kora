@@ -605,13 +605,11 @@ impl ConfigValidator {
             }
         }
 
-        if !config.validation.require_one_of_programs.is_empty() {
-            for program in &config.validation.require_one_of_programs {
-                if !config.validation.allowed_programs.contains(program) {
-                    errors.push(format!(
-                        "Program {program} in require_one_of_programs must also be in allowed_programs"
-                    ));
-                }
+        for program in &config.validation.require_one_of_programs {
+            if !config.validation.allowed_programs.contains(program) {
+                errors.push(format!(
+                    "Program {program} in require_one_of_programs must also be in allowed_programs"
+                ));
             }
         }
 
@@ -764,9 +762,7 @@ impl ConfigValidator {
 
         // The running server resolves auth env-first, so a stale KORA_* environment variable
         // silently overrides a rotated kora.toml secret and keeps the retired credential valid.
-        for warning in config.kora.auth.env_overridden_fields() {
-            warnings.push(warning);
-        }
+        warnings.extend(config.kora.auth.env_overridden_fields());
 
         let usage_config = &config.kora.usage_limit;
         if usage_config.enabled {
