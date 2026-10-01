@@ -1,14 +1,15 @@
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use spl_token_2022_interface::{
     extension::{
-        group_member_pointer::instruction::GroupMemberPointerInstruction,
-        group_pointer::instruction::GroupPointerInstruction,
-        interest_bearing_mint::instruction::InterestBearingMintInstruction,
-        metadata_pointer::instruction::MetadataPointerInstruction,
-        pausable::instruction::PausableInstruction,
-        scaled_ui_amount::instruction::ScaledUiAmountMintInstruction,
+        group_member_pointer::{self, instruction::GroupMemberPointerInstruction},
+        group_pointer::{self, instruction::GroupPointerInstruction},
+        interest_bearing_mint::{self, instruction::InterestBearingMintInstruction},
+        metadata_pointer::{self, instruction::MetadataPointerInstruction},
+        pausable::{self, instruction::PausableInstruction},
+        scaled_ui_amount::{self, instruction::ScaledUiAmountMintInstruction},
         transfer_fee::instruction::TransferFeeInstruction,
-        transfer_hook::instruction::TransferHookInstruction, ExtensionType,
+        transfer_hook::{self, instruction::TransferHookInstruction},
+        ExtensionType,
     },
     instruction::{decode_instruction_data, decode_instruction_type, TokenInstruction},
 };
@@ -535,16 +536,11 @@ impl Token2022SecurityParser {
 
         match interest_bearing_instruction {
             InterestBearingMintInstruction::Initialize => {
-                let initialize =
-                    *decode_instruction_data::<
-                        spl_token_2022_interface::extension::interest_bearing_mint::instruction::InitializeInstructionData,
-                    >(&instruction.data[1..])
-                    .map_err(|e| {
-                        KoraError::InvalidTransaction(format!(
-                            "Failed to parse Token-2022 InterestBearing initialize instruction: {}",
-                            sanitize_error!(e)
-                        ))
-                    })?;
+                let initialize: interest_bearing_mint::instruction::InitializeInstructionData =
+                    Self::extension_data(
+                        decode_instruction_data(&instruction.data[1..]),
+                        "InterestBearing initialize",
+                    )?;
 
                 Ok(Some(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializeInterestBearingConfig",
@@ -586,16 +582,11 @@ impl Token2022SecurityParser {
 
         match transfer_hook_instruction {
             TransferHookInstruction::Initialize => {
-                let initialize =
-                    *decode_instruction_data::<
-                        spl_token_2022_interface::extension::transfer_hook::instruction::InitializeInstructionData,
-                    >(&instruction.data[1..])
-                    .map_err(|e| {
-                        KoraError::InvalidTransaction(format!(
-                            "Failed to parse Token-2022 TransferHook initialize instruction: {}",
-                            sanitize_error!(e)
-                        ))
-                    })?;
+                let initialize: transfer_hook::instruction::InitializeInstructionData =
+                    Self::extension_data(
+                        decode_instruction_data(&instruction.data[1..]),
+                        "TransferHook initialize",
+                    )?;
 
                 Ok(Some(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializeTransferHook",
@@ -622,16 +613,11 @@ impl Token2022SecurityParser {
                 }))
             }
             TransferHookInstruction::Update => {
-                let update =
-                    *decode_instruction_data::<
-                        spl_token_2022_interface::extension::transfer_hook::instruction::UpdateInstructionData,
-                    >(&instruction.data[1..])
-                    .map_err(|e| {
-                        KoraError::InvalidTransaction(format!(
-                            "Failed to parse Token-2022 TransferHook update instruction: {}",
-                            sanitize_error!(e)
-                        ))
-                    })?;
+                let update: transfer_hook::instruction::UpdateInstructionData =
+                    Self::extension_data(
+                        decode_instruction_data(&instruction.data[1..]),
+                        "TransferHook update",
+                    )?;
 
                 Ok(Some(Token2022SecurityInstruction {
                     instruction_name: "Token2022 TransferHookUpdate",
@@ -666,16 +652,11 @@ impl Token2022SecurityParser {
 
         match metadata_pointer_instruction {
             MetadataPointerInstruction::Initialize => {
-                let initialize =
-                    *decode_instruction_data::<
-                        spl_token_2022_interface::extension::metadata_pointer::instruction::InitializeInstructionData,
-                    >(&instruction.data[1..])
-                    .map_err(|e| {
-                        KoraError::InvalidTransaction(format!(
-                            "Failed to parse Token-2022 MetadataPointer initialize instruction: {}",
-                            sanitize_error!(e)
-                        ))
-                    })?;
+                let initialize: metadata_pointer::instruction::InitializeInstructionData =
+                    Self::extension_data(
+                        decode_instruction_data(&instruction.data[1..]),
+                        "MetadataPointer initialize",
+                    )?;
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializeMetadataPointer",
@@ -702,16 +683,11 @@ impl Token2022SecurityParser {
                 })
             }
             MetadataPointerInstruction::Update => {
-                let update =
-                    *decode_instruction_data::<
-                        spl_token_2022_interface::extension::metadata_pointer::instruction::UpdateInstructionData,
-                    >(&instruction.data[1..])
-                    .map_err(|e| {
-                        KoraError::InvalidTransaction(format!(
-                            "Failed to parse Token-2022 MetadataPointer update instruction: {}",
-                            sanitize_error!(e)
-                        ))
-                    })?;
+                let update: metadata_pointer::instruction::UpdateInstructionData =
+                    Self::extension_data(
+                        decode_instruction_data(&instruction.data[1..]),
+                        "MetadataPointer update",
+                    )?;
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 UpdateMetadataPointer",
@@ -744,16 +720,11 @@ impl Token2022SecurityParser {
 
         match group_pointer_instruction {
             GroupPointerInstruction::Initialize => {
-                let initialize =
-                    *decode_instruction_data::<
-                        spl_token_2022_interface::extension::group_pointer::instruction::InitializeInstructionData,
-                    >(&instruction.data[1..])
-                    .map_err(|e| {
-                        KoraError::InvalidTransaction(format!(
-                            "Failed to parse Token-2022 GroupPointer initialize instruction: {}",
-                            sanitize_error!(e)
-                        ))
-                    })?;
+                let initialize: group_pointer::instruction::InitializeInstructionData =
+                    Self::extension_data(
+                        decode_instruction_data(&instruction.data[1..]),
+                        "GroupPointer initialize",
+                    )?;
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializeGroupPointer",
@@ -780,16 +751,11 @@ impl Token2022SecurityParser {
                 })
             }
             GroupPointerInstruction::Update => {
-                let update =
-                    *decode_instruction_data::<
-                        spl_token_2022_interface::extension::group_pointer::instruction::UpdateInstructionData,
-                    >(&instruction.data[1..])
-                    .map_err(|e| {
-                        KoraError::InvalidTransaction(format!(
-                            "Failed to parse Token-2022 GroupPointer update instruction: {}",
-                            sanitize_error!(e)
-                        ))
-                    })?;
+                let update: group_pointer::instruction::UpdateInstructionData =
+                    Self::extension_data(
+                        decode_instruction_data(&instruction.data[1..]),
+                        "GroupPointer update",
+                    )?;
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 UpdateGroupPointer",
@@ -823,16 +789,11 @@ impl Token2022SecurityParser {
 
         match group_member_pointer_instruction {
             GroupMemberPointerInstruction::Initialize => {
-                let initialize =
-                    *decode_instruction_data::<
-                        spl_token_2022_interface::extension::group_member_pointer::instruction::InitializeInstructionData,
-                    >(&instruction.data[1..])
-                    .map_err(|e| {
-                        KoraError::InvalidTransaction(format!(
-                            "Failed to parse Token-2022 GroupMemberPointer initialize instruction: {}",
-                            sanitize_error!(e)
-                        ))
-                    })?;
+                let initialize: group_member_pointer::instruction::InitializeInstructionData =
+                    Self::extension_data(
+                        decode_instruction_data(&instruction.data[1..]),
+                        "GroupMemberPointer initialize",
+                    )?;
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializeGroupMemberPointer",
@@ -859,16 +820,11 @@ impl Token2022SecurityParser {
                 })
             }
             GroupMemberPointerInstruction::Update => {
-                let update =
-                    *decode_instruction_data::<
-                        spl_token_2022_interface::extension::group_member_pointer::instruction::UpdateInstructionData,
-                    >(&instruction.data[1..])
-                    .map_err(|e| {
-                        KoraError::InvalidTransaction(format!(
-                            "Failed to parse Token-2022 GroupMemberPointer update instruction: {}",
-                            sanitize_error!(e)
-                        ))
-                    })?;
+                let update: group_member_pointer::instruction::UpdateInstructionData =
+                    Self::extension_data(
+                        decode_instruction_data(&instruction.data[1..]),
+                        "GroupMemberPointer update",
+                    )?;
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 UpdateGroupMemberPointer",
@@ -902,16 +858,11 @@ impl Token2022SecurityParser {
 
         match scaled_ui_amount_instruction {
             ScaledUiAmountMintInstruction::Initialize => {
-                let initialize =
-                    *decode_instruction_data::<
-                        spl_token_2022_interface::extension::scaled_ui_amount::instruction::InitializeInstructionData,
-                    >(&instruction.data[1..])
-                    .map_err(|e| {
-                        KoraError::InvalidTransaction(format!(
-                            "Failed to parse Token-2022 ScaledUiAmount initialize instruction: {}",
-                            sanitize_error!(e)
-                        ))
-                    })?;
+                let initialize: scaled_ui_amount::instruction::InitializeInstructionData =
+                    Self::extension_data(
+                        decode_instruction_data(&instruction.data[1..]),
+                        "ScaledUiAmount initialize",
+                    )?;
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializeScaledUiAmountConfig",
@@ -953,16 +904,11 @@ impl Token2022SecurityParser {
 
         match pausable_instruction {
             PausableInstruction::Initialize => {
-                let initialize =
-                    *decode_instruction_data::<
-                        spl_token_2022_interface::extension::pausable::instruction::InitializeInstructionData,
-                    >(&instruction.data[1..])
-                    .map_err(|e| {
-                        KoraError::InvalidTransaction(format!(
-                            "Failed to parse Token-2022 Pausable initialize instruction: {}",
-                            sanitize_error!(e)
-                        ))
-                    })?;
+                let initialize: pausable::instruction::InitializeInstructionData =
+                    Self::extension_data(
+                        decode_instruction_data(&instruction.data[1..]),
+                        "Pausable initialize",
+                    )?;
 
                 Ok(Some(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializePausable",
@@ -993,6 +939,18 @@ impl Token2022SecurityParser {
         }
 
         decode_instruction_type::<T>(&instruction.data[1..]).map_err(|e| {
+            KoraError::InvalidTransaction(format!(
+                "Failed to parse Token-2022 {name} instruction: {}",
+                sanitize_error!(e)
+            ))
+        })
+    }
+
+    fn extension_data<T: Copy, E: std::fmt::Display>(
+        decoded: Result<&T, E>,
+        name: &str,
+    ) -> Result<T, KoraError> {
+        decoded.copied().map_err(|e| {
             KoraError::InvalidTransaction(format!(
                 "Failed to parse Token-2022 {name} instruction: {}",
                 sanitize_error!(e)
