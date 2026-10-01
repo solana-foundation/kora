@@ -678,263 +678,121 @@ impl SignerConfig {
             )));
         }
 
-        match &self.config {
-            SignerTypeConfig::Memory { config } => Self::validate_memory_config(config, &self.name),
-            SignerTypeConfig::Turnkey { config } => {
-                Self::validate_turnkey_config(config, &self.name)
+        let (kind, env_vars) = match &self.config {
+            SignerTypeConfig::Memory { config } => {
+                ("Memory", vec![("private_key_env", &config.private_key_env)])
             }
-            SignerTypeConfig::Privy { config } => Self::validate_privy_config(config, &self.name),
-            SignerTypeConfig::Vault { config } => Self::validate_vault_config(config, &self.name),
-            SignerTypeConfig::AwsKms { config } => {
-                Self::validate_aws_kms_config(config, &self.name)
-            }
-            SignerTypeConfig::Fireblocks { config } => {
-                Self::validate_fireblocks_config(config, &self.name)
-            }
-            SignerTypeConfig::GcpKms { config } => {
-                Self::validate_gcp_kms_config(config, &self.name)
-            }
-            SignerTypeConfig::Para { config } => Self::validate_para_config(config, &self.name),
-            SignerTypeConfig::Cdp { config } => Self::validate_cdp_config(config, &self.name),
-            SignerTypeConfig::Dfns { config } => Self::validate_dfns_config(config, &self.name),
-            SignerTypeConfig::Crossmint { config } => {
-                Self::validate_crossmint_config(config, &self.name)
-            }
-            SignerTypeConfig::Openfort { config } => {
-                Self::validate_openfort_config(config, &self.name)
-            }
-        }
-    }
-
-    fn validate_memory_config(
-        config: &MemorySignerConfig,
-        signer_name: &str,
-    ) -> Result<(), KoraError> {
-        if config.private_key_env.is_empty() {
-            return Err(KoraError::ValidationError(format!(
-                "Memory signer '{signer_name}' must specify non-empty private_key_env"
-            )));
-        }
-        get_env_var_for_signer(&config.private_key_env, signer_name)?;
-        Ok(())
-    }
-
-    fn validate_turnkey_config(
-        config: &TurnkeySignerConfig,
-        signer_name: &str,
-    ) -> Result<(), KoraError> {
-        let env_vars = [
-            ("api_public_key_env", &config.api_public_key_env),
-            ("api_private_key_env", &config.api_private_key_env),
-            ("organization_id_env", &config.organization_id_env),
-            ("private_key_id_env", &config.private_key_id_env),
-            ("public_key_env", &config.public_key_env),
-        ];
-
-        for (field_name, env_var) in env_vars {
-            if env_var.is_empty() {
-                return Err(KoraError::ValidationError(format!(
-                    "Turnkey signer '{signer_name}' must specify non-empty {field_name}"
-                )));
-            }
-            get_env_var_for_signer(env_var, signer_name)?;
-        }
-        Ok(())
-    }
-
-    fn validate_privy_config(
-        config: &PrivySignerConfig,
-        signer_name: &str,
-    ) -> Result<(), KoraError> {
-        let env_vars = [
-            ("app_id_env", &config.app_id_env),
-            ("app_secret_env", &config.app_secret_env),
-            ("wallet_id_env", &config.wallet_id_env),
-        ];
-
-        for (field_name, env_var) in env_vars {
-            if env_var.is_empty() {
-                return Err(KoraError::ValidationError(format!(
-                    "Privy signer '{signer_name}' must specify non-empty {field_name}"
-                )));
-            }
-            get_env_var_for_signer(env_var, signer_name)?;
-        }
-        Ok(())
-    }
-
-    fn validate_vault_config(
-        config: &VaultSignerConfig,
-        signer_name: &str,
-    ) -> Result<(), KoraError> {
-        let env_vars = [
-            ("vault_addr_env", &config.vault_addr_env),
-            ("vault_token_env", &config.vault_token_env),
-            ("key_name_env", &config.key_name_env),
-            ("pubkey_env", &config.pubkey_env),
-        ];
-
-        for (field_name, env_var) in env_vars {
-            if env_var.is_empty() {
-                return Err(KoraError::ValidationError(format!(
-                    "Vault signer '{signer_name}' must specify non-empty {field_name}"
-                )));
-            }
-            get_env_var_for_signer(env_var, signer_name)?;
-        }
-        Ok(())
-    }
-
-    fn validate_aws_kms_config(
-        config: &AwsKmsSignerConfig,
-        signer_name: &str,
-    ) -> Result<(), KoraError> {
-        let env_vars =
-            [("key_id_env", &config.key_id_env), ("public_key_env", &config.public_key_env)];
+            SignerTypeConfig::Turnkey { config } => (
+                "Turnkey",
+                vec![
+                    ("api_public_key_env", &config.api_public_key_env),
+                    ("api_private_key_env", &config.api_private_key_env),
+                    ("organization_id_env", &config.organization_id_env),
+                    ("private_key_id_env", &config.private_key_id_env),
+                    ("public_key_env", &config.public_key_env),
+                ],
+            ),
+            SignerTypeConfig::Privy { config } => (
+                "Privy",
+                vec![
+                    ("app_id_env", &config.app_id_env),
+                    ("app_secret_env", &config.app_secret_env),
+                    ("wallet_id_env", &config.wallet_id_env),
+                ],
+            ),
+            SignerTypeConfig::Vault { config } => (
+                "Vault",
+                vec![
+                    ("vault_addr_env", &config.vault_addr_env),
+                    ("vault_token_env", &config.vault_token_env),
+                    ("key_name_env", &config.key_name_env),
+                    ("pubkey_env", &config.pubkey_env),
+                ],
+            ),
+            SignerTypeConfig::AwsKms { config } => (
+                "AWS KMS",
+                vec![
+                    ("key_id_env", &config.key_id_env),
+                    ("public_key_env", &config.public_key_env),
+                ],
+            ),
+            SignerTypeConfig::Fireblocks { config } => (
+                "Fireblocks",
+                vec![
+                    ("api_key_env", &config.api_key_env),
+                    ("private_key_pem_env", &config.private_key_pem_env),
+                    ("vault_account_id_env", &config.vault_account_id_env),
+                ],
+            ),
+            SignerTypeConfig::GcpKms { config } => (
+                "GCP KMS",
+                vec![
+                    ("key_name_env", &config.key_name_env),
+                    ("public_key_env", &config.public_key_env),
+                ],
+            ),
+            SignerTypeConfig::Para { config } => (
+                "Para",
+                vec![
+                    ("api_key_env", &config.api_key_env),
+                    ("wallet_id_env", &config.wallet_id_env),
+                ],
+            ),
+            SignerTypeConfig::Cdp { config } => (
+                "CDP",
+                vec![
+                    ("api_key_id_env", &config.api_key_id_env),
+                    ("api_key_secret_env", &config.api_key_secret_env),
+                    ("wallet_secret_env", &config.wallet_secret_env),
+                    ("address_env", &config.address_env),
+                ],
+            ),
+            SignerTypeConfig::Dfns { config } => (
+                "Dfns",
+                vec![
+                    ("auth_token_env", &config.auth_token_env),
+                    ("cred_id_env", &config.cred_id_env),
+                    ("private_key_pem_env", &config.private_key_pem_env),
+                    ("wallet_id_env", &config.wallet_id_env),
+                ],
+            ),
+            SignerTypeConfig::Crossmint { config } => (
+                "Crossmint",
+                vec![
+                    ("api_key_env", &config.api_key_env),
+                    ("wallet_locator_env", &config.wallet_locator_env),
+                ],
+            ),
+            SignerTypeConfig::Openfort { config } => (
+                "Openfort",
+                vec![
+                    ("secret_key_env", &config.secret_key_env),
+                    ("account_id_env", &config.account_id_env),
+                    ("wallet_secret_env", &config.wallet_secret_env),
+                ],
+            ),
+        };
 
         for (field_name, env_var) in env_vars {
             if env_var.is_empty() {
                 return Err(KoraError::ValidationError(format!(
-                    "AWS KMS signer '{signer_name}' must specify non-empty {field_name}"
+                    "{kind} signer '{}' must specify non-empty {field_name}",
+                    self.name
                 )));
             }
-            get_env_var_for_signer(env_var, signer_name)?;
+            get_env_var_for_signer(env_var, &self.name)?;
         }
-        Ok(())
-    }
 
-    fn validate_fireblocks_config(
-        config: &FireblocksSignerConfig,
-        signer_name: &str,
-    ) -> Result<(), KoraError> {
-        let env_vars = [
-            ("api_key_env", &config.api_key_env),
-            ("private_key_pem_env", &config.private_key_pem_env),
-            ("vault_account_id_env", &config.vault_account_id_env),
-        ];
-
-        for (field_name, env_var) in env_vars {
-            if env_var.is_empty() {
-                return Err(KoraError::ValidationError(format!(
-                    "Fireblocks signer '{signer_name}' must specify non-empty {field_name}"
-                )));
+        if let SignerTypeConfig::Crossmint { config } = &self.config {
+            if let Some(env) = &config.signer_secret_env {
+                if env.is_empty() {
+                    return Err(KoraError::ValidationError(format!(
+                        "Crossmint signer '{}' must specify non-empty signer_secret_env when set",
+                        self.name
+                    )));
+                }
+                get_env_var_for_signer(env, &self.name)?;
             }
-            get_env_var_for_signer(env_var, signer_name)?;
-        }
-        Ok(())
-    }
-
-    fn validate_gcp_kms_config(
-        config: &GcpKmsSignerConfig,
-        signer_name: &str,
-    ) -> Result<(), KoraError> {
-        let env_vars =
-            [("key_name_env", &config.key_name_env), ("public_key_env", &config.public_key_env)];
-        for (field_name, env_var) in env_vars {
-            if env_var.is_empty() {
-                return Err(KoraError::ValidationError(format!(
-                    "GCP KMS signer '{signer_name}' must specify non-empty {field_name}"
-                )));
-            }
-            get_env_var_for_signer(env_var, signer_name)?;
-        }
-        Ok(())
-    }
-
-    fn validate_para_config(config: &ParaSignerConfig, signer_name: &str) -> Result<(), KoraError> {
-        let env_vars =
-            [("api_key_env", &config.api_key_env), ("wallet_id_env", &config.wallet_id_env)];
-        for (field_name, env_var) in env_vars {
-            if env_var.is_empty() {
-                return Err(KoraError::ValidationError(format!(
-                    "Para signer '{signer_name}' must specify non-empty {field_name}"
-                )));
-            }
-            get_env_var_for_signer(env_var, signer_name)?;
-        }
-        Ok(())
-    }
-
-    fn validate_cdp_config(config: &CdpSignerConfig, signer_name: &str) -> Result<(), KoraError> {
-        let env_vars = [
-            ("api_key_id_env", &config.api_key_id_env),
-            ("api_key_secret_env", &config.api_key_secret_env),
-            ("wallet_secret_env", &config.wallet_secret_env),
-            ("address_env", &config.address_env),
-        ];
-        for (field_name, env_var) in env_vars {
-            if env_var.is_empty() {
-                return Err(KoraError::ValidationError(format!(
-                    "CDP signer '{signer_name}' must specify non-empty {field_name}"
-                )));
-            }
-            get_env_var_for_signer(env_var, signer_name)?;
-        }
-        Ok(())
-    }
-
-    fn validate_dfns_config(config: &DfnsSignerConfig, signer_name: &str) -> Result<(), KoraError> {
-        let env_vars = [
-            ("auth_token_env", &config.auth_token_env),
-            ("cred_id_env", &config.cred_id_env),
-            ("private_key_pem_env", &config.private_key_pem_env),
-            ("wallet_id_env", &config.wallet_id_env),
-        ];
-        for (field_name, env_var) in env_vars {
-            if env_var.is_empty() {
-                return Err(KoraError::ValidationError(format!(
-                    "Dfns signer '{signer_name}' must specify non-empty {field_name}"
-                )));
-            }
-            get_env_var_for_signer(env_var, signer_name)?;
-        }
-        Ok(())
-    }
-
-    fn validate_crossmint_config(
-        config: &CrossmintSignerConfig,
-        signer_name: &str,
-    ) -> Result<(), KoraError> {
-        let env_vars = [
-            ("api_key_env", &config.api_key_env),
-            ("wallet_locator_env", &config.wallet_locator_env),
-        ];
-        for (field_name, env_var) in env_vars {
-            if env_var.is_empty() {
-                return Err(KoraError::ValidationError(format!(
-                    "Crossmint signer '{signer_name}' must specify non-empty {field_name}"
-                )));
-            }
-            get_env_var_for_signer(env_var, signer_name)?;
-        }
-        if let Some(env) = &config.signer_secret_env {
-            if env.is_empty() {
-                return Err(KoraError::ValidationError(format!(
-                    "Crossmint signer '{signer_name}' must specify non-empty signer_secret_env when set"
-                )));
-            }
-            get_env_var_for_signer(env, signer_name)?;
-        }
-        Ok(())
-    }
-
-    fn validate_openfort_config(
-        config: &OpenfortSignerConfig,
-        signer_name: &str,
-    ) -> Result<(), KoraError> {
-        let env_vars = [
-            ("secret_key_env", &config.secret_key_env),
-            ("account_id_env", &config.account_id_env),
-            ("wallet_secret_env", &config.wallet_secret_env),
-        ];
-
-        for (field_name, env_var) in env_vars {
-            if env_var.is_empty() {
-                return Err(KoraError::ValidationError(format!(
-                    "Openfort signer '{signer_name}' must specify non-empty {field_name}"
-                )));
-            }
-            get_env_var_for_signer(env_var, signer_name)?;
         }
         Ok(())
     }
