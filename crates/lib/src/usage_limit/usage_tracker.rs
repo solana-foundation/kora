@@ -182,17 +182,8 @@ impl UsageTracker {
                 {
                     // Key usage by the funding wallet (the source token account's owner), not the
                     // transfer authority, which can be a rotatable delegate or multisig member.
-                    let source_account = match CacheUtil::get_account(
-                        config,
-                        rpc_client,
-                        source_address,
-                        true,
-                    )
-                    .await
-                    {
-                        Ok(account) => account,
-                        Err(e) => return Err(e),
-                    };
+                    let source_account =
+                        CacheUtil::get_account(config, rpc_client, source_address, true).await?;
                     let source_token_program =
                         TokenType::get_token_program_from_owner(&source_account.owner)?;
                     let source_token_account =
