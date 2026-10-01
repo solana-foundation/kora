@@ -58,19 +58,17 @@ where
         Box::pin(async move {
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
-            if let Some(method) = get_jsonrpc_method(&body_bytes) {
-                if !config.is_protected_method(&method) {
-                    let new_request = Request::from_parts(parts, Body::from(body_bytes));
-                    return inner.call(new_request).await;
-                }
-            }
-
+            let needs_token = get_jsonrpc_method(&body_bytes)
+                .is_none_or(|method| config.is_protected_method(&method));
             let new_request = Request::from_parts(parts, Body::from(body_bytes));
-            let recaptcha_token =
-                new_request.headers().get(X_RECAPTCHA_TOKEN).and_then(|v| v.to_str().ok());
 
-            if let Err(resp) = config.validate(recaptcha_token).await {
-                return Ok(*resp);
+            if needs_token {
+                let recaptcha_token =
+                    new_request.headers().get(X_RECAPTCHA_TOKEN).and_then(|v| v.to_str().ok());
+
+                if let Err(resp) = config.validate(recaptcha_token).await {
+                    return Ok(*resp);
+                }
             }
 
             inner.call(new_request).await

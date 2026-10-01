@@ -116,15 +116,12 @@ where
         Box::pin(async move {
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
-            match verify_jsonrpc_method(&body_bytes, &allowed_methods) {
-                Ok(_) => {}
-                Err(_) => {
-                    return Ok(build_response_with_graceful_error(
-                        None,
-                        StatusCode::METHOD_NOT_ALLOWED,
-                        "",
-                    ));
-                }
+            if verify_jsonrpc_method(&body_bytes, &allowed_methods).is_err() {
+                return Ok(build_response_with_graceful_error(
+                    None,
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    "",
+                ));
             }
 
             let new_body = Body::from(body_bytes);
