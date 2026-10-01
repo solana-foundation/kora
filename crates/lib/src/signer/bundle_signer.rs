@@ -1,13 +1,14 @@
 use crate::{
     config::Config,
-    sanitize_error,
-    state::{get_signer_pool, reserve_request_signer_by_pubkey},
-    transaction::{sign_with_retry, VersionedTransactionOps, VersionedTransactionResolved},
+    transaction::{
+        set_signature_at, sign_with_signer_pool, VersionedTransactionOps,
+        VersionedTransactionResolved,
+    },
     KoraError,
 };
 use solana_keychain::SolanaSigner;
 use solana_sdk::pubkey::Pubkey;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 pub struct BundleSigner {}
 
@@ -25,58 +26,17 @@ impl BundleSigner {
             }
         }
 
-        let message_bytes = resolved.transaction.message.serialize();
-        let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
-        let max_retries = config.kora.sign_max_retries;
-        let signer = reserve_request_signer_by_pubkey(&selected_signer.pubkey())?;
-        let signature = match sign_with_retry(
-            sign_timeout,
-            max_retries,
+        let signature = sign_with_signer_pool(
+            config,
+            &selected_signer.pubkey(),
+            &resolved.transaction.message.serialize(),
             "bundle signing",
             "Bundle signing",
-            || async {
-                signer
-                    .sign_message(&message_bytes)
-                    .await
-                    .map_err(|e| KoraError::SigningError(sanitize_error!(e)))
-            },
         )
-        .await
-        {
-            Ok(sig) => {
-                match get_signer_pool() {
-                    Ok(pool) => pool.record_signing_success(&signer),
-                    Err(e) => log::warn!(
-                        "Could not record bundle signing success to pool: {}",
-                        sanitize_error!(e)
-                    ),
-                }
-                sig
-            }
-            Err(err) => {
-                match get_signer_pool() {
-                    Ok(pool) => pool.record_signing_failure(&signer),
-                    Err(pool_err) => log::error!(
-                        "Bundle signing failed AND pool health tracking unavailable: {}; \
-                         signer failure will not be recorded, automatic failover is disabled",
-                        sanitize_error!(pool_err)
-                    ),
-                }
-                return Err(err);
-            }
-        };
+        .await?;
 
         let fee_payer_position = resolved.find_signer_position(fee_payer)?;
-        let signatures_len = resolved.transaction.signatures.len();
-        let signature_slot = match resolved.transaction.signatures.get_mut(fee_payer_position) {
-            Some(slot) => slot,
-            None => {
-                return Err(KoraError::InvalidTransaction(format!(
-                    "Signer position {fee_payer_position} is out of bounds for signatures (len={signatures_len})"
-                )));
-            }
-        };
-        *signature_slot = signature;
+        set_signature_at(&mut resolved.transaction, fee_payer_position, signature)?;
 
         Ok(())
     }

@@ -5,7 +5,7 @@ mod transaction;
 mod versioned_message;
 mod versioned_transaction;
 pub use instruction_util::*;
-pub(crate) use retry_util::{sign_with_retry, signing_retry_window};
+pub(crate) use retry_util::{set_signature_at, sign_with_signer_pool, signing_retry_window};
 pub(crate) use token2022_security::*;
 pub use transaction::*;
 pub use versioned_message::*;
