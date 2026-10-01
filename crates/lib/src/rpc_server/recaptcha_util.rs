@@ -1,10 +1,10 @@
 use crate::{
     constant::{RECAPTCHA_TIMEOUT_SECS, RECAPTCHA_VERIFY_URL},
     error::KoraError,
-    rpc_server::{auth::RejectionReason, middleware_utils::build_response_with_graceful_error},
+    rpc_server::auth::auth_rejection_response,
     sanitize_error,
 };
-use http::{Response, StatusCode};
+use http::Response;
 use jsonrpsee::server::logger::Body;
 use reqwest::Client;
 use serde::Deserialize;
@@ -37,19 +37,12 @@ impl RecaptchaConfig {
     pub async fn validate(&self, token: Option<&str>) -> Result<(), Box<Response<Body>>> {
         let token = match token {
             Some(t) if !t.is_empty() => t,
-            _ => {
-                let mut resp =
-                    build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
-                resp.extensions_mut().insert(RejectionReason::AuthFailure);
-                return Err(Box::new(resp));
-            }
+            _ => return Err(Box::new(auth_rejection_response())),
         };
 
         if let Err(e) = self.verify_token(token).await {
             log::error!("reCAPTCHA verification error: {}", sanitize_error!(e));
-            let mut resp = build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
-            resp.extensions_mut().insert(RejectionReason::AuthFailure);
-            return Err(Box::new(resp));
+            return Err(Box::new(auth_rejection_response()));
         }
 
         Ok(())

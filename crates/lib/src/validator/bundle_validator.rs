@@ -7,6 +7,7 @@ use crate::{
     config::Config,
     fee::fee::TransactionFeeUtil,
     transaction::TransactionUtil,
+    validator::parse_pubkey_set,
     KoraError,
 };
 use regex::Regex;
@@ -84,31 +85,13 @@ impl BundleValidator {
             encoding: Some("base64".to_string()),
         };
 
-        let pre_execution_accounts_configs =
-            (0..bundle_size)
-                .map(|tx_idx| {
-                    if signed_set.contains(&tx_idx) {
-                        Some(fee_payer_account.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<Option<JitoBundleAccountConfig>>>();
-
-        let post_execution_accounts_configs =
-            (0..bundle_size)
-                .map(|tx_idx| {
-                    if signed_set.contains(&tx_idx) {
-                        Some(fee_payer_account.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<Option<JitoBundleAccountConfig>>>();
+        let accounts_configs: Vec<Option<JitoBundleAccountConfig>> = (0..bundle_size)
+            .map(|tx_idx| signed_set.contains(&tx_idx).then(|| fee_payer_account.clone()))
+            .collect();
 
         JitoBundleSimulationConfig {
-            pre_execution_accounts_configs: Some(pre_execution_accounts_configs),
-            post_execution_accounts_configs: Some(post_execution_accounts_configs),
+            pre_execution_accounts_configs: Some(accounts_configs.clone()),
+            post_execution_accounts_configs: Some(accounts_configs),
             transaction_encoding: Some("base64".to_string()),
             skip_sig_verify: Some(skip_sig_verify),
             replace_recent_blockhash: None,
@@ -132,9 +115,8 @@ impl BundleValidator {
         }
 
         let allow_all_programs = config.validation.allowed_programs.is_all();
-        let allowed_programs =
-            Self::parse_pubkey_set(config.validation.allowed_programs.as_slice())?;
-        let disallowed_programs = Self::parse_pubkey_set(&config.validation.disallowed_accounts)?;
+        let allowed_programs = parse_pubkey_set(config.validation.allowed_programs.as_slice())?;
+        let disallowed_programs = parse_pubkey_set(&config.validation.disallowed_accounts)?;
         let signed_set: HashSet<usize> = signed_indices.iter().copied().collect();
 
         for (tx_idx, tx_result) in simulation_result.transaction_results.iter().enumerate() {
@@ -200,44 +182,29 @@ impl BundleValidator {
         tx_result: &JitoBundleSimulationTransactionResult,
         max_allowed_lamports: u64,
     ) -> Result<(), KoraError> {
-        let pre_accounts = tx_result.pre_execution_accounts.as_ref().ok_or_else(|| {
+        let error = |problem: &str| {
             KoraError::InvalidTransaction(format!(
-                "Bundle simulation did not return pre-execution accounts for signed transaction index {}",
-                signed_idx
+                "Bundle simulation {problem} for signed transaction index {signed_idx}"
             ))
-        })?;
-        let post_accounts = tx_result.post_execution_accounts.as_ref().ok_or_else(|| {
-            KoraError::InvalidTransaction(format!(
-                "Bundle simulation did not return post-execution accounts for signed transaction index {}",
-                signed_idx
-            ))
-        })?;
+        };
+        let pre_accounts = tx_result
+            .pre_execution_accounts
+            .as_ref()
+            .ok_or_else(|| error("did not return pre-execution accounts"))?;
+        let post_accounts = tx_result
+            .post_execution_accounts
+            .as_ref()
+            .ok_or_else(|| error("did not return post-execution accounts"))?;
 
-        let pre_account = pre_accounts.first().ok_or_else(|| {
-            KoraError::InvalidTransaction(format!(
-                "Bundle simulation returned empty pre-execution accounts for signed transaction index {}",
-                signed_idx
-            ))
-        })?;
-        let post_account = post_accounts.first().ok_or_else(|| {
-            KoraError::InvalidTransaction(format!(
-                "Bundle simulation returned empty post-execution accounts for signed transaction index {}",
-                signed_idx
-            ))
-        })?;
+        let pre_account =
+            pre_accounts.first().ok_or_else(|| error("returned empty pre-execution accounts"))?;
+        let post_account =
+            post_accounts.first().ok_or_else(|| error("returned empty post-execution accounts"))?;
 
-        let pre_lamports = Self::extract_lamports(pre_account).ok_or_else(|| {
-            KoraError::InvalidTransaction(format!(
-                "Bundle simulation pre-execution lamports missing for signed transaction index {}",
-                signed_idx
-            ))
-        })?;
-        let post_lamports = Self::extract_lamports(post_account).ok_or_else(|| {
-            KoraError::InvalidTransaction(format!(
-                "Bundle simulation post-execution lamports missing for signed transaction index {}",
-                signed_idx
-            ))
-        })?;
+        let pre_lamports = Self::extract_lamports(pre_account)
+            .ok_or_else(|| error("pre-execution lamports missing"))?;
+        let post_lamports = Self::extract_lamports(post_account)
+            .ok_or_else(|| error("post-execution lamports missing"))?;
 
         let observed_lamport_outflow = pre_lamports.saturating_sub(post_lamports);
 
@@ -260,20 +227,6 @@ impl BundleValidator {
         }
 
         Ok(())
-    }
-
-    fn parse_pubkey_set(pubkeys: &[String]) -> Result<HashSet<Pubkey>, KoraError> {
-        pubkeys
-            .iter()
-            .map(|pubkey| {
-                Pubkey::from_str(pubkey).map_err(|e| {
-                    KoraError::InternalServerError(format!(
-                        "Invalid public key `{}` in config: {}",
-                        pubkey, e
-                    ))
-                })
-            })
-            .collect::<Result<HashSet<Pubkey>, KoraError>>()
     }
 
     fn extract_invoked_programs(logs: &[String]) -> Result<HashSet<Pubkey>, KoraError> {

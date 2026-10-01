@@ -89,25 +89,8 @@ impl JitoBundleSimulationResult {
             }
         };
 
-        let pre_execution_accounts = match value.get("preExecutionAccounts") {
-            None | Some(Value::Null) => None,
-            Some(Value::Array(accounts)) => Some(accounts.clone()),
-            _ => {
-                return Err(JitoError::ApiError(
-                    "Invalid preExecutionAccounts in simulateBundle response".to_string(),
-                ))
-            }
-        };
-
-        let post_execution_accounts = match value.get("postExecutionAccounts") {
-            None | Some(Value::Null) => None,
-            Some(Value::Array(accounts)) => Some(accounts.clone()),
-            _ => {
-                return Err(JitoError::ApiError(
-                    "Invalid postExecutionAccounts in simulateBundle response".to_string(),
-                ))
-            }
-        };
+        let pre_execution_accounts = Self::parse_accounts(&value, "preExecutionAccounts")?;
+        let post_execution_accounts = Self::parse_accounts(&value, "postExecutionAccounts")?;
 
         Ok(JitoBundleSimulationTransactionResult {
             err: value.get("err").filter(|err| !err.is_null()).cloned(),
@@ -118,6 +101,14 @@ impl JitoBundleSimulationResult {
             units_consumed: value.get("unitsConsumed").and_then(Value::as_u64),
             return_data: value.get("returnData").filter(|data| !data.is_null()).cloned(),
         })
+    }
+
+    fn parse_accounts(value: &Value, key: &str) -> Result<Option<Vec<Value>>, JitoError> {
+        match value.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::Array(accounts)) => Ok(Some(accounts.clone())),
+            _ => Err(JitoError::ApiError(format!("Invalid {key} in simulateBundle response"))),
+        }
     }
 
     fn from_rpc_result(result: Value) -> Result<Self, JitoError> {
@@ -369,6 +360,28 @@ impl JitoClient {
 
 pub struct JitoMockClient;
 
+fn mock_accounts(
+    configs: &Option<Vec<Option<JitoBundleAccountConfig>>>,
+    idx: usize,
+) -> Option<Vec<Value>> {
+    let entry = configs.as_ref()?.get(idx)?.as_ref()?;
+    Some(
+        entry
+            .addresses
+            .iter()
+            .map(|_| {
+                json!({
+                    "lamports": 1_000_000_000_u64,
+                    "owner": "11111111111111111111111111111111",
+                    "data": ["", "base64"],
+                    "executable": false,
+                    "rentEpoch": 0_u64
+                })
+            })
+            .collect(),
+    )
+}
+
 impl JitoMockClient {
     pub fn new() -> Self {
         Self
@@ -408,47 +421,10 @@ impl JitoMockClient {
             .iter()
             .enumerate()
             .map(|(idx, _)| {
-                let pre_accounts = simulation_config
-                    .pre_execution_accounts_configs
-                    .as_ref()
-                    .and_then(|configs| configs.get(idx))
-                    .and_then(|entry| entry.as_ref())
-                    .map(|entry| {
-                        entry
-                            .addresses
-                            .iter()
-                            .map(|_| {
-                                json!({
-                                    "lamports": 1_000_000_000_u64,
-                                    "owner": "11111111111111111111111111111111",
-                                    "data": ["", "base64"],
-                                    "executable": false,
-                                    "rentEpoch": 0_u64
-                                })
-                            })
-                            .collect::<Vec<Value>>()
-                    });
-
-                let post_accounts = simulation_config
-                    .post_execution_accounts_configs
-                    .as_ref()
-                    .and_then(|configs| configs.get(idx))
-                    .and_then(|entry| entry.as_ref())
-                    .map(|entry| {
-                        entry
-                            .addresses
-                            .iter()
-                            .map(|_| {
-                                json!({
-                                    "lamports": 1_000_000_000_u64,
-                                    "owner": "11111111111111111111111111111111",
-                                    "data": ["", "base64"],
-                                    "executable": false,
-                                    "rentEpoch": 0_u64
-                                })
-                            })
-                            .collect::<Vec<Value>>()
-                    });
+                let pre_accounts =
+                    mock_accounts(&simulation_config.pre_execution_accounts_configs, idx);
+                let post_accounts =
+                    mock_accounts(&simulation_config.post_execution_accounts_configs, idx);
 
                 JitoBundleSimulationTransactionResult {
                     err: None,

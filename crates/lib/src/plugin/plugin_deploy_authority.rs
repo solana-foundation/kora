@@ -84,6 +84,21 @@ async fn require_registered_owner_signature(
     Ok(())
 }
 
+fn require_fee_payer(
+    field: &str,
+    actual: &Pubkey,
+    fee_payer: &Pubkey,
+    context: PluginExecutionContext,
+) -> Result<(), KoraError> {
+    if actual != fee_payer {
+        return Err(KoraError::InvalidTransaction(format!(
+            "DeployAuthority plugin: {field} must be the fee payer ({fee_payer}), got {actual} in {}",
+            context.method_name()
+        )));
+    }
+    Ok(())
+}
+
 /// Enforces that the fee payer is the authority on every program-loader instruction we sign,
 /// covering both BPF Loader Upgradeable (loader-v3) and Loader-v4. The core fee-payer policies
 /// gate whether Kora is *willing* to participate as authority; this plugin requires Kora to
@@ -124,13 +139,7 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                 | ParsedLoaderV4InstructionData::SetProgramLength { authority, .. }
                 | ParsedLoaderV4InstructionData::Deploy { authority, .. }
                 | ParsedLoaderV4InstructionData::Retract { authority, .. } => {
-                    if authority != fee_payer {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "DeployAuthority plugin: loader-v4 authority must be the fee payer \
-                             ({fee_payer}), got {authority} in {}",
-                            context.method_name()
-                        )));
-                    }
+                    require_fee_payer("loader-v4 authority", authority, fee_payer, context)?;
                 }
                 ParsedLoaderV4InstructionData::TransferAuthority { new_authority, .. } => {
                     if new_authority != fee_payer {
@@ -160,55 +169,40 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                 } => {
                     // Authority is optional. If set, must be fee payer.
                     if let Some(a) = authority {
-                        if a != fee_payer {
-                            return Err(KoraError::InvalidTransaction(format!(
-                                "DeployAuthority plugin: BPF Loader InitializeBuffer authority \
-                                 must be the fee payer ({fee_payer}), got {a} in {}",
-                                context.method_name()
-                            )));
-                        }
+                        require_fee_payer(
+                            "BPF Loader InitializeBuffer authority",
+                            a,
+                            fee_payer,
+                            context,
+                        )?;
                     }
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::Write { authority, .. } => {
-                    if authority != fee_payer {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "DeployAuthority plugin: BPF Loader Write authority must be the \
-                             fee payer ({fee_payer}), got {authority} in {}",
-                            context.method_name()
-                        )));
-                    }
+                    require_fee_payer("BPF Loader Write authority", authority, fee_payer, context)?;
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
                     upgrade_authority,
                     ..
                 } => {
-                    if upgrade_authority != fee_payer {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "DeployAuthority plugin: DeployWithMaxDataLen upgrade_authority \
-                             must be the fee payer ({fee_payer}), got {upgrade_authority} in {}",
-                            context.method_name()
-                        )));
-                    }
+                    require_fee_payer(
+                        "DeployWithMaxDataLen upgrade_authority",
+                        upgrade_authority,
+                        fee_payer,
+                        context,
+                    )?;
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::Upgrade {
                     upgrade_authority,
                     spill,
                     ..
                 } => {
-                    if upgrade_authority != fee_payer {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "DeployAuthority plugin: Upgrade upgrade_authority must be the \
-                             fee payer ({fee_payer}), got {upgrade_authority} in {}",
-                            context.method_name()
-                        )));
-                    }
-                    if spill != fee_payer {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "DeployAuthority plugin: Upgrade spill must be the fee payer \
-                             ({fee_payer}), got {spill} in {}",
-                            context.method_name()
-                        )));
-                    }
+                    require_fee_payer(
+                        "Upgrade upgrade_authority",
+                        upgrade_authority,
+                        fee_payer,
+                        context,
+                    )?;
+                    require_fee_payer("Upgrade spill", spill, fee_payer, context)?;
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::SetAuthority {
                     new_authority, ..
@@ -264,23 +258,16 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                     ..
                 } => {
                     // Authority must always be Kora — it's a required signer.
-                    if authority != fee_payer {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "DeployAuthority plugin: ExtendProgramChecked authority must be \
-                             the fee payer ({fee_payer}), got {authority} in {}",
-                            context.method_name()
-                        )));
-                    }
+                    require_fee_payer(
+                        "ExtendProgramChecked authority",
+                        authority,
+                        fee_payer,
+                        context,
+                    )?;
                     // Payer is optional but if present must also be Kora (drainage vector
                     // otherwise: someone funds extension on their own program with our SOL).
                     if let Some(p) = payer {
-                        if p != fee_payer {
-                            return Err(KoraError::InvalidTransaction(format!(
-                                "DeployAuthority plugin: ExtendProgramChecked payer must be \
-                                 the fee payer ({fee_payer}), got {p} in {}",
-                                context.method_name()
-                            )));
-                        }
+                        require_fee_payer("ExtendProgramChecked payer", p, fee_payer, context)?;
                     }
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::Migrate { .. } => {

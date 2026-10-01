@@ -626,66 +626,29 @@ pub struct EnabledMethods {
 
 impl EnabledMethods {
     pub fn iter(&self) -> impl Iterator<Item = bool> {
-        [
-            self.liveness,
-            self.estimate_transaction_fee,
-            self.get_supported_tokens,
-            self.get_payer_signer,
-            self.sign_transaction,
-            self.sign_and_send_transaction,
-            self.transfer_transaction,
-            self.get_blockhash,
-            self.get_config,
-            self.get_version,
-            self.estimate_bundle_fee,
-            self.sign_and_send_bundle,
-            self.sign_bundle,
-        ]
-        .into_iter()
+        self.into_iter()
     }
 
     pub fn get_enabled_method_names(&self) -> Vec<String> {
-        let mut methods = Vec::new();
-        if self.liveness {
-            methods.push("liveness".to_string());
-        }
-        if self.estimate_transaction_fee {
-            methods.push("estimateTransactionFee".to_string());
-        }
-        if self.estimate_bundle_fee {
-            methods.push("estimateBundleFee".to_string());
-        }
-        if self.get_supported_tokens {
-            methods.push("getSupportedTokens".to_string());
-        }
-        if self.get_payer_signer {
-            methods.push("getPayerSigner".to_string());
-        }
-        if self.sign_transaction {
-            methods.push("signTransaction".to_string());
-        }
-        if self.sign_and_send_transaction {
-            methods.push("signAndSendTransaction".to_string());
-        }
-        if self.transfer_transaction {
-            methods.push("transferTransaction".to_string());
-        }
-        if self.get_blockhash {
-            methods.push("getBlockhash".to_string());
-        }
-        if self.get_config {
-            methods.push("getConfig".to_string());
-        }
-        if self.get_version {
-            methods.push("getVersion".to_string());
-        }
-        if self.sign_and_send_bundle {
-            methods.push("signAndSendBundle".to_string());
-        }
-        if self.sign_bundle {
-            methods.push("signBundle".to_string());
-        }
-        methods
+        [
+            (self.liveness, "liveness"),
+            (self.estimate_transaction_fee, "estimateTransactionFee"),
+            (self.estimate_bundle_fee, "estimateBundleFee"),
+            (self.get_supported_tokens, "getSupportedTokens"),
+            (self.get_payer_signer, "getPayerSigner"),
+            (self.sign_transaction, "signTransaction"),
+            (self.sign_and_send_transaction, "signAndSendTransaction"),
+            (self.transfer_transaction, "transferTransaction"),
+            (self.get_blockhash, "getBlockhash"),
+            (self.get_config, "getConfig"),
+            (self.get_version, "getVersion"),
+            (self.sign_and_send_bundle, "signAndSendBundle"),
+            (self.sign_bundle, "signBundle"),
+        ]
+        .into_iter()
+        .filter(|(enabled, _)| *enabled)
+        .map(|(_, name)| name.to_string())
+        .collect()
     }
 }
 
@@ -870,36 +833,18 @@ where
         Vec(Vec<String>),
     }
 
-    let opt = Option::<ApiKeys>::deserialize(deserializer)?;
-    match opt {
-        Some(ApiKeys::String(s)) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(vec![trimmed.to_string()]))
-            }
-        }
-        Some(ApiKeys::Vec(v)) => {
-            let filtered: Vec<String> = v
-                .into_iter()
-                .filter_map(|s| {
-                    let trimmed = s.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(trimmed.to_string())
-                    }
-                })
-                .collect();
-            if filtered.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(filtered))
-            }
-        }
-        None => Ok(None),
-    }
+    let keys = match Option::<ApiKeys>::deserialize(deserializer)? {
+        Some(ApiKeys::String(key)) => vec![key],
+        Some(ApiKeys::Vec(keys)) => keys,
+        None => vec![],
+    };
+    let keys: Vec<String> = keys
+        .iter()
+        .map(|key| key.trim())
+        .filter(|key| !key.is_empty())
+        .map(str::to_string)
+        .collect();
+    Ok((!keys.is_empty()).then_some(keys))
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]

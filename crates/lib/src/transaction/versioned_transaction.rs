@@ -16,7 +16,6 @@ use solana_sdk::{
 use std::{
     collections::{HashMap, HashSet},
     ops::Deref,
-    time::Duration,
 };
 use utoipa::ToSchema;
 
@@ -29,7 +28,7 @@ use crate::{
     lighthouse::LighthouseUtil,
     plugin::{PluginExecutionContext, TransactionPluginRunner},
     sanitize_error,
-    state::{get_background_tasks, get_signer_pool, reserve_request_signer_by_pubkey},
+    state::get_background_tasks,
     token::token::TransferHookValidationFlow,
     transaction::{
         instruction_util::IxUtils, ParsedALTInstructionData, ParsedALTInstructionType,
@@ -43,7 +42,7 @@ use crate::{
 };
 use solana_address_lookup_table_interface::state::AddressLookupTable;
 
-use super::retry_util::sign_with_retry;
+use super::retry_util::{set_signature_at, sign_with_signer_pool};
 
 type AltCache<'a> = Option<&'a mut HashMap<Pubkey, Vec<Pubkey>>>;
 
@@ -142,18 +141,6 @@ impl VersionedTransactionResolved {
         sig_verify: bool,
         alt_cache: AltCache<'_>,
     ) -> Result<Self, KoraError> {
-        let mut resolved = Self {
-            transaction: transaction.clone(),
-            all_account_keys: vec![],
-            all_instructions: vec![],
-            parsed_system_instructions: None,
-            parsed_spl_instructions: None,
-            parsed_alt_instructions: None,
-            parsed_loader_v4_instructions: None,
-            parsed_bpf_loader_upgradeable_instructions: None,
-            parsed_token2022_security_instructions: None,
-        };
-
         let resolved_addresses = match &transaction.message {
             VersionedMessage::Legacy(_) => {
                 // Legacy transactions don't have lookup tables
@@ -175,15 +162,13 @@ impl VersionedTransactionResolved {
         };
 
         let mut all_account_keys = transaction.message.static_account_keys().to_vec();
-        all_account_keys.extend(resolved_addresses.clone());
-        resolved.all_account_keys = all_account_keys.clone();
+        all_account_keys.extend(resolved_addresses);
 
         let outer_instructions =
             IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys)?;
 
+        let mut resolved = Self::new(transaction.clone(), all_account_keys, outer_instructions);
         let inner_instructions = resolved.fetch_inner_instructions(rpc_client, sig_verify).await?;
-
-        resolved.all_instructions.extend(outer_instructions);
         resolved.all_instructions.extend(inner_instructions);
 
         Ok(resolved)
@@ -193,20 +178,28 @@ impl VersionedTransactionResolved {
     pub fn from_kora_built_transaction(
         transaction: &VersionedTransaction,
     ) -> Result<Self, KoraError> {
-        Ok(Self {
-            transaction: transaction.clone(),
-            all_account_keys: transaction.message.static_account_keys().to_vec(),
-            all_instructions: IxUtils::uncompile_instructions(
-                transaction.message.instructions(),
-                transaction.message.static_account_keys(),
-            )?,
+        let all_account_keys = transaction.message.static_account_keys().to_vec();
+        let all_instructions =
+            IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys)?;
+        Ok(Self::new(transaction.clone(), all_account_keys, all_instructions))
+    }
+
+    fn new(
+        transaction: VersionedTransaction,
+        all_account_keys: Vec<Pubkey>,
+        all_instructions: Vec<Instruction>,
+    ) -> Self {
+        Self {
+            transaction,
+            all_account_keys,
+            all_instructions,
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
             parsed_alt_instructions: None,
             parsed_loader_v4_instructions: None,
             parsed_bpf_loader_upgradeable_instructions: None,
             parsed_token2022_security_instructions: None,
-        })
+        }
     }
 
     async fn fetch_inner_instructions(
@@ -274,37 +267,31 @@ impl VersionedTransactionResolved {
         &mut self,
     ) -> Result<&HashMap<ParsedSystemInstructionType, Vec<ParsedSystemInstructionData>>, KoraError>
     {
-        if self.parsed_system_instructions.is_none() {
-            self.parsed_system_instructions = Some(IxUtils::parse_system_instructions(self)?);
-        }
-
-        self.parsed_system_instructions.as_ref().ok_or_else(|| {
-            KoraError::SerializationError("Parsed system instructions not found".to_string())
-        })
+        let parsed = match self.parsed_system_instructions.take() {
+            Some(parsed) => parsed,
+            None => IxUtils::parse_system_instructions(self)?,
+        };
+        Ok(self.parsed_system_instructions.insert(parsed))
     }
 
     pub fn get_or_parse_spl_instructions(
         &mut self,
     ) -> Result<&HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>, KoraError> {
-        if self.parsed_spl_instructions.is_none() {
-            self.parsed_spl_instructions = Some(IxUtils::parse_token_instructions(self)?);
-        }
-
-        self.parsed_spl_instructions.as_ref().ok_or_else(|| {
-            KoraError::SerializationError("Parsed SPL instructions not found".to_string())
-        })
+        let parsed = match self.parsed_spl_instructions.take() {
+            Some(parsed) => parsed,
+            None => IxUtils::parse_token_instructions(self)?,
+        };
+        Ok(self.parsed_spl_instructions.insert(parsed))
     }
 
     pub fn get_or_parse_alt_instructions(
         &mut self,
     ) -> Result<&HashMap<ParsedALTInstructionType, Vec<ParsedALTInstructionData>>, KoraError> {
-        if self.parsed_alt_instructions.is_none() {
-            self.parsed_alt_instructions = Some(IxUtils::parse_alt_instructions(self)?);
-        }
-
-        self.parsed_alt_instructions.as_ref().ok_or_else(|| {
-            KoraError::SerializationError("Parsed ALT instructions not found".to_string())
-        })
+        let parsed = match self.parsed_alt_instructions.take() {
+            Some(parsed) => parsed,
+            None => IxUtils::parse_alt_instructions(self)?,
+        };
+        Ok(self.parsed_alt_instructions.insert(parsed))
     }
 
     pub fn get_or_parse_loader_v4_instructions(
@@ -313,13 +300,11 @@ impl VersionedTransactionResolved {
         &HashMap<ParsedLoaderV4InstructionType, Vec<ParsedLoaderV4InstructionData>>,
         KoraError,
     > {
-        if self.parsed_loader_v4_instructions.is_none() {
-            self.parsed_loader_v4_instructions = Some(IxUtils::parse_loader_v4_instructions(self)?);
-        }
-
-        self.parsed_loader_v4_instructions.as_ref().ok_or_else(|| {
-            KoraError::SerializationError("Parsed Loader-v4 instructions not found".to_string())
-        })
+        let parsed = match self.parsed_loader_v4_instructions.take() {
+            Some(parsed) => parsed,
+            None => IxUtils::parse_loader_v4_instructions(self)?,
+        };
+        Ok(self.parsed_loader_v4_instructions.insert(parsed))
     }
 
     pub fn get_or_parse_bpf_loader_upgradeable_instructions(
@@ -331,30 +316,21 @@ impl VersionedTransactionResolved {
         >,
         KoraError,
     > {
-        if self.parsed_bpf_loader_upgradeable_instructions.is_none() {
-            self.parsed_bpf_loader_upgradeable_instructions =
-                Some(IxUtils::parse_bpf_loader_upgradeable_instructions(self)?);
-        }
-        self.parsed_bpf_loader_upgradeable_instructions.as_ref().ok_or_else(|| {
-            KoraError::SerializationError(
-                "Parsed BPF Loader Upgradeable instructions not found".to_string(),
-            )
-        })
+        let parsed = match self.parsed_bpf_loader_upgradeable_instructions.take() {
+            Some(parsed) => parsed,
+            None => IxUtils::parse_bpf_loader_upgradeable_instructions(self)?,
+        };
+        Ok(self.parsed_bpf_loader_upgradeable_instructions.insert(parsed))
     }
 
     pub fn get_or_parse_token2022_security_instructions(
         &mut self,
     ) -> Result<&Vec<Token2022SecurityInstruction>, KoraError> {
-        if self.parsed_token2022_security_instructions.is_none() {
-            self.parsed_token2022_security_instructions =
-                Some(Token2022SecurityParser::parse(&self.all_instructions)?);
-        }
-
-        self.parsed_token2022_security_instructions.as_ref().ok_or_else(|| {
-            KoraError::SerializationError(
-                "Parsed Token-2022 security instructions not found".to_string(),
-            )
-        })
+        let parsed = match self.parsed_token2022_security_instructions.take() {
+            Some(parsed) => parsed,
+            None => Token2022SecurityParser::parse(&self.all_instructions)?,
+        };
+        Ok(self.parsed_token2022_security_instructions.insert(parsed))
     }
 }
 
@@ -475,56 +451,18 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         )
         .await?;
 
-        // Reports success/failure to the signer pool so unhealthy remote signers are bypassed automatically.
-        let message_bytes = transaction.message.serialize();
-        let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
-        let max_retries = config.kora.sign_max_retries;
-        let signer = reserve_request_signer_by_pubkey(&fee_payer)?;
-        let signature =
-            match sign_with_retry(sign_timeout, max_retries, "signing", "Signing", || async {
-                signer
-                    .sign_message(&message_bytes)
-                    .await
-                    .map_err(|e| KoraError::SigningError(sanitize_error!(e)))
-            })
-            .await
-            {
-                Ok(sig) => {
-                    match get_signer_pool() {
-                        Ok(pool) => pool.record_signing_success(&signer),
-                        Err(e) => log::warn!(
-                            "Could not record signing success to pool: {}",
-                            sanitize_error!(e)
-                        ),
-                    }
-                    sig
-                }
-                Err(err) => {
-                    // Reported only after retries are exhausted, so one failing request doesn't blacklist a signer.
-                    match get_signer_pool() {
-                        Ok(pool) => pool.record_signing_failure(&signer),
-                        Err(pool_err) => log::error!(
-                            "Signing failed AND pool health tracking unavailable: {}; \
-                         signer failure will not be recorded, automatic failover is disabled",
-                            sanitize_error!(pool_err)
-                        ),
-                    }
-                    return Err(err);
-                }
-            };
+        let signature = sign_with_signer_pool(
+            config,
+            &fee_payer,
+            &transaction.message.serialize(),
+            "signing",
+            "Signing",
+        )
+        .await?;
 
         // Find the fee payer position - don't assume it's at position 0
         let fee_payer_position = self.find_signer_position(&fee_payer)?;
-        let signatures_len = transaction.signatures.len();
-        let signature_slot = match transaction.signatures.get_mut(fee_payer_position) {
-            Some(slot) => slot,
-            None => {
-                return Err(KoraError::InvalidTransaction(format!(
-                    "Signer position {fee_payer_position} is out of bounds for signatures (len={signatures_len})"
-                )));
-            }
-        };
-        *signature_slot = signature;
+        set_signature_at(&mut transaction, fee_payer_position, signature)?;
 
         let encoded = TransactionUtil::encode_versioned_transaction(&transaction)?;
 

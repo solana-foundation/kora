@@ -1,5 +1,6 @@
 use crate::{
     bundle::{BundleError, BundleProcessingMode, BundleProcessor, JitoError},
+    config::Config,
     plugin::PluginExecutionContext,
     rpc_server::middleware_utils::default_sig_verify,
     transaction::TransactionUtil,
@@ -9,6 +10,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_keychain::SolanaSigner;
+use solana_sdk::pubkey::Pubkey;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
@@ -50,9 +52,22 @@ pub async fn sign_bundle(
     rpc_client: &Arc<RpcClient>,
     request: SignBundleRequest,
 ) -> Result<SignBundleResponse, KoraError> {
+    let config = &get_config()?;
+    let (signed_transactions, fee_payer) =
+        sign_bundle_transactions(rpc_client, config, request, PluginExecutionContext::SignBundle)
+            .await?;
+
+    Ok(SignBundleResponse { signed_transactions, signer_pubkey: fee_payer.to_string() })
+}
+
+pub(super) async fn sign_bundle_transactions(
+    rpc_client: &Arc<RpcClient>,
+    config: &Config,
+    request: SignBundleRequest,
+    plugin_context: PluginExecutionContext,
+) -> Result<(Vec<String>, Pubkey), KoraError> {
     let SignBundleRequest { transactions, signer_key, sig_verify, user_id, sign_only_indices } =
         request;
-    let config = &get_config()?;
 
     if !config.kora.bundle.enabled {
         return Err(BundleError::Jito(JitoError::NotEnabled).into());
@@ -75,7 +90,7 @@ pub async fn sign_bundle(
         config,
         rpc_client,
         sig_verify,
-        Some(PluginExecutionContext::SignBundle),
+        Some(plugin_context),
         BundleProcessingMode::CheckUsage(user_id.as_deref()),
     )
     .await?;
@@ -100,8 +115,9 @@ pub async fn sign_bundle(
         .await?;
     }
 
+    let will_send = matches!(plugin_context, PluginExecutionContext::SignAndSendBundle);
     let signed_resolved =
-        processor.sign_all(&signer, &fee_payer, rpc_client, config, false).await?;
+        processor.sign_all(&signer, &fee_payer, rpc_client, config, will_send).await?;
 
     let encoded_signed: Vec<String> = signed_resolved
         .iter()
@@ -127,7 +143,7 @@ pub async fn sign_bundle(
         .await?;
     }
 
-    Ok(SignBundleResponse { signed_transactions, signer_pubkey: fee_payer.to_string() })
+    Ok((signed_transactions, fee_payer))
 }
 
 #[cfg(test)]
