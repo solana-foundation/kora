@@ -57,15 +57,10 @@ impl std::fmt::Debug for ClientIdentity {
     }
 }
 
+#[derive(Clone)]
 struct KeyEntry {
     identity: String,
     hash: [u8; 32],
-}
-
-impl Clone for KeyEntry {
-    fn clone(&self) -> Self {
-        Self { identity: self.identity.clone(), hash: self.hash }
-    }
 }
 
 #[derive(Clone)]
