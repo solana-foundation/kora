@@ -36,3 +36,6 @@ solana-transaction = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 wincode = { workspace = true }
+
+[dev-dependencies]
+mockito = "1.7.2"
