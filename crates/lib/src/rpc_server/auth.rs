@@ -32,6 +32,10 @@ fn auth_rejection_response() -> Response<Body> {
     response
 }
 
+fn is_liveness_request(body_bytes: &[u8]) -> bool {
+    get_jsonrpc_method(body_bytes).as_deref() == Some("liveness")
+}
+
 fn hash_key(key: &[u8]) -> [u8; 32] {
     Sha256::digest(key).into()
 }
@@ -121,12 +125,8 @@ where
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
             // Bypass auth for liveness endpoint
-            if let Some(method) = get_jsonrpc_method(&body_bytes) {
-                if method == "liveness" {
-                    let new_body = Body::from(body_bytes);
-                    let new_request = Request::from_parts(parts, new_body);
-                    return inner.call(new_request).await;
-                }
+            if is_liveness_request(&body_bytes) {
+                return inner.call(Request::from_parts(parts, Body::from(body_bytes))).await;
             }
 
             let mut req = Request::from_parts(parts, Body::from(body_bytes));
@@ -216,12 +216,8 @@ where
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
             // Bypass auth for liveness endpoint
-            if let Some(method) = get_jsonrpc_method(&body_bytes) {
-                if method == "liveness" {
-                    let new_body = Body::from(body_bytes);
-                    let new_request = Request::from_parts(parts, new_body);
-                    return inner.call(new_request).await;
-                }
+            if is_liveness_request(&body_bytes) {
+                return inner.call(Request::from_parts(parts, Body::from(body_bytes))).await;
             }
 
             let (signature, timestamp) =
