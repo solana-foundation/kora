@@ -480,6 +480,45 @@ impl FeeConfigUtil {
         Ok(total)
     }
 
+    fn add_outflow(total: &mut i128, lamports: u64, source: &str) -> Result<(), KoraError> {
+        *total = total.checked_add(lamports as i128).ok_or_else(|| {
+            log::error!("Outflow calculation overflow in {source}");
+            KoraError::ValidationError("Outflow calculation overflow".to_string())
+        })?;
+        Ok(())
+    }
+
+    fn add_inflow(total: &mut i128, lamports: u64, source: &str) -> Result<(), KoraError> {
+        *total = total.checked_sub(lamports as i128).ok_or_else(|| {
+            log::error!("Inflow calculation overflow in {source}");
+            KoraError::ValidationError("Inflow calculation overflow".to_string())
+        })?;
+        Ok(())
+    }
+
+    async fn add_closed_account_flow(
+        total: &mut i128,
+        rpc_client: &RpcClient,
+        fee_payer: &Pubkey,
+        closed_account: &Pubkey,
+        authority: &Pubkey,
+        recipient: &Pubkey,
+        source: &str,
+    ) -> Result<(), KoraError> {
+        let is_fee_payer_authority = authority == fee_payer;
+        let is_fee_payer_recipient = recipient == fee_payer;
+        if is_fee_payer_authority == is_fee_payer_recipient {
+            return Ok(());
+        }
+
+        let lamports = rpc_client.get_account(closed_account).await?.lamports;
+        if is_fee_payer_recipient {
+            Self::add_inflow(total, lamports, source)
+        } else {
+            Self::add_outflow(total, lamports, source)
+        }
+    }
+
     /// Calculate the total outflow (SOL + SPL token value) that could occur for a fee payer account in a transaction.
     /// This includes SOL transfers, account creation, SPL token transfers, and other operations that could drain the fee payer's balance.
     pub async fn calculate_fee_payer_outflow(
@@ -502,16 +541,10 @@ impl FeeConfigUtil {
                 instruction
             {
                 if *sender == *fee_payer_pubkey {
-                    total = total.checked_add(*lamports as i128).ok_or_else(|| {
-                        log::error!("Outflow calculation overflow in SystemTransfer");
-                        KoraError::ValidationError("Outflow calculation overflow".to_string())
-                    })?;
+                    Self::add_outflow(&mut total, *lamports, "SystemTransfer")?;
                 }
                 if *receiver == *fee_payer_pubkey {
-                    total = total.checked_sub(*lamports as i128).ok_or_else(|| {
-                        log::error!("Inflow calculation overflow in SystemTransfer");
-                        KoraError::ValidationError("Inflow calculation overflow".to_string())
-                    })?;
+                    Self::add_inflow(&mut total, *lamports, "SystemTransfer")?;
                 }
             }
         }
@@ -524,10 +557,7 @@ impl FeeConfigUtil {
                 instruction
             {
                 if *payer == *fee_payer_pubkey {
-                    total = total.checked_add(*lamports as i128).ok_or_else(|| {
-                        log::error!("Outflow calculation overflow in SystemCreateAccount");
-                        KoraError::ValidationError("Outflow calculation overflow".to_string())
-                    })?;
+                    Self::add_outflow(&mut total, *lamports, "SystemCreateAccount")?;
                 }
             }
         }
@@ -549,18 +579,12 @@ impl FeeConfigUtil {
                 } else if *recipient == *fee_payer_pubkey {
                     // Lamports arriving from a nonce account not controlled by the fee payer are
                     // a real inflow that reduces net outflow.
-                    total = total.checked_sub(*lamports as i128).ok_or_else(|| {
-                        log::error!("Inflow calculation overflow in SystemWithdrawNonceAccount");
-                        KoraError::ValidationError("Inflow calculation overflow".to_string())
-                    })?;
+                    Self::add_inflow(&mut total, *lamports, "SystemWithdrawNonceAccount")?;
                 } else if *nonce_authority == *fee_payer_pubkey {
                     // Fee payer authorized a withdrawal to a third party. The lamports leave a
                     // nonce account the fee payer controls, so count them as outflow so that
                     // max_allowed_lamports enforcement is not bypassed.
-                    total = total.checked_add(*lamports as i128).ok_or_else(|| {
-                        log::error!("Outflow calculation overflow in SystemWithdrawNonceAccount");
-                        KoraError::ValidationError("Outflow calculation overflow".to_string())
-                    })?;
+                    Self::add_outflow(&mut total, *lamports, "SystemWithdrawNonceAccount")?;
                 }
             }
         }
@@ -576,30 +600,16 @@ impl FeeConfigUtil {
                 recipient,
             } = instruction
             {
-                let is_fee_payer_authority = *lookup_table_authority == *fee_payer_pubkey;
-                let is_fee_payer_recipient = *recipient == *fee_payer_pubkey;
-
-                if !is_fee_payer_authority && !is_fee_payer_recipient {
-                    continue;
-                }
-
-                if is_fee_payer_authority && is_fee_payer_recipient {
-                    continue;
-                }
-
-                let lamports = rpc_client.get_account(lookup_table_account).await?.lamports;
-
-                if is_fee_payer_recipient {
-                    total = total.checked_sub(lamports as i128).ok_or_else(|| {
-                        log::error!("Inflow calculation overflow in AltCloseLookupTable");
-                        KoraError::ValidationError("Inflow calculation overflow".to_string())
-                    })?;
-                } else {
-                    total = total.checked_add(lamports as i128).ok_or_else(|| {
-                        log::error!("Outflow calculation overflow in AltCloseLookupTable");
-                        KoraError::ValidationError("Outflow calculation overflow".to_string())
-                    })?;
-                }
+                Self::add_closed_account_flow(
+                    &mut total,
+                    rpc_client,
+                    fee_payer_pubkey,
+                    lookup_table_account,
+                    lookup_table_authority,
+                    recipient,
+                    "AltCloseLookupTable",
+                )
+                .await?;
             }
         }
 
@@ -643,10 +653,7 @@ impl FeeConfigUtil {
             let extension_rent = rpc_client
                 .get_minimum_balance_for_rent_exemption(additional_bytes as usize)
                 .await?;
-            total = total.checked_add(extension_rent as i128).ok_or_else(|| {
-                log::error!("Outflow calculation overflow in ExtendProgram rent");
-                KoraError::ValidationError("Outflow calculation overflow".to_string())
-            })?;
+            Self::add_outflow(&mut total, extension_rent, "ExtendProgram rent")?;
         }
 
         // ATA Create/CreateIdempotent can be no-ops during simulation depending on prestate.
@@ -696,30 +703,16 @@ impl FeeConfigUtil {
                 ..
             } = instruction
             {
-                let is_fee_payer_authority = *owner == *fee_payer_pubkey;
-                let is_fee_payer_recipient = *destination == *fee_payer_pubkey;
-
-                if !is_fee_payer_authority && !is_fee_payer_recipient {
-                    continue;
-                }
-
-                if is_fee_payer_authority && is_fee_payer_recipient {
-                    continue;
-                }
-
-                let lamports = rpc_client.get_account(account).await?.lamports;
-
-                if is_fee_payer_recipient {
-                    total = total.checked_sub(lamports as i128).ok_or_else(|| {
-                        log::error!("Inflow calculation overflow in SplTokenCloseAccount");
-                        KoraError::ValidationError("Inflow calculation overflow".to_string())
-                    })?;
-                } else {
-                    total = total.checked_add(lamports as i128).ok_or_else(|| {
-                        log::error!("Outflow calculation overflow in SplTokenCloseAccount");
-                        KoraError::ValidationError("Outflow calculation overflow".to_string())
-                    })?;
-                }
+                Self::add_closed_account_flow(
+                    &mut total,
+                    rpc_client,
+                    fee_payer_pubkey,
+                    account,
+                    owner,
+                    destination,
+                    "SplTokenCloseAccount",
+                )
+                .await?;
             }
         }
 
