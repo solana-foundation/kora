@@ -616,44 +616,36 @@ impl FeeConfigUtil {
         // Loader-v3 ExtendProgram/ExtendProgramChecked grow a ProgramData account and top up its
         // rent from the payer. When the fee payer funds the extension, count that rent so a large
         // extension cannot bypass max_allowed_lamports.
-        let mut fee_payer_extension_byte_sizes: Vec<u32> = Vec::new();
+        let bpf_v3_instructions = transaction.get_or_parse_bpf_loader_upgradeable_instructions()?;
+        for instruction in [
+            ParsedBpfLoaderUpgradeableInstructionType::ExtendProgram,
+            ParsedBpfLoaderUpgradeableInstructionType::ExtendProgramChecked,
+        ]
+        .iter()
+        .flat_map(|ty| bpf_v3_instructions.get(ty).map(Vec::as_slice).unwrap_or(&[]))
         {
-            let bpf_v3_instructions =
-                transaction.get_or_parse_bpf_loader_upgradeable_instructions()?;
-            for instruction in [
-                ParsedBpfLoaderUpgradeableInstructionType::ExtendProgram,
-                ParsedBpfLoaderUpgradeableInstructionType::ExtendProgramChecked,
-            ]
-            .iter()
-            .flat_map(|ty| bpf_v3_instructions.get(ty).map(Vec::as_slice).unwrap_or(&[]))
-            {
-                let (payer, additional_bytes) = match instruction {
-                    ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram {
-                        payer,
-                        additional_bytes,
-                        ..
-                    }
-                    | ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
-                        payer,
-                        additional_bytes,
-                        ..
-                    } => (payer, *additional_bytes),
-                    _ => continue,
-                };
-
-                if *payer == Some(*fee_payer_pubkey) {
-                    fee_payer_extension_byte_sizes.push(additional_bytes);
+            let (payer, additional_bytes) = match instruction {
+                ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram {
+                    payer,
+                    additional_bytes,
+                    ..
                 }
-            }
-        }
+                | ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
+                    payer,
+                    additional_bytes,
+                    ..
+                } => (payer, *additional_bytes),
+                _ => continue,
+            };
 
-        // Conservatively charge the rent-exempt minimum for the added bytes per extension
-        // (matching the ATA-creation accounting below).
-        for additional_bytes in fee_payer_extension_byte_sizes {
-            let extension_rent = rpc_client
-                .get_minimum_balance_for_rent_exemption(additional_bytes as usize)
-                .await?;
-            Self::add_outflow(&mut total, extension_rent, "ExtendProgram rent")?;
+            if *payer == Some(*fee_payer_pubkey) {
+                // Conservatively charge the rent-exempt minimum for the added bytes per extension
+                // (matching the ATA-creation accounting below).
+                let extension_rent = rpc_client
+                    .get_minimum_balance_for_rent_exemption(additional_bytes as usize)
+                    .await?;
+                Self::add_outflow(&mut total, extension_rent, "ExtendProgram rent")?;
+            }
         }
 
         // ATA Create/CreateIdempotent can be no-ops during simulation depending on prestate.
