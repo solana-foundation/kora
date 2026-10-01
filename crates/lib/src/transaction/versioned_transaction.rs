@@ -16,7 +16,6 @@ use solana_sdk::{
 use std::{
     collections::{HashMap, HashSet},
     ops::Deref,
-    time::Duration,
 };
 use utoipa::ToSchema;
 
@@ -29,7 +28,7 @@ use crate::{
     lighthouse::LighthouseUtil,
     plugin::{PluginExecutionContext, TransactionPluginRunner},
     sanitize_error,
-    state::{get_background_tasks, get_signer_pool, reserve_request_signer_by_pubkey},
+    state::get_background_tasks,
     token::token::TransferHookValidationFlow,
     transaction::{
         instruction_util::IxUtils, ParsedALTInstructionData, ParsedALTInstructionType,
@@ -43,7 +42,7 @@ use crate::{
 };
 use solana_address_lookup_table_interface::state::AddressLookupTable;
 
-use super::retry_util::sign_with_retry;
+use super::retry_util::{set_signature_at, sign_with_signer_pool};
 
 type AltCache<'a> = Option<&'a mut HashMap<Pubkey, Vec<Pubkey>>>;
 
@@ -475,56 +474,18 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         )
         .await?;
 
-        // Reports success/failure to the signer pool so unhealthy remote signers are bypassed automatically.
-        let message_bytes = transaction.message.serialize();
-        let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
-        let max_retries = config.kora.sign_max_retries;
-        let signer = reserve_request_signer_by_pubkey(&fee_payer)?;
-        let signature =
-            match sign_with_retry(sign_timeout, max_retries, "signing", "Signing", || async {
-                signer
-                    .sign_message(&message_bytes)
-                    .await
-                    .map_err(|e| KoraError::SigningError(sanitize_error!(e)))
-            })
-            .await
-            {
-                Ok(sig) => {
-                    match get_signer_pool() {
-                        Ok(pool) => pool.record_signing_success(&signer),
-                        Err(e) => log::warn!(
-                            "Could not record signing success to pool: {}",
-                            sanitize_error!(e)
-                        ),
-                    }
-                    sig
-                }
-                Err(err) => {
-                    // Reported only after retries are exhausted, so one failing request doesn't blacklist a signer.
-                    match get_signer_pool() {
-                        Ok(pool) => pool.record_signing_failure(&signer),
-                        Err(pool_err) => log::error!(
-                            "Signing failed AND pool health tracking unavailable: {}; \
-                         signer failure will not be recorded, automatic failover is disabled",
-                            sanitize_error!(pool_err)
-                        ),
-                    }
-                    return Err(err);
-                }
-            };
+        let signature = sign_with_signer_pool(
+            config,
+            &fee_payer,
+            &transaction.message.serialize(),
+            "signing",
+            "Signing",
+        )
+        .await?;
 
         // Find the fee payer position - don't assume it's at position 0
         let fee_payer_position = self.find_signer_position(&fee_payer)?;
-        let signatures_len = transaction.signatures.len();
-        let signature_slot = match transaction.signatures.get_mut(fee_payer_position) {
-            Some(slot) => slot,
-            None => {
-                return Err(KoraError::InvalidTransaction(format!(
-                    "Signer position {fee_payer_position} is out of bounds for signatures (len={signatures_len})"
-                )));
-            }
-        };
-        *signature_slot = signature;
+        set_signature_at(&mut transaction, fee_payer_position, signature)?;
 
         let encoded = TransactionUtil::encode_versioned_transaction(&transaction)?;
 
