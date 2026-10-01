@@ -626,66 +626,29 @@ pub struct EnabledMethods {
 
 impl EnabledMethods {
     pub fn iter(&self) -> impl Iterator<Item = bool> {
-        [
-            self.liveness,
-            self.estimate_transaction_fee,
-            self.get_supported_tokens,
-            self.get_payer_signer,
-            self.sign_transaction,
-            self.sign_and_send_transaction,
-            self.transfer_transaction,
-            self.get_blockhash,
-            self.get_config,
-            self.get_version,
-            self.estimate_bundle_fee,
-            self.sign_and_send_bundle,
-            self.sign_bundle,
-        ]
-        .into_iter()
+        self.into_iter()
     }
 
     pub fn get_enabled_method_names(&self) -> Vec<String> {
-        let mut methods = Vec::new();
-        if self.liveness {
-            methods.push("liveness".to_string());
-        }
-        if self.estimate_transaction_fee {
-            methods.push("estimateTransactionFee".to_string());
-        }
-        if self.estimate_bundle_fee {
-            methods.push("estimateBundleFee".to_string());
-        }
-        if self.get_supported_tokens {
-            methods.push("getSupportedTokens".to_string());
-        }
-        if self.get_payer_signer {
-            methods.push("getPayerSigner".to_string());
-        }
-        if self.sign_transaction {
-            methods.push("signTransaction".to_string());
-        }
-        if self.sign_and_send_transaction {
-            methods.push("signAndSendTransaction".to_string());
-        }
-        if self.transfer_transaction {
-            methods.push("transferTransaction".to_string());
-        }
-        if self.get_blockhash {
-            methods.push("getBlockhash".to_string());
-        }
-        if self.get_config {
-            methods.push("getConfig".to_string());
-        }
-        if self.get_version {
-            methods.push("getVersion".to_string());
-        }
-        if self.sign_and_send_bundle {
-            methods.push("signAndSendBundle".to_string());
-        }
-        if self.sign_bundle {
-            methods.push("signBundle".to_string());
-        }
-        methods
+        [
+            (self.liveness, "liveness"),
+            (self.estimate_transaction_fee, "estimateTransactionFee"),
+            (self.estimate_bundle_fee, "estimateBundleFee"),
+            (self.get_supported_tokens, "getSupportedTokens"),
+            (self.get_payer_signer, "getPayerSigner"),
+            (self.sign_transaction, "signTransaction"),
+            (self.sign_and_send_transaction, "signAndSendTransaction"),
+            (self.transfer_transaction, "transferTransaction"),
+            (self.get_blockhash, "getBlockhash"),
+            (self.get_config, "getConfig"),
+            (self.get_version, "getVersion"),
+            (self.sign_and_send_bundle, "signAndSendBundle"),
+            (self.sign_bundle, "signBundle"),
+        ]
+        .into_iter()
+        .filter(|(enabled, _)| *enabled)
+        .map(|(_, name)| name.to_string())
+        .collect()
     }
 }
 
