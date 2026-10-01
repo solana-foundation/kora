@@ -15,7 +15,7 @@ use crate::{
     plugin::TransactionPluginRunner,
     signer::SignerPoolConfig,
     state::get_config,
-    token::{spl_token_2022_util, token::TokenUtil},
+    token::token::TokenUtil,
     validator::{
         account_validator::{validate_account, AccountType},
         cache_validator::CacheValidator,
@@ -927,23 +927,7 @@ fn validate_token2022_extensions(
     config: &Token2022Config,
     warnings: &mut Vec<String>,
 ) -> Result<(), String> {
-    for ext_name in &config.blocked_mint_extensions {
-        if spl_token_2022_util::parse_mint_extension_string(ext_name).is_none() {
-            return Err(format!(
-                "Invalid mint extension name: '{ext_name}'. Valid names are: {:?}",
-                spl_token_2022_util::get_all_mint_extension_names()
-            ));
-        }
-    }
-
-    for ext_name in &config.blocked_account_extensions {
-        if spl_token_2022_util::parse_account_extension_string(ext_name).is_none() {
-            return Err(format!(
-                "Invalid account extension name: '{ext_name}'. Valid names are: {:?}",
-                spl_token_2022_util::get_all_account_extension_names()
-            ));
-        }
-    }
+    config.clone().initialize()?;
 
     match config.transfer_hook_policy {
         TransferHookPolicy::AllowAll => {
