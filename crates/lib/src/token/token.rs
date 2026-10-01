@@ -257,6 +257,47 @@ impl TokenUtil {
         Ok(())
     }
 
+    async fn fetch_prices_and_decimals(
+        config: &Config,
+        rpc_client: &RpcClient,
+        mints: &[Pubkey],
+    ) -> Result<(HashMap<String, TokenPrice>, HashMap<Pubkey, u8>), KoraError> {
+        let mint_addresses: Vec<String> = mints.iter().map(|mint| mint.to_string()).collect();
+
+        let prices =
+            CacheUtil::get_or_fetch_token_prices(rpc_client, config, &mint_addresses).await?;
+
+        let current_slot = if config.validation.max_price_staleness_slots > 0 {
+            Some(
+                rpc_client
+                    .get_slot()
+                    .await
+                    .map_err(|e| KoraError::RpcError(format!("Failed to get current slot: {e}")))?,
+            )
+        } else {
+            None
+        };
+
+        for (mint_addr, price) in &prices {
+            Self::check_price_staleness(
+                rpc_client,
+                config,
+                price,
+                &format!(" for {mint_addr}"),
+                current_slot,
+            )
+            .await?;
+        }
+
+        let mut mint_decimals = HashMap::new();
+        for mint in mints {
+            let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
+            mint_decimals.insert(*mint, decimals);
+        }
+
+        Ok((prices, mint_decimals))
+    }
+
     async fn calculate_token2022_net_amount(
         amount: u64,
         mint: &Pubkey,
@@ -561,40 +602,9 @@ impl TokenUtil {
             return Ok(0);
         }
 
-        // Batch fetch all prices and decimals
-        let mint_addresses: Vec<String> =
-            mint_to_transfers.keys().map(|mint| mint.to_string()).collect();
-
-        let prices =
-            CacheUtil::get_or_fetch_token_prices(rpc_client, config, &mint_addresses).await?;
-
-        let current_slot = if config.validation.max_price_staleness_slots > 0 {
-            Some(
-                rpc_client
-                    .get_slot()
-                    .await
-                    .map_err(|e| KoraError::RpcError(format!("Failed to get current slot: {e}")))?,
-            )
-        } else {
-            None
-        };
-
-        for (mint_addr, price) in &prices {
-            Self::check_price_staleness(
-                rpc_client,
-                config,
-                price,
-                &format!(" for {mint_addr}"),
-                current_slot,
-            )
-            .await?;
-        }
-
-        let mut mint_decimals = std::collections::HashMap::new();
-        for mint in mint_to_transfers.keys() {
-            let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
-            mint_decimals.insert(*mint, decimals);
-        }
+        let mints: Vec<Pubkey> = mint_to_transfers.keys().copied().collect();
+        let (prices, mint_decimals) =
+            Self::fetch_prices_and_decimals(config, rpc_client, &mints).await?;
 
         let mut total_lamports: u64 = 0;
 
@@ -923,39 +933,9 @@ impl TokenUtil {
             return Ok(totals);
         }
 
-        let mint_addresses: Vec<String> =
-            payment_mints.iter().map(|mint| mint.to_string()).collect();
-
-        let prices =
-            CacheUtil::get_or_fetch_token_prices(rpc_client, config, &mint_addresses).await?;
-
-        let current_slot = if config.validation.max_price_staleness_slots > 0 {
-            Some(
-                rpc_client
-                    .get_slot()
-                    .await
-                    .map_err(|e| KoraError::RpcError(format!("Failed to get current slot: {e}")))?,
-            )
-        } else {
-            None
-        };
-
-        for (mint_addr, price) in &prices {
-            Self::check_price_staleness(
-                rpc_client,
-                config,
-                price,
-                &format!(" for {mint_addr}"),
-                current_slot,
-            )
-            .await?;
-        }
-
-        let mut mint_decimals = HashMap::new();
-        for mint in &payment_mints {
-            let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
-            mint_decimals.insert(*mint, decimals);
-        }
+        let mints: Vec<Pubkey> = payment_mints.into_iter().collect();
+        let (prices, mint_decimals) =
+            Self::fetch_prices_and_decimals(config, rpc_client, &mints).await?;
 
         for transfer in valid_transfers {
             let ValidTransfer { is_inflow, is_outflow, token_mint, inflow_amount, amount } =
