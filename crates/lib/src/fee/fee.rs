@@ -759,19 +759,7 @@ impl TransactionFeeUtil {
         rpc_client: &RpcClient,
         resolved_transaction: &VersionedTransactionResolved,
     ) -> Result<u64, KoraError> {
-        let message = &resolved_transaction.transaction.message;
-
-        match message {
-            VersionedMessage::Legacy(message) => {
-                // Legacy transactions don't have lookup tables, use as-is
-                rpc_client.get_fee_for_message(message).await
-            }
-            VersionedMessage::V0(v0_message) => rpc_client.get_fee_for_message(v0_message).await,
-            VersionedMessage::V1(v1_message) => {
-                rpc_client.get_fee_for_message(&V1FeeMessage(v1_message)).await
-            }
-        }
-        .map_err(|e| KoraError::RpcError(e.to_string()))
+        Self::get_estimate_fee(rpc_client, &resolved_transaction.transaction.message).await
     }
 
     /// Priority fee in lamports the transaction requests: the config field for V1,
