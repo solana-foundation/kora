@@ -126,20 +126,18 @@ where
 
             let mut req = Request::from_parts(parts, Body::from(body_bytes));
             if let Some(provided_key) = req.headers().get(X_API_KEY) {
-                let mut is_valid = false;
-                let mut matched_id = String::new();
+                let mut matched_id = None;
                 let provided_hash = hash_key(provided_key.as_bytes());
 
                 for entry in api_keys.iter() {
                     let matches: bool = provided_hash.ct_eq(&entry.hash).into();
 
                     if matches {
-                        is_valid = true;
-                        matched_id = entry.identity.clone();
+                        matched_id = Some(entry.identity.clone());
                     }
                 }
 
-                if is_valid {
+                if let Some(matched_id) = matched_id {
                     req.extensions_mut().insert(ClientIdentity(format!("apikey:{}", matched_id)));
                     return inner.call(req).await;
                 }
