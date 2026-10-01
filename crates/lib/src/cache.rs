@@ -215,28 +215,21 @@ impl CacheUtil {
         config.kora.cache.enabled && config.kora.cache.resolved_url().is_some()
     }
 
+    fn pool(config: &Config) -> Option<&'static Pool> {
+        if !Self::is_cache_enabled(config) {
+            return None;
+        }
+        CACHE_POOL.get()?.as_ref()
+    }
+
     pub async fn get_account(
         config: &Config,
         rpc_client: &RpcClient,
         pubkey: &Pubkey,
         force_refresh: bool,
     ) -> Result<Account, KoraError> {
-        if !CacheUtil::is_cache_enabled(config) {
+        let Some(pool) = Self::pool(config) else {
             return Self::get_account_from_rpc(rpc_client, pubkey).await;
-        }
-
-        let pool = match CACHE_POOL.get() {
-            Some(pool) => pool,
-            None => {
-                return Self::get_account_from_rpc(rpc_client, pubkey).await;
-            }
-        };
-
-        let pool = match pool {
-            Some(pool) => pool,
-            None => {
-                return Self::get_account_from_rpc(rpc_client, pubkey).await;
-            }
         };
 
         if force_refresh {
@@ -279,13 +272,8 @@ impl CacheUtil {
         config: &Config,
         rpc_client: &RpcClient,
     ) -> Result<Hash, KoraError> {
-        if !CacheUtil::is_cache_enabled(config) {
+        let Some(pool) = Self::pool(config) else {
             return Self::fetch_blockhash_from_rpc(rpc_client).await;
-        }
-
-        let pool = match CACHE_POOL.get() {
-            Some(Some(pool)) => pool,
-            _ => return Self::fetch_blockhash_from_rpc(rpc_client).await,
         };
 
         match Self::get_blockhash_from_cache(pool).await {
@@ -533,21 +521,11 @@ impl CacheUtil {
 
         // If cache is disabled globally, pool not initialized, or price caching
         // is opted out via `price_ttl = 0`, go straight to the oracle.
-        if !Self::is_cache_enabled(config) || config.kora.cache.price_ttl == 0 {
+        let Some(pool) = Self::pool(config).filter(|_| config.kora.cache.price_ttl != 0) else {
             return Self::get_price_oracle_singleton(config)
                 .await?
                 .get_token_prices(mint_addresses)
                 .await;
-        }
-
-        let pool = match CACHE_POOL.get() {
-            Some(Some(pool)) => pool,
-            _ => {
-                return Self::get_price_oracle_singleton(config)
-                    .await?
-                    .get_token_prices(mint_addresses)
-                    .await;
-            }
         };
 
         let min_fresh_block_id = Self::min_fresh_price_block_id(rpc_client, config).await?;
@@ -678,13 +656,8 @@ impl CacheUtil {
             return Ok(vec![]);
         }
 
-        if !CacheUtil::is_cache_enabled(config) {
+        let Some(pool) = Self::pool(config) else {
             return Self::get_multiple_accounts_from_rpc(rpc_client, pubkeys).await;
-        }
-
-        let pool = match CACHE_POOL.get() {
-            Some(Some(pool)) => pool,
-            _ => return Self::get_multiple_accounts_from_rpc(rpc_client, pubkeys).await,
         };
 
         let mut conn = match Self::get_connection(pool).await {
