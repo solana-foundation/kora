@@ -569,13 +569,18 @@ impl SignerConfig {
         let api_key_secret = get_env_var_for_signer(&config.api_key_secret_env, signer_name)?;
         let wallet_secret = get_env_var_for_signer(&config.wallet_secret_env, signer_name)?;
         let address = get_env_var_for_signer(&config.address_env, signer_name)?;
-        Signer::from_cdp(
+        Signer::from_cdp(solana_keychain::CdpSignerConfig {
             api_key_id,
             api_key_secret,
             wallet_secret,
             address,
-            config.http_config.as_ref().map(solana_keychain::HttpClientConfig::from),
-        )
+            network: None,
+            api_base_url: None,
+            http_client_config: config
+                .http_config
+                .as_ref()
+                .map(solana_keychain::HttpClientConfig::from),
+        })
         .map_err(|e| {
             KoraError::SigningError(format!(
                 "Failed to create CDP signer '{signer_name}': {}",
