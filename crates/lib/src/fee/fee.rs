@@ -237,26 +237,16 @@ impl FeeConfigUtil {
             0
         };
 
-        let total_fee_lamports = (base_fee as i128)
-            .checked_add(kora_signature_fee as i128)
-            .and_then(|sum| sum.checked_add(fee_payer_outflow))
-            .and_then(|sum| sum.checked_add(fee_for_payment_instruction as i128))
-            .and_then(|sum| sum.checked_add(transfer_fee_config_amount as i128))
-            .map(|sum| sum.max(0) as u64)
-            .ok_or_else(|| {
-                log::error!("Fee calculation overflow: base_fee={}, kora_signature_fee={}, fee_payer_outflow={}, payment_instruction_fee={}, transfer_fee_amount={}",
-                    base_fee, kora_signature_fee, fee_payer_outflow, fee_for_payment_instruction, transfer_fee_config_amount);
-                KoraError::ValidationError("Fee calculation overflow".to_string())
-            })?;
-
-        Ok(TotalFeeCalculation {
-            total_fee_lamports,
+        let mut fee_calculation = TotalFeeCalculation::new(
+            0,
             base_fee,
             kora_signature_fee,
             fee_payer_outflow,
-            payment_instruction_fee: fee_for_payment_instruction,
-            transfer_fee_amount: transfer_fee_config_amount,
-        })
+            fee_for_payment_instruction,
+            transfer_fee_config_amount,
+        );
+        fee_calculation.total_fee_lamports = fee_calculation.get_total_fee_lamports()?;
+        Ok(fee_calculation)
     }
 
     /// Main entry point for fee calculation with Kora's price model applied
