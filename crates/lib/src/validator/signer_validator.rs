@@ -37,7 +37,6 @@ impl SignerValidator {
                 SignerTypeConfig::AwsKms { .. } => &None,
                 SignerTypeConfig::GcpKms { .. } => &None,
                 SignerTypeConfig::Para { .. } => &None,
-                SignerTypeConfig::Crossmint { .. } => &None,
             };
 
             if let Some(c) = http_config {

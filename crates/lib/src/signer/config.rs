@@ -178,23 +178,6 @@ pub struct DfnsSignerConfig {
     pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
-/// Crossmint signer configuration
-#[derive(Clone, Serialize, Deserialize)]
-pub struct CrossmintSignerConfig {
-    pub api_key_env: String,
-    pub wallet_locator_env: String,
-    #[serde(default)]
-    pub signer_secret_env: Option<String>,
-    #[serde(default)]
-    pub signer: Option<String>,
-    #[serde(default)]
-    pub api_base_url: Option<String>,
-    #[serde(default)]
-    pub poll_interval_ms: Option<u64>,
-    #[serde(default)]
-    pub max_poll_attempts: Option<u32>,
-}
-
 /// Fireblocks signer configuration
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FireblocksSignerConfig {
@@ -268,11 +251,6 @@ pub enum SignerTypeConfig {
     Dfns {
         #[serde(flatten)]
         config: DfnsSignerConfig,
-    },
-    /// Crossmint signer configuration
-    Crossmint {
-        #[serde(flatten)]
-        config: CrossmintSignerConfig,
     },
     /// Openfort backend wallet signer configuration
     Openfort {
@@ -389,9 +367,6 @@ impl SignerConfig {
             }
             SignerTypeConfig::Dfns { config: dfns_config } => {
                 Self::build_dfns_signer(dfns_config, &config.name).await
-            }
-            SignerTypeConfig::Crossmint { config: crossmint_config } => {
-                Self::build_crossmint_signer(crossmint_config, &config.name).await
             }
             SignerTypeConfig::Openfort { config: openfort_config } => {
                 Self::build_openfort_signer(openfort_config, &config.name).await
@@ -569,13 +544,18 @@ impl SignerConfig {
         let api_key_secret = get_env_var_for_signer(&config.api_key_secret_env, signer_name)?;
         let wallet_secret = get_env_var_for_signer(&config.wallet_secret_env, signer_name)?;
         let address = get_env_var_for_signer(&config.address_env, signer_name)?;
-        Signer::from_cdp(
+        Signer::from_cdp(solana_keychain::CdpSignerConfig {
             api_key_id,
             api_key_secret,
             wallet_secret,
             address,
-            config.http_config.as_ref().map(solana_keychain::HttpClientConfig::from),
-        )
+            network: None,
+            api_base_url: None,
+            http_client_config: config
+                .http_config
+                .as_ref()
+                .map(solana_keychain::HttpClientConfig::from),
+        })
         .map_err(|e| {
             KoraError::SigningError(format!(
                 "Failed to create CDP signer '{signer_name}': {}",
@@ -606,34 +586,6 @@ impl SignerConfig {
         Signer::from_dfns(keychain_config).await.map_err(|e| {
             KoraError::SigningError(format!(
                 "Failed to create Dfns signer '{signer_name}': {}",
-                sanitize_error!(e)
-            ))
-        })
-    }
-
-    async fn build_crossmint_signer(
-        config: &CrossmintSignerConfig,
-        signer_name: &str,
-    ) -> Result<Signer, KoraError> {
-        let api_key = get_env_var_for_signer(&config.api_key_env, signer_name)?;
-        let wallet_locator = get_env_var_for_signer(&config.wallet_locator_env, signer_name)?;
-        let signer_secret = config
-            .signer_secret_env
-            .as_ref()
-            .map(|env| get_env_var_for_signer(env, signer_name))
-            .transpose()?;
-        let keychain_config = solana_keychain::CrossmintSignerConfig {
-            api_key,
-            wallet_locator,
-            signer_secret,
-            signer: config.signer.clone(),
-            api_base_url: config.api_base_url.clone(),
-            poll_interval_ms: config.poll_interval_ms,
-            max_poll_attempts: config.max_poll_attempts,
-        };
-        Signer::from_crossmint(keychain_config).await.map_err(|e| {
-            KoraError::SigningError(format!(
-                "Failed to create Crossmint signer '{signer_name}': {}",
                 sanitize_error!(e)
             ))
         })
@@ -756,13 +708,6 @@ impl SignerConfig {
                     ("wallet_id_env", &config.wallet_id_env),
                 ],
             ),
-            SignerTypeConfig::Crossmint { config } => (
-                "Crossmint",
-                vec![
-                    ("api_key_env", &config.api_key_env),
-                    ("wallet_locator_env", &config.wallet_locator_env),
-                ],
-            ),
             SignerTypeConfig::Openfort { config } => (
                 "Openfort",
                 vec![
@@ -781,18 +726,6 @@ impl SignerConfig {
                 )));
             }
             get_env_var_for_signer(env_var, &self.name)?;
-        }
-
-        if let SignerTypeConfig::Crossmint { config } = &self.config {
-            if let Some(env) = &config.signer_secret_env {
-                if env.is_empty() {
-                    return Err(KoraError::ValidationError(format!(
-                        "Crossmint signer '{}' must specify non-empty signer_secret_env when set",
-                        self.name
-                    )));
-                }
-                get_env_var_for_signer(env, &self.name)?;
-            }
         }
         Ok(())
     }
