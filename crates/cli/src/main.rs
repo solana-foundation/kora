@@ -7,7 +7,7 @@ use kora_lib::{
     admin::token_util::initialize_atas,
     error::KoraError,
     log::LoggingFormat,
-    rpc::get_rpc_client,
+    rpc::{describe_endpoints, get_rpc_client_for_endpoints},
     rpc_server::{run_rpc_server, KoraRpc, RpcArgs},
     signer::init::init_signers,
     state::init_config,
@@ -120,7 +120,19 @@ async fn main() -> Result<(), KoraError> {
         std::process::exit(1);
     });
 
-    let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
+    let endpoints = cli.global_args.rpc_endpoints().unwrap_or_else(|e| {
+        print_error(&e);
+        std::process::exit(1);
+    });
+
+    // The logger is not up yet this early, and an operator's first question
+    // during an RPC incident is which endpoint the node is on.
+    println!("{}", describe_endpoints(&endpoints));
+
+    let rpc_client = get_rpc_client_for_endpoints(endpoints).unwrap_or_else(|e| {
+        print_error(&e.to_string());
+        std::process::exit(1);
+    });
 
     match cli.command {
         Some(Commands::Config { config_command }) => {
@@ -184,8 +196,6 @@ async fn main() -> Result<(), KoraError> {
                     print_error(&format!("Failed to initialize cache: {e}"));
                     std::process::exit(1);
                 }
-
-                let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
 
                 let kora_rpc = KoraRpc::new(rpc_client);
 

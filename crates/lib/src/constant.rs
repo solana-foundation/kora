@@ -20,6 +20,19 @@ pub const DEFAULT_RECAPTCHA_SCORE_THRESHOLD: f64 = 0.5;
 pub const DEFAULT_PROTECTED_METHODS: &[&str] =
     &["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"];
 
+// RPC client
+/// Per-endpoint request timeout. With more than one endpoint configured the worst
+/// case for a single call is this multiplied by the number of endpoints tried.
+pub const RPC_CLIENT_TIMEOUT_SECS: u64 = 90;
+/// Consecutive retryable failures before an endpoint's circuit breaker opens and
+/// it stops receiving new requests. Below this, a flaky response is tolerated.
+pub const RPC_FAILOVER_FAILURE_THRESHOLD: u32 = 3;
+/// How long an open breaker stays shut. Once it elapses, one request is admitted
+/// as a probe; if it succeeds the endpoint is serving again, and if it fails the
+/// cooldown restarts. Only one request probes at a time, so a provider that
+/// recovers in name only cannot make every concurrent caller wait it out.
+pub const RPC_FAILOVER_COOLDOWN_SECS: u64 = 30;
+
 pub const JUPITER_API_URL: &str = "https://api.jup.ag";
 pub const RECAPTCHA_VERIFY_URL: &str = "https://www.google.com/recaptcha/api/siteverify";
 pub const RECAPTCHA_TIMEOUT_SECS: u64 = 5;

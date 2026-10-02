@@ -1,6 +1,7 @@
 pub mod balance;
 pub mod handler;
 pub mod middleware;
+pub mod rpc_failover;
 
 pub use balance::BalanceTracker;
 pub use handler::{MetricsHandlerLayer, MetricsHandlerService};
