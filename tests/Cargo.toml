@@ -8,6 +8,10 @@ name = "rpc"
 path = "rpc/main.rs"
 
 [[test]]
+name = "rpc_failover"
+path = "rpc_failover/main.rs"
+
+[[test]]
 name = "tokens"
 path = "tokens/main.rs"
 
