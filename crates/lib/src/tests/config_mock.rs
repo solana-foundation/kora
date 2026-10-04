@@ -35,7 +35,7 @@ pub mod mock_state {
     pub fn setup_config_mock(config: Config) -> MutexGuard<'static, ()> {
         let lock = MOCK_MTX.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-        let mut mock_config = MOCK_CONFIG.write().unwrap();
+        let mut mock_config = MOCK_CONFIG.write().unwrap_or_else(|e| e.into_inner());
         *mock_config = Some(config);
         drop(mock_config);
 
@@ -43,7 +43,7 @@ pub mod mock_state {
     }
 
     pub fn get_config() -> Result<Config, crate::KoraError> {
-        let mock_config = MOCK_CONFIG.read().unwrap();
+        let mock_config = MOCK_CONFIG.read().unwrap_or_else(|e| e.into_inner());
         match &*mock_config {
             Some(config) => Ok(config.clone()),
             None => Err(crate::KoraError::InternalServerError(
@@ -99,6 +99,7 @@ impl ConfigMockBuilder {
                 },
                 kora: KoraConfig {
                     rate_limit: 100,
+                    global_rate_limit: None,
                     cors_allow_origins: vec![CORS_WILDCARD.to_string()],
                     max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                     enabled_methods: EnabledMethods::default(),
@@ -374,6 +375,7 @@ impl KoraConfigBuilder {
         Self {
             config: KoraConfig {
                 rate_limit: 100,
+                global_rate_limit: None,
                 cors_allow_origins: vec![CORS_WILDCARD.to_string()],
                 max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods::default(),
@@ -403,6 +405,11 @@ impl KoraConfigBuilder {
 
     pub fn with_cors_allow_origins(mut self, origins: Vec<String>) -> Self {
         self.config.cors_allow_origins = origins;
+        self
+    }
+
+    pub fn with_global_rate_limit(mut self, limit: Option<u64>) -> Self {
+        self.config.global_rate_limit = limit;
         self
     }
 

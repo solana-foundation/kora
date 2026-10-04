@@ -1,6 +1,10 @@
 [kora]
 rate_limit = 100
 
+# Optional: Global pre-auth rate limit that explicitly rejects requests with HTTP 429 
+# when the limit is exceeded. Capacity and refill rate are both set to this value.
+# global_rate_limit = 1000
+
 # Allowed CORS origins. Defaults to ["*"] (allow all).
 # Set to specific origins for production deployments.
 # cors_allow_origins = ["https://your-app.com", "https://admin.your-app.com"]

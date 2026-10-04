@@ -559,6 +559,7 @@ mod tests {
             },
             kora: KoraConfig {
                 rate_limit: 0,
+                global_rate_limit: Some(0),
                 cors_allow_origins: vec![],
                 max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods {
@@ -602,6 +603,7 @@ mod tests {
 
         assert!(!warnings.is_empty());
         assert!(warnings.iter().any(|w| w.contains("Rate limit is set to 0")));
+        assert!(warnings.iter().any(|w| w.contains("Global rate limit is set to 0")));
         assert!(warnings.iter().any(|w| w
             .contains("cors_allow_origins is empty - all cross-origin requests will be blocked")));
         assert!(warnings.iter().any(|w| w.contains("All rpc methods are disabled")));
