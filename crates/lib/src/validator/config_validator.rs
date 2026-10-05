@@ -1837,7 +1837,7 @@ mod tests {
         // blocked. Free pricing avoids the unrelated "token program required for fees" error.
         let config = ConfigMockBuilder::new()
             .with_allowed_programs(vec![])
-            .with_fee_payer_allowed_programs(ProgramsConfig::All)
+            .with_sponsor_only_programs(ProgramsConfig::All)
             .with_price_model(crate::fee::price::PriceModel::Free)
             .with_cache_enabled(false)
             .build();

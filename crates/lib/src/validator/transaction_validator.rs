@@ -29,7 +29,7 @@ pub struct TransactionValidator {
     allowed_programs: HashSet<Pubkey>,
     allow_all_programs: bool,
     sponsor_only_programs: HashSet<Pubkey>,
-    allow_all_fee_payer_programs: bool,
+    allow_all_sponsor_only_programs: bool,
     require_one_of_programs: HashSet<Pubkey>,
     max_signatures: u64,
     allowed_tokens: HashSet<Pubkey>,
@@ -69,7 +69,7 @@ impl TransactionValidator {
 
         let (allow_all_programs, allowed_programs) =
             parse_programs_config(&config.allowed_programs, "allowed_programs")?;
-        let (allow_all_fee_payer_programs, sponsor_only_programs) =
+        let (allow_all_sponsor_only_programs, sponsor_only_programs) =
             parse_programs_config(&config.sponsor_only_programs, "sponsor_only_programs")?;
 
         let require_one_of_programs = config
@@ -91,7 +91,7 @@ impl TransactionValidator {
             allowed_programs,
             allow_all_programs,
             sponsor_only_programs,
-            allow_all_fee_payer_programs,
+            allow_all_sponsor_only_programs,
             require_one_of_programs,
             max_signatures: config.max_signatures,
             _price_source: config.price_source.clone(),
@@ -297,7 +297,7 @@ impl TransactionValidator {
     /// `sponsor_only_programs` is non-empty or `"All"`). When it is not configured, validation
     /// behaves exactly as before this feature existed.
     fn participation_gate_active(&self) -> bool {
-        self.allow_all_fee_payer_programs || !self.sponsor_only_programs.is_empty()
+        self.allow_all_sponsor_only_programs || !self.sponsor_only_programs.is_empty()
     }
 
     /// A program may appear in a sponsored transaction if it is in `allowed_programs` (the fee payer
@@ -306,7 +306,7 @@ impl TransactionValidator {
     fn program_may_run(&self, program: &Pubkey) -> bool {
         self.allow_all_programs
             || self.allowed_programs.contains(program)
-            || self.allow_all_fee_payer_programs
+            || self.allow_all_sponsor_only_programs
             || self.sponsor_only_programs.contains(program)
     }
 
@@ -3767,7 +3767,7 @@ mod tests {
         let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_fee_payer_allowed_programs(ProgramsConfig::All)
+            .with_sponsor_only_programs(ProgramsConfig::All)
             .with_max_allowed_lamports(1_000_000)
             .build();
         setup_both_configs(config);
@@ -3802,7 +3802,7 @@ mod tests {
         let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_fee_payer_allowed_programs(ProgramsConfig::All)
+            .with_sponsor_only_programs(ProgramsConfig::All)
             .with_max_allowed_lamports(1_000_000)
             .build();
         setup_both_configs(config);
@@ -3915,7 +3915,7 @@ mod tests {
         let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_fee_payer_allowed_programs(ProgramsConfig::All)
+            .with_sponsor_only_programs(ProgramsConfig::All)
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(policy)
             .build();
@@ -3974,7 +3974,7 @@ mod tests {
         let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_fee_payer_allowed_programs(ProgramsConfig::All)
+            .with_sponsor_only_programs(ProgramsConfig::All)
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(policy)
             .build();

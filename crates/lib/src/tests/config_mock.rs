@@ -175,7 +175,7 @@ impl ConfigMockBuilder {
         self
     }
 
-    pub fn with_fee_payer_allowed_programs(mut self, programs: ProgramsConfig) -> Self {
+    pub fn with_sponsor_only_programs(mut self, programs: ProgramsConfig) -> Self {
         self.config.validation.sponsor_only_programs = programs;
         self
     }

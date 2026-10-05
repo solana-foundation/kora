@@ -523,7 +523,7 @@ mod tests {
         let config = ConfigMockBuilder::new()
             .with_max_allowed_lamports(1_000_000)
             .with_allowed_programs(vec!["11111111111111111111111111111111".to_string()])
-            .with_fee_payer_allowed_programs(crate::config::ProgramsConfig::Allowlist(vec![
+            .with_sponsor_only_programs(crate::config::ProgramsConfig::Allowlist(vec![
                 "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
             ]))
             .build();
