@@ -1,5 +1,11 @@
-use crate::KoraError;
-use solana_sdk::signature::Signature;
+use crate::{
+    config::Config,
+    sanitize_error,
+    state::{get_signer_pool, reserve_request_signer_by_pubkey},
+    KoraError,
+};
+use solana_keychain::SolanaSigner;
+use solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction};
 use std::{future::Future, time::Duration};
 use tokio::time::timeout;
 
@@ -80,6 +86,65 @@ where
     Err(last_error.unwrap_or_else(|| {
         KoraError::SigningError(format!("{} failed after retries", error_prefix))
     }))
+}
+
+// Reports success/failure to the signer pool so unhealthy remote signers are bypassed automatically.
+pub(crate) async fn sign_with_signer_pool(
+    config: &Config,
+    signer_pubkey: &Pubkey,
+    message_bytes: &[u8],
+    retry_operation_name: &str,
+    error_prefix: &str,
+) -> Result<Signature, KoraError> {
+    let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
+    let max_retries = config.kora.sign_max_retries;
+    let signer = reserve_request_signer_by_pubkey(signer_pubkey)?;
+    match sign_with_retry(sign_timeout, max_retries, retry_operation_name, error_prefix, || async {
+        signer
+            .sign_message(message_bytes)
+            .await
+            .map_err(|e| KoraError::SigningError(sanitize_error!(e)))
+    })
+    .await
+    {
+        Ok(sig) => {
+            match get_signer_pool() {
+                Ok(pool) => pool.record_signing_success(&signer),
+                Err(e) => log::warn!(
+                    "Could not record {retry_operation_name} success to pool: {}",
+                    sanitize_error!(e)
+                ),
+            }
+            Ok(sig)
+        }
+        Err(err) => {
+            // Reported only after retries are exhausted, so one failing request doesn't blacklist a signer.
+            match get_signer_pool() {
+                Ok(pool) => pool.record_signing_failure(&signer),
+                Err(pool_err) => log::error!(
+                    "{error_prefix} failed AND pool health tracking unavailable: {}; \
+                     signer failure will not be recorded, automatic failover is disabled",
+                    sanitize_error!(pool_err)
+                ),
+            }
+            Err(err)
+        }
+    }
+}
+
+pub(crate) fn set_signature_at(
+    transaction: &mut VersionedTransaction,
+    position: usize,
+    signature: Signature,
+) -> Result<(), KoraError> {
+    let signatures_len = transaction.signatures.len();
+    let signature_slot = transaction.signatures.get_mut(position).ok_or_else(|| {
+        KoraError::InvalidTransaction(format!(
+            "Signer position {position} is out of bounds for signatures (len={signatures_len})"
+        ))
+    })?;
+    *signature_slot = signature;
+    Ok(())
 }
 
 #[cfg(test)]

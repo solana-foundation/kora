@@ -33,13 +33,7 @@
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "prepare": "pnpm run build",
-    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.examples.json",
-    "docs": "typedoc --readme none && node scripts/add-toc.js",
-    "docs:html": "typedoc --options typedoc.html.json",
-    "docs:watch": "typedoc --watch",
-    "docs:serve": "pnpm run docs:html && npx serve docs-html",
-    "docs:api": "node scripts/generate-api-docs.js",
-    "docs:all": "pnpm run docs && pnpm run docs:api"
+    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.examples.json"
   },
   "files": [
     "dist"
@@ -83,8 +77,6 @@
     "prettier": "^3.9.4",
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.2",
-    "typedoc": "^0.28.19",
-    "typedoc-plugin-markdown": "^4.12.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.62.1"
   }

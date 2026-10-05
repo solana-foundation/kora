@@ -1,4 +1,7 @@
-use crate::rpc_server::middleware_utils::{extract_parts_and_body_bytes, get_jsonrpc_method};
+use crate::rpc_server::{
+    auth::RejectionReason,
+    middleware_utils::{extract_parts_and_body_bytes, get_jsonrpc_method},
+};
 use http::{Request, Response};
 use jsonrpsee::server::logger::Body;
 use prometheus::{CounterVec, HistogramVec, Opts};
@@ -13,6 +16,7 @@ const ERROR_STATUS: &str = "error";
 pub struct HttpMetrics {
     pub requests_total: CounterVec,
     pub request_duration_seconds: HistogramVec,
+    pub http_rejections_total: CounterVec,
 }
 
 impl HttpMetrics {
@@ -40,6 +44,16 @@ impl HttpMetrics {
             panic!("Metrics initialization failed - cannot continue")
         });
 
+        let http_rejections_total = CounterVec::new(
+            Opts::new("http_rejections_total", "Total number of rejected HTTP requests")
+                .namespace("kora"),
+            &["method", "reason"],
+        )
+        .unwrap_or_else(|e| {
+            log::error!("Failed to create http_rejections_total metric: {e:?}");
+            panic!("Metrics initialization failed - cannot continue")
+        });
+
         prometheus::register(Box::new(requests_total.clone())).unwrap_or_else(|e| {
             log::error!("Failed to register http_requests_total metric: {e:?}");
             panic!("Metrics initialization failed - cannot continue")
@@ -48,8 +62,12 @@ impl HttpMetrics {
             log::error!("Failed to register http_request_duration_seconds metric: {e:?}");
             panic!("Metrics initialization failed - cannot continue")
         });
+        prometheus::register(Box::new(http_rejections_total.clone())).unwrap_or_else(|e| {
+            log::error!("Failed to register http_rejections_total metric: {e:?}");
+            panic!("Metrics initialization failed - cannot continue")
+        });
 
-        Self { requests_total, request_duration_seconds }
+        Self { requests_total, request_duration_seconds, http_rejections_total }
     }
 
     pub fn get() -> &'static HttpMetrics {
@@ -128,6 +146,12 @@ where
                         .request_duration_seconds
                         .with_label_values(&[&method])
                         .observe(duration.as_secs_f64());
+                    if let Some(reason) = response.extensions().get::<RejectionReason>() {
+                        metrics
+                            .http_rejections_total
+                            .with_label_values(&[&method, reason.as_str()])
+                            .inc();
+                    }
                 }
                 Err(_) => {
                     metrics
@@ -139,5 +163,80 @@ where
 
             result
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rpc_server::{
+        auth::RejectionReason, recaptcha::RecaptchaLayer, recaptcha_util::RecaptchaConfig,
+    };
+    use http::{Method, StatusCode};
+    use serial_test::serial;
+    use std::{
+        convert,
+        future::Ready,
+        task::{Context, Poll},
+    };
+    use tower::{Layer, Service, ServiceExt};
+
+    #[derive(Clone)]
+    struct MockService;
+
+    impl tower::Service<Request<Body>> for MockService {
+        type Response = Response<Body>;
+        type Error = convert::Infallible;
+        type Future = Ready<Result<Self::Response, Self::Error>>;
+
+        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, _: Request<Body>) -> Self::Future {
+            std::future::ready(Ok(Response::builder().status(200).body(Body::empty()).unwrap()))
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_recaptcha_rejection_increments_http_rejections_total() {
+        let recaptcha_config = RecaptchaConfig::new(
+            "test-secret".to_string(),
+            0.5,
+            vec!["signTransaction".to_string()],
+        );
+
+        let service =
+            HttpMetricsLayer::new().layer(RecaptchaLayer::new(recaptcha_config).layer(MockService));
+        let mut service = tower::ServiceBuilder::new().service(service);
+
+        let method_name = "signTransaction";
+        let body = format!(r#"{{"jsonrpc":"2.0","method":"{}","id":1}}"#, method_name);
+
+        let counter = &HttpMetrics::get().http_rejections_total;
+        let before = counter
+            .get_metric_with_label_values(&[method_name, RejectionReason::AuthFailure.as_str()])
+            .map(|c| c.get())
+            .unwrap_or(0.0);
+
+        let request =
+            Request::builder().method(Method::POST).uri("/").body(Body::from(body)).unwrap();
+
+        let response = service.ready().await.unwrap().call(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let after = counter
+            .get_metric_with_label_values(&[method_name, RejectionReason::AuthFailure.as_str()])
+            .map(|c| c.get())
+            .unwrap_or(0.0);
+
+        assert_eq!(
+            after - before,
+            1.0,
+            "http_rejections_total{{method=\"{}\",reason=\"{}\"}} should have incremented by 1",
+            method_name,
+            RejectionReason::AuthFailure.as_str(),
+        );
     }
 }

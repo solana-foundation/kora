@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
-};
+use std::str::FromStr;
 
 use crate::{
     config::Config,
@@ -12,13 +9,11 @@ use crate::{
         interface::TokenInterface,
         spl_token::TokenProgram,
         spl_token_2022::{Token2022Mint, Token2022Program},
-        token::{AtaCreationInstructionInfo, TokenType, TokenUtil, TransferHookValidationFlow},
+        token::{TokenType, TokenUtil, TransferHookValidationFlow},
     },
     transaction::{
-        ParsedALTInstructionData, ParsedALTInstructionType,
-        ParsedBpfLoaderUpgradeableInstructionData, ParsedBpfLoaderUpgradeableInstructionType,
-        ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
-        ParsedSystemInstructionType, VersionedTransactionOps, VersionedTransactionResolved,
+        ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionOps,
+        VersionedTransactionResolved,
     },
 };
 use solana_sdk::instruction::Instruction;
@@ -34,9 +29,10 @@ use solana_compute_budget::compute_budget_limits::{
 };
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::VersionedMessage;
-use solana_program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
-use spl_token_2022_interface::{extension::ExtensionType, state::Account as Token2022Account};
+
+mod outflow;
+
 #[derive(Debug, Clone)]
 pub struct TotalFeeCalculation {
     pub total_fee_lamports: u64,
@@ -237,26 +233,16 @@ impl FeeConfigUtil {
             0
         };
 
-        let total_fee_lamports = (base_fee as i128)
-            .checked_add(kora_signature_fee as i128)
-            .and_then(|sum| sum.checked_add(fee_payer_outflow))
-            .and_then(|sum| sum.checked_add(fee_for_payment_instruction as i128))
-            .and_then(|sum| sum.checked_add(transfer_fee_config_amount as i128))
-            .map(|sum| sum.max(0) as u64)
-            .ok_or_else(|| {
-                log::error!("Fee calculation overflow: base_fee={}, kora_signature_fee={}, fee_payer_outflow={}, payment_instruction_fee={}, transfer_fee_amount={}",
-                    base_fee, kora_signature_fee, fee_payer_outflow, fee_for_payment_instruction, transfer_fee_config_amount);
-                KoraError::ValidationError("Fee calculation overflow".to_string())
-            })?;
-
-        Ok(TotalFeeCalculation {
-            total_fee_lamports,
+        let mut fee_calculation = TotalFeeCalculation::new(
+            0,
             base_fee,
             kora_signature_fee,
             fee_payer_outflow,
-            payment_instruction_fee: fee_for_payment_instruction,
-            transfer_fee_amount: transfer_fee_config_amount,
-        })
+            fee_for_payment_instruction,
+            transfer_fee_config_amount,
+        );
+        fee_calculation.total_fee_lamports = fee_calculation.get_total_fee_lamports()?;
+        Ok(fee_calculation)
     }
 
     /// Main entry point for fee calculation with Kora's price model applied
@@ -299,14 +285,10 @@ impl FeeConfigUtil {
                     )
                     .await?;
 
-                    Ok(TotalFeeCalculation::new(
-                        fixed_fee_lamports,
-                        fee_calculation.base_fee,
-                        fee_calculation.kora_signature_fee,
-                        fee_calculation.fee_payer_outflow,
-                        fee_calculation.payment_instruction_fee,
-                        fee_calculation.transfer_fee_amount,
-                    ))
+                    Ok(TotalFeeCalculation {
+                        total_fee_lamports: fixed_fee_lamports,
+                        ..fee_calculation
+                    })
                 } else {
                     Ok(TotalFeeCalculation::new_fixed(fixed_fee_lamports))
                 }
@@ -328,14 +310,7 @@ impl FeeConfigUtil {
                     .get_required_lamports_with_margin(fee_calculation.total_fee_lamports)
                     .await?;
 
-                Ok(TotalFeeCalculation::new(
-                    total_fee_lamports,
-                    fee_calculation.base_fee,
-                    fee_calculation.kora_signature_fee,
-                    fee_calculation.fee_payer_outflow,
-                    fee_calculation.payment_instruction_fee,
-                    fee_calculation.transfer_fee_amount,
-                ))
+                Ok(TotalFeeCalculation { total_fee_lamports, ..fee_calculation })
             }
         }
     }
@@ -373,379 +348,6 @@ impl FeeConfigUtil {
             Ok(None)
         }
     }
-
-    async fn estimate_ata_account_len(
-        ata_creation: &AtaCreationInstructionInfo,
-        rpc_client: &RpcClient,
-        config: &Config,
-        token2022_account_len_cache: &mut HashMap<Pubkey, usize>,
-    ) -> Result<usize, KoraError> {
-        if ata_creation.token_program == spl_token_interface::id() {
-            return Ok(spl_token_interface::state::Account::LEN);
-        }
-
-        if ata_creation.token_program == spl_token_2022_interface::id() {
-            if let Some(account_len) = token2022_account_len_cache.get(&ata_creation.mint) {
-                return Ok(*account_len);
-            }
-
-            let mint_state = TokenUtil::get_mint(config, rpc_client, &ata_creation.mint).await?;
-            let account_len =
-                if let Some(token2022_mint) = mint_state.as_any().downcast_ref::<Token2022Mint>() {
-                    let mut required_account_extensions =
-                        ExtensionType::get_required_init_account_extensions(
-                            &token2022_mint.extensions_types,
-                        );
-                    if !required_account_extensions.contains(&ExtensionType::ImmutableOwner) {
-                        required_account_extensions.push(ExtensionType::ImmutableOwner);
-                    }
-
-                    ExtensionType::try_calculate_account_len::<Token2022Account>(
-                        &required_account_extensions,
-                    )
-                    .map_err(|e| {
-                        KoraError::ValidationError(format!(
-                            "Failed to estimate Token2022 ATA account size for mint {}: {}",
-                            ata_creation.mint, e
-                        ))
-                    })?
-                } else {
-                    spl_token_interface::state::Account::LEN
-                };
-
-            token2022_account_len_cache.insert(ata_creation.mint, account_len);
-            return Ok(account_len);
-        }
-
-        Err(KoraError::ValidationError(format!(
-            "Unsupported token program {} for ATA {}; cannot safely estimate rent",
-            ata_creation.token_program, ata_creation.ata_address
-        )))
-    }
-
-    async fn calculate_ata_creation_outflow(
-        fee_payer_pubkey: &Pubkey,
-        transaction: &mut VersionedTransactionResolved,
-        rpc_client: &RpcClient,
-        config: &Config,
-    ) -> Result<u64, KoraError> {
-        let ata_creations = TokenUtil::find_fee_payer_ata_creations(
-            &transaction.all_instructions,
-            fee_payer_pubkey,
-        );
-        if ata_creations.is_empty() {
-            return Ok(0);
-        }
-
-        let system_created_accounts: HashSet<Pubkey> =
-            transaction
-                .get_or_parse_system_instructions()?
-                .get(&ParsedSystemInstructionType::SystemCreateAccount)
-                .unwrap_or(&vec![])
-                .iter()
-                .filter_map(|instruction| match instruction {
-                    ParsedSystemInstructionData::SystemCreateAccount {
-                        payer, new_account, ..
-                    } if *payer == *fee_payer_pubkey => Some(*new_account),
-                    _ => None,
-                })
-                .collect();
-        let mut rent_cache_by_account_len: HashMap<usize, u64> = HashMap::new();
-        let mut token2022_account_len_cache: HashMap<Pubkey, usize> = HashMap::new();
-        let mut seen_ata_addresses = HashSet::new();
-        let mut total = 0u64;
-
-        for ata_creation in ata_creations {
-            // Simulation may surface inner SystemCreateAccount CPI; skip to avoid double-counting
-            if system_created_accounts.contains(&ata_creation.ata_address) {
-                continue;
-            }
-            if !seen_ata_addresses.insert(ata_creation.ata_address) {
-                continue;
-            }
-
-            let account_len = Self::estimate_ata_account_len(
-                &ata_creation,
-                rpc_client,
-                config,
-                &mut token2022_account_len_cache,
-            )
-            .await?;
-
-            let rent_lamports = if let Some(rent) = rent_cache_by_account_len.get(&account_len) {
-                *rent
-            } else {
-                let rent = rpc_client
-                    .get_minimum_balance_for_rent_exemption(account_len)
-                    .await
-                    .map_err(|e| {
-                        KoraError::RpcError(format!(
-                            "Failed to fetch rent exemption for account length {}: {}",
-                            account_len, e
-                        ))
-                    })?;
-                rent_cache_by_account_len.insert(account_len, rent);
-                rent
-            };
-
-            total = total.checked_add(rent_lamports).ok_or_else(|| {
-                log::error!(
-                    "Outflow calculation overflow in ATA creation accounting: total={}, rent={}",
-                    total,
-                    rent_lamports
-                );
-                KoraError::ValidationError("Outflow calculation overflow".to_string())
-            })?;
-        }
-
-        Ok(total)
-    }
-
-    /// Calculate the total outflow (SOL + SPL token value) that could occur for a fee payer account in a transaction.
-    /// This includes SOL transfers, account creation, SPL token transfers, and other operations that could drain the fee payer's balance.
-    pub async fn calculate_fee_payer_outflow(
-        fee_payer_pubkey: &Pubkey,
-        transaction: &mut VersionedTransactionResolved,
-        rpc_client: &RpcClient,
-        config: &Config,
-    ) -> Result<i128, KoraError> {
-        // Use i128 to correctly handle net outflow when inflows are processed
-        // before outflows. With u64, saturating_sub on 0 would silently discard inflows.
-        let mut total: i128 = 0;
-
-        let parsed_system_instructions = transaction.get_or_parse_system_instructions()?;
-
-        for instruction in parsed_system_instructions
-            .get(&ParsedSystemInstructionType::SystemTransfer)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedSystemInstructionData::SystemTransfer { lamports, sender, receiver } =
-                instruction
-            {
-                if *sender == *fee_payer_pubkey {
-                    total = total.checked_add(*lamports as i128).ok_or_else(|| {
-                        log::error!("Outflow calculation overflow in SystemTransfer");
-                        KoraError::ValidationError("Outflow calculation overflow".to_string())
-                    })?;
-                }
-                if *receiver == *fee_payer_pubkey {
-                    total = total.checked_sub(*lamports as i128).ok_or_else(|| {
-                        log::error!("Inflow calculation overflow in SystemTransfer");
-                        KoraError::ValidationError("Inflow calculation overflow".to_string())
-                    })?;
-                }
-            }
-        }
-
-        for instruction in parsed_system_instructions
-            .get(&ParsedSystemInstructionType::SystemCreateAccount)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedSystemInstructionData::SystemCreateAccount { lamports, payer, .. } =
-                instruction
-            {
-                if *payer == *fee_payer_pubkey {
-                    total = total.checked_add(*lamports as i128).ok_or_else(|| {
-                        log::error!("Outflow calculation overflow in SystemCreateAccount");
-                        KoraError::ValidationError("Outflow calculation overflow".to_string())
-                    })?;
-                }
-            }
-        }
-
-        for instruction in parsed_system_instructions
-            .get(&ParsedSystemInstructionType::SystemWithdrawNonceAccount)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedSystemInstructionData::SystemWithdrawNonceAccount {
-                lamports,
-                nonce_authority,
-                recipient,
-            } = instruction
-            {
-                if *recipient == *fee_payer_pubkey && *nonce_authority == *fee_payer_pubkey {
-                    // Self-withdrawals only move lamports between fee-payer-controlled accounts.
-                    // They should not reduce unrelated outflow elsewhere in the transaction.
-                    continue;
-                } else if *recipient == *fee_payer_pubkey {
-                    // Lamports arriving from a nonce account not controlled by the fee payer are
-                    // a real inflow that reduces net outflow.
-                    total = total.checked_sub(*lamports as i128).ok_or_else(|| {
-                        log::error!("Inflow calculation overflow in SystemWithdrawNonceAccount");
-                        KoraError::ValidationError("Inflow calculation overflow".to_string())
-                    })?;
-                } else if *nonce_authority == *fee_payer_pubkey {
-                    // Fee payer authorized a withdrawal to a third party. The lamports leave a
-                    // nonce account the fee payer controls, so count them as outflow so that
-                    // max_allowed_lamports enforcement is not bypassed.
-                    total = total.checked_add(*lamports as i128).ok_or_else(|| {
-                        log::error!("Outflow calculation overflow in SystemWithdrawNonceAccount");
-                        KoraError::ValidationError("Outflow calculation overflow".to_string())
-                    })?;
-                }
-            }
-        }
-
-        let parsed_alt_instructions = transaction.get_or_parse_alt_instructions()?;
-        for instruction in parsed_alt_instructions
-            .get(&ParsedALTInstructionType::AltCloseLookupTable)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedALTInstructionData::AltCloseLookupTable {
-                lookup_table_account,
-                lookup_table_authority,
-                recipient,
-            } = instruction
-            {
-                let is_fee_payer_authority = *lookup_table_authority == *fee_payer_pubkey;
-                let is_fee_payer_recipient = *recipient == *fee_payer_pubkey;
-
-                if !is_fee_payer_authority && !is_fee_payer_recipient {
-                    continue;
-                }
-
-                if is_fee_payer_authority && is_fee_payer_recipient {
-                    continue;
-                }
-
-                let lamports = rpc_client.get_account(lookup_table_account).await?.lamports;
-
-                if is_fee_payer_recipient {
-                    total = total.checked_sub(lamports as i128).ok_or_else(|| {
-                        log::error!("Inflow calculation overflow in AltCloseLookupTable");
-                        KoraError::ValidationError("Inflow calculation overflow".to_string())
-                    })?;
-                } else {
-                    total = total.checked_add(lamports as i128).ok_or_else(|| {
-                        log::error!("Outflow calculation overflow in AltCloseLookupTable");
-                        KoraError::ValidationError("Outflow calculation overflow".to_string())
-                    })?;
-                }
-            }
-        }
-
-        // Loader-v3 ExtendProgram/ExtendProgramChecked grow a ProgramData account and top up its
-        // rent from the payer. When the fee payer funds the extension, count that rent so a large
-        // extension cannot bypass max_allowed_lamports.
-        let mut fee_payer_extension_byte_sizes: Vec<u32> = Vec::new();
-        {
-            let bpf_v3_instructions =
-                transaction.get_or_parse_bpf_loader_upgradeable_instructions()?;
-            for instruction in [
-                ParsedBpfLoaderUpgradeableInstructionType::ExtendProgram,
-                ParsedBpfLoaderUpgradeableInstructionType::ExtendProgramChecked,
-            ]
-            .iter()
-            .flat_map(|ty| bpf_v3_instructions.get(ty).map(Vec::as_slice).unwrap_or(&[]))
-            {
-                let (payer, additional_bytes) = match instruction {
-                    ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram {
-                        payer,
-                        additional_bytes,
-                        ..
-                    }
-                    | ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
-                        payer,
-                        additional_bytes,
-                        ..
-                    } => (payer, *additional_bytes),
-                    _ => continue,
-                };
-
-                if *payer == Some(*fee_payer_pubkey) {
-                    fee_payer_extension_byte_sizes.push(additional_bytes);
-                }
-            }
-        }
-
-        // Conservatively charge the rent-exempt minimum for the added bytes per extension
-        // (matching the ATA-creation accounting below).
-        for additional_bytes in fee_payer_extension_byte_sizes {
-            let extension_rent = rpc_client
-                .get_minimum_balance_for_rent_exemption(additional_bytes as usize)
-                .await?;
-            total = total.checked_add(extension_rent as i128).ok_or_else(|| {
-                log::error!("Outflow calculation overflow in ExtendProgram rent");
-                KoraError::ValidationError("Outflow calculation overflow".to_string())
-            })?;
-        }
-
-        // ATA Create/CreateIdempotent can be no-ops during simulation depending on prestate.
-        // Charge conservative rent for fee-payer-funded ATA creations whenever inner SystemCreateAccount
-        // did not surface, preventing stale-state rent drain windows.
-        let ata_outflow =
-            Self::calculate_ata_creation_outflow(fee_payer_pubkey, transaction, rpc_client, config)
-                .await?;
-        total = total.checked_add(ata_outflow as i128).ok_or_else(|| {
-            log::error!(
-                "Outflow calculation overflow in ATA accounting: sol_total={}, ata_outflow={}",
-                total,
-                ata_outflow
-            );
-            KoraError::ValidationError("Outflow calculation overflow".to_string())
-        })?;
-
-        let spl_instructions = transaction.get_or_parse_spl_instructions()?;
-        let empty_vec = vec![];
-        let spl_transfers =
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransfer).unwrap_or(&empty_vec);
-
-        if !spl_transfers.is_empty() {
-            let spl_outflow = TokenUtil::calculate_spl_transfers_value_in_lamports(
-                spl_transfers,
-                fee_payer_pubkey,
-                rpc_client,
-                config,
-            )
-            .await?;
-
-            total = total.checked_add(spl_outflow as i128).ok_or_else(|| {
-                log::error!("Fee payer outflow overflow: sol={}, spl={}", total, spl_outflow);
-                KoraError::ValidationError("Fee payer outflow calculation overflow".to_string())
-            })?;
-        }
-
-        // A fee-payer-authorized close to a third party moves the closed account's rent out.
-        let close_accounts = spl_instructions
-            .get(&ParsedSPLInstructionType::SplTokenCloseAccount)
-            .unwrap_or(&empty_vec);
-        for instruction in close_accounts {
-            if let ParsedSPLInstructionData::SplTokenCloseAccount {
-                owner,
-                account,
-                destination,
-                ..
-            } = instruction
-            {
-                let is_fee_payer_authority = *owner == *fee_payer_pubkey;
-                let is_fee_payer_recipient = *destination == *fee_payer_pubkey;
-
-                if !is_fee_payer_authority && !is_fee_payer_recipient {
-                    continue;
-                }
-
-                if is_fee_payer_authority && is_fee_payer_recipient {
-                    continue;
-                }
-
-                let lamports = rpc_client.get_account(account).await?.lamports;
-
-                if is_fee_payer_recipient {
-                    total = total.checked_sub(lamports as i128).ok_or_else(|| {
-                        log::error!("Inflow calculation overflow in SplTokenCloseAccount");
-                        KoraError::ValidationError("Inflow calculation overflow".to_string())
-                    })?;
-                } else {
-                    total = total.checked_add(lamports as i128).ok_or_else(|| {
-                        log::error!("Outflow calculation overflow in SplTokenCloseAccount");
-                        KoraError::ValidationError("Outflow calculation overflow".to_string())
-                    })?;
-                }
-            }
-        }
-
-        Ok(total)
-    }
 }
 
 pub struct TransactionFeeUtil {}
@@ -780,19 +382,7 @@ impl TransactionFeeUtil {
         rpc_client: &RpcClient,
         resolved_transaction: &VersionedTransactionResolved,
     ) -> Result<u64, KoraError> {
-        let message = &resolved_transaction.transaction.message;
-
-        match message {
-            VersionedMessage::Legacy(message) => {
-                // Legacy transactions don't have lookup tables, use as-is
-                rpc_client.get_fee_for_message(message).await
-            }
-            VersionedMessage::V0(v0_message) => rpc_client.get_fee_for_message(v0_message).await,
-            VersionedMessage::V1(v1_message) => {
-                rpc_client.get_fee_for_message(&V1FeeMessage(v1_message)).await
-            }
-        }
-        .map_err(|e| KoraError::RpcError(e.to_string()))
+        Self::get_estimate_fee(rpc_client, &resolved_transaction.transaction.message).await
     }
 
     /// Priority fee in lamports the transaction requests: the config field for V1,
@@ -897,6 +487,7 @@ mod tests {
         program::ID as SYSTEM_PROGRAM_ID,
     };
     use spl_associated_token_account_interface::address::get_associated_token_address;
+    use spl_token_2022_interface::extension::ExtensionType;
 
     fn create_token2022_transfer_checked_resolved_transaction(
         owner: &Pubkey,

@@ -10,13 +10,16 @@ Commands are in the `justfile`. Config schema is `crates/lib/src/config.rs`. Rea
 
 ## Layout
 
-Two files are a quarter of the crate, and in both the logic sits above a very large inline test
-module. Read the logic range, not the whole file:
+`validator/transaction_validator.rs` is ~6500 lines, and its logic sits above a very large inline
+test module starting at ~500. Read the logic range, not the whole file. The fee-payer policy checks
+it dispatches to live beside it in `validator/transaction_validator/`, one file per program
+(`system.rs`, `spl_token.rs`, `token_2022.rs`, `alt.rs`, `loader_v4.rs`,
+`bpf_loader_upgradeable.rs`), each a list of `deny_fee_payer!` calls (`validator/macros.rs`).
 
-| File | Lines | `mod tests` starts |
-|------|-------|--------------------|
-| `transaction/instruction_util.rs` | ~7300 | ~3870 |
-| `validator/transaction_validator.rs` | ~7200 | ~1050 |
+Instruction parsing lives in `transaction/instruction_util/`, one file per program (`system.rs`,
+`spl_token.rs`, `alt.rs`, `loader_v4.rs`, `bpf_loader_upgradeable.rs`), plus `reconstruct.rs`,
+which rebuilds raw instructions from the jsonParsed inner instructions simulation returns. Its
+tests are in `tests.rs`.
 
 Fee-payer-policy drain-safety property tests are the exception to that inline pattern: they are
 split one file per gated program under
@@ -33,18 +36,18 @@ uncovered. Run them with `cargo test -p kora-lib --lib fee_payer_policy_props`.
 assertion mutates the message, so it can only be appended on paths where the client re-signs
 afterwards: `signTransaction` and `signBundle`.
 
-`config_validator.rs` warns when lighthouse is enabled alongside those methods. It is a warning,
-not an error; the node still starts unprotected.
+`validator/config_validator/transactions.rs` warns when lighthouse is enabled alongside those
+methods. It is a warning, not an error; the node still starts unprotected.
 
 ### Two drain guards are not flag-gated
 
-Do not go looking for a `fee_payer_policy` flag for these. They are unconditional in
-`validator/transaction_validator.rs`:
+Do not go looking for a `fee_payer_policy` flag for these. They are `deny_fee_payer!` calls with no
+`unless` clause:
 
-- BPF Loader Upgradeable `Close`: a fee-payer authority paired with a foreign recipient is always
-  rejected.
-- Loader v4 `SetProgramLength`: when the fee payer is the authority, the recipient must also be the
-  fee payer.
+- BPF Loader Upgradeable `Close` (`transaction_validator/bpf_loader_upgradeable.rs`): a fee-payer
+  authority paired with a foreign recipient is always rejected.
+- Loader v4 `SetProgramLength` (`transaction_validator/loader_v4.rs`): when the fee payer is the
+  authority, the recipient must also be the fee payer.
 
 ### Fee payer policy must fail closed
 

@@ -114,6 +114,11 @@ async fn test_sign_transaction_with_lighthouse_legacy() {
         original_ix_count + 1,
         "Expected one additional instruction (lighthouse assertion)"
     );
+    assert_eq!(
+        response["lighthouse_assertion_added"].as_bool(),
+        Some(true),
+        "The response must report that the assertion was appended"
+    );
 
     assert!(
         verify_lighthouse_assertion_added(&signed_tx),
@@ -314,6 +319,11 @@ async fn test_lighthouse_end_to_end_with_client_resign() {
         signed_tx.message.instructions().len(),
         original_ix_count + 1,
         "Expected one additional instruction (lighthouse assertion)"
+    );
+    assert_eq!(
+        response["lighthouse_assertion_added"].as_bool(),
+        Some(true),
+        "The response must report that the assertion was appended"
     );
     assert!(
         verify_lighthouse_assertion_added(&signed_tx),

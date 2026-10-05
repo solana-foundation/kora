@@ -617,9 +617,14 @@
         "description": "Response payload containing the signed transaction.",
         "required": [
           "signed_transaction",
-          "signer_pubkey"
+          "signer_pubkey",
+          "lighthouse_assertion_added"
         ],
         "properties": {
+          "lighthouse_assertion_added": {
+            "type": "boolean",
+            "description": "Whether a Lighthouse fee payer assertion was appended to the message before signing.\nWhen true, the returned message differs from the request and any client signature\ntaken over the original message is invalid; sign the returned transaction instead."
+          },
           "signed_transaction": {
             "type": "string",
             "description": "Base64-encoded transaction signed by the Kora fee payer"

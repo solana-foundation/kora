@@ -3,7 +3,7 @@ import solanaConfig from '@solana/eslint-config-solana';
 export default [
     ...solanaConfig,
     {
-        ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'docs/**', 'docs-html/**'],
+        ignores: ['dist/**', 'node_modules/**', 'coverage/**'],
     },
     {
         files: ['test/**/*.ts'],
