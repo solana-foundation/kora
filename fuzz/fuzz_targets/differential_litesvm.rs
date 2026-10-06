@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::HashMap, sync::LazyLock};
 use arbitrary::Arbitrary;
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use kora_fuzz::scenario::{Key, Op, Scenario, TokenOp, TokenProgram, FEE_PAYER, POOL};
+use kora_fuzz::scenario::{Key, Scenario, TokenProgram, FEE_PAYER, POOL};
 use kora_lib::{
     config::FeePayerPolicy, transaction::VersionedTransactionResolved,
     validator::transaction_validator::TransactionValidator,
@@ -30,7 +30,7 @@ use solana_program_pack::Pack;
 use solana_sdk::{
     account::{Account, ReadableAccount},
     hash::Hash,
-    instruction::Instruction,
+    instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
 };
 use spl_token_2022_interface::{
@@ -46,6 +46,8 @@ const MINT_DECIMALS: u8 = 6;
 const LAMPORTS_PER_SIGNATURE: u64 = 5_000;
 const COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 const LOADED_ACCOUNTS_DATA_SIZE_LIMIT: u32 = 64 * 1024 * 1024;
+const FREEZE_ACCOUNT_TAG: u8 = 10;
+const BATCH_TAG: u8 = 255;
 
 static RUNTIME: LazyLock<Runtime> =
     LazyLock::new(|| Builder::new_current_thread().enable_all().build().unwrap());
@@ -322,16 +324,37 @@ fn authority_violation(
     }
 }
 
-fn fee_payer_signed_freeze(built: &[(&Op, Instruction)], target: Pubkey) -> bool {
-    let signed = |op: &TokenOp| {
-        matches!(op, TokenOp::FreezeAccount { account, authority, signers, .. }
-            if account.pubkey() == target
-                && (authority.is_fee_payer() || signers.contains_fee_payer()))
-    };
-    built.iter().any(|(op, _)| match op {
-        Op::Token(_, op) => signed(op),
-        Op::SplBatch(ops) => Op::batch_ops(ops).iter().any(signed),
+fn signs_freeze(accounts: &[AccountMeta], data: &[u8], target: Pubkey) -> bool {
+    match data.split_first() {
+        Some((&FREEZE_ACCOUNT_TAG, _)) => {
+            accounts.first().is_some_and(|meta| meta.pubkey == target)
+                && accounts.iter().skip(2).any(|meta| meta.pubkey == FEE_PAYER)
+        }
+        Some((&BATCH_TAG, mut rest)) => {
+            let mut accounts = accounts;
+            while let [count, len, tail @ ..] = rest {
+                let (count, len) = (usize::from(*count), usize::from(*len));
+                if accounts.len() < count || tail.len() < len {
+                    return false;
+                }
+                let (inner_accounts, next_accounts) = accounts.split_at(count);
+                let (inner_data, next_data) = tail.split_at(len);
+                if signs_freeze(inner_accounts, inner_data, target) {
+                    return true;
+                }
+                accounts = next_accounts;
+                rest = next_data;
+            }
+            false
+        }
         _ => false,
+    }
+}
+
+fn fee_payer_signed_freeze(instructions: &[Instruction], target: Pubkey) -> bool {
+    instructions.iter().any(|ix| {
+        (ix.program_id == spl_token_interface::ID || ix.program_id == spl_token_2022_interface::ID)
+            && signs_freeze(&ix.accounts, &ix.data, target)
     })
 }
 
@@ -340,7 +363,7 @@ fn freeze_violation(
     pubkey: Pubkey,
     pre: &Account,
     post: &Account,
-    built: &[(&Op, Instruction)],
+    instructions: &[Instruction],
     policy: &FeePayerPolicy,
 ) -> Option<&'static str> {
     let Seeded::TokenAccount { program, .. } = kind else {
@@ -350,7 +373,7 @@ fn freeze_violation(
     let after: TokenAccount = unpack(program, post)?;
     (before.state != AccountState::Frozen
         && after.state == AccountState::Frozen
-        && fee_payer_signed_freeze(built, pubkey)
+        && fee_payer_signed_freeze(instructions, pubkey)
         && !token_flags(policy, program).freeze_account)
         .then_some("token account frozen by fee payer freeze authority")
 }
@@ -370,8 +393,8 @@ fn fee_payer_violation(post: &Account, policy: &FeePayerPolicy) -> Option<&'stat
 
 fuzz_target!(|input: Input| {
     let scenario = &input.scenario;
-    let built = scenario.built_ops();
-    let instructions: Vec<Instruction> = built.iter().map(|(_, ix)| ix.clone()).collect();
+    let instructions: Vec<Instruction> =
+        scenario.built_ops().into_iter().map(|(_, ix)| ix).collect();
     if instructions.is_empty() {
         return;
     }
@@ -439,7 +462,7 @@ fuzz_target!(|input: Input| {
                 panic!("validator accepted a transaction where `{rule}`");
             }
         } else if let Some(rule) = authority_violation(*kind, pre, after, policy)
-            .or_else(|| freeze_violation(*kind, *pubkey, pre, after, &built, policy))
+            .or_else(|| freeze_violation(*kind, *pubkey, pre, after, &instructions, policy))
         {
             panic!("validator accepted a transaction where `{rule}`");
         }
