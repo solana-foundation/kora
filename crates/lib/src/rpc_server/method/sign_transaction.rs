@@ -113,6 +113,7 @@ mod tests {
     use solana_compute_budget_interface::ComputeBudgetInstruction;
     use solana_message::{Message, VersionedMessage};
     use solana_sdk::pubkey::Pubkey;
+    use solana_transaction::versioned::TransactionVersion;
     use std::str::FromStr;
 
     fn create_compute_budget_only_encoded_transaction() -> String {
@@ -198,5 +199,30 @@ mod tests {
         let pool = get_signer_pool().unwrap();
         assert!(!pool.probe_in_flight(&target_pubkey).unwrap());
         assert!(pool.get_signer_by_pubkey(&target_pubkey.to_string()).is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_sign_transaction_rejects_disallowed_transaction_version() {
+        let _m = ConfigMockBuilder::new()
+            .with_allowed_transaction_versions(vec![TransactionVersion::Number(0)])
+            .build_and_setup();
+        let _ = setup_or_get_test_signer();
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().with_simulation().build());
+
+        let request = SignTransactionRequest {
+            transaction: create_mock_encoded_transaction(),
+            signer_key: None,
+            sig_verify: false,
+            user_id: None,
+        };
+
+        let result = sign_transaction(&rpc_client, request).await;
+
+        assert_eq!(
+            result.unwrap_err(),
+            KoraError::InvalidTransaction("Transaction version is not allowed".to_string())
+        );
     }
 }

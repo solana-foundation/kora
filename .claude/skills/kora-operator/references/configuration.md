@@ -183,6 +183,7 @@ max_allowed_lamports = 1000000     # Max transaction value in lamports
 max_signatures = 10                # Max signatures per transaction
 price_source = "Mock"              # "Mock" or "Jupiter" (requires JUPITER_API_KEY)
 allow_durable_transactions = false # Allow durable nonce transactions (security risk!)
+# allowed_transaction_versions = ["legacy", 0, 1] # Accepted transaction versions (default: all)
 
 # Program allowlist (by public key)
 allowed_programs = [
@@ -207,6 +208,8 @@ disallowed_accounts = []
 - `"Jupiter"`: Live Jupiter API prices (production). Requires `JUPITER_API_KEY` env var.
 
 **`allow_durable_transactions`**: Allows nonce-based transactions. Security risk: transactions can be replayed after nonce advance.
+
+**`allowed_transaction_versions`**: Transaction message versions the node accepts, `"legacy"` (a string), `0` and `1` (integers). Defaults to all three. Transactions of any other version fail transaction validation on the signing, sending and bundle methods. Bundle transactions left out of `sign_only_indices` are not validated, so their version is not checked either. An empty list, or a number other than 0 or 1, fails config validation.
 
 ---
 

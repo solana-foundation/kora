@@ -11,6 +11,7 @@ use crate::{
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
+use solana_transaction::versioned::TransactionVersion;
 use std::collections::HashSet;
 
 use crate::fee::price::PriceModel;
@@ -34,6 +35,7 @@ pub struct TransactionValidator {
     disallowed_accounts: HashSet<Pubkey>,
     fee_payer_policy: FeePayerPolicy,
     allow_durable_transactions: bool,
+    allowed_transaction_versions: Vec<TransactionVersion>,
 }
 
 impl TransactionValidator {
@@ -57,6 +59,7 @@ impl TransactionValidator {
             disallowed_accounts: parse_pubkey_set(&config.disallowed_accounts)?,
             fee_payer_policy: config.fee_payer_policy.clone(),
             allow_durable_transactions: config.allow_durable_transactions,
+            allowed_transaction_versions: config.allowed_transaction_versions.clone(),
         })
     }
 
@@ -86,6 +89,8 @@ impl TransactionValidator {
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
     ) -> Result<(), KoraError> {
+        self.validate_transaction_version(&transaction_resolved.transaction)?;
+
         if transaction_resolved.all_instructions.is_empty() {
             return Err(KoraError::InvalidTransaction(
                 "Transaction contains no instructions".to_string(),
@@ -184,6 +189,17 @@ impl TransactionValidator {
             )));
         }
         Ok(())
+    }
+
+    pub fn validate_transaction_version(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<(), KoraError> {
+        if self.allowed_transaction_versions.contains(&transaction.version()) {
+            return Ok(());
+        }
+
+        Err(KoraError::InvalidTransaction("Transaction version is not allowed".to_string()))
     }
 
     fn validate_signatures(&self, transaction: &VersionedTransaction) -> Result<(), KoraError> {
@@ -6458,6 +6474,72 @@ mod tests {
         assert!(
             result.is_ok(),
             "allow_update_extension_authority opt-in should allow group authority use: {result:?}"
+        );
+    }
+
+    fn transaction_of_each_version() -> Vec<VersionedTransaction> {
+        let fee_payer = Pubkey::new_unique();
+        [
+            create_legacy_message(&fee_payer, &[transfer(&fee_payer, &Pubkey::new_unique(), 1)]),
+            create_v0_message_with_alt_loaded_program(&fee_payer, vec![]),
+            create_v1_message(&fee_payer, v1::TransactionConfig::empty()),
+        ]
+        .into_iter()
+        .map(TransactionUtil::new_unsigned_versioned_transaction)
+        .collect()
+    }
+
+    fn validator_allowing(versions: Vec<TransactionVersion>) -> (Config, TransactionValidator) {
+        let config = ConfigMockBuilder::new()
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_allowed_transaction_versions(versions)
+            .build();
+        let validator = TransactionValidator::new(&config, Pubkey::new_unique()).unwrap();
+        (config, validator)
+    }
+
+    #[test]
+    fn test_validate_transaction_version_accepts_only_listed_version() {
+        let transactions = transaction_of_each_version();
+
+        for (allowed_index, allowed) in transactions.iter().enumerate() {
+            let (_, validator) = validator_allowing(vec![allowed.version()]);
+
+            for (candidate_index, candidate) in transactions.iter().enumerate() {
+                let result = validator.validate_transaction_version(candidate);
+
+                if candidate_index == allowed_index {
+                    assert!(
+                        result.is_ok(),
+                        "{candidate_index} should pass when listed: {result:?}"
+                    );
+                } else {
+                    assert_eq!(
+                        result.unwrap_err(),
+                        KoraError::InvalidTransaction(
+                            "Transaction version is not allowed".to_string()
+                        )
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_validate_transaction_rejects_disallowed_version() {
+        let (config, validator) = validator_allowing(vec![TransactionVersion::Number(0)]);
+        let rpc_client = RpcMockBuilder::new().build();
+        let fee_payer = Pubkey::new_unique();
+        let message = VersionedMessage::Legacy(Message::new(
+            &[transfer(&fee_payer, &Pubkey::new_unique(), 1)],
+            Some(&fee_payer),
+        ));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        assert_eq!(
+            validator.validate_transaction(&config, &mut transaction, &rpc_client).await,
+            Err(KoraError::InvalidTransaction("Transaction version is not allowed".to_string()))
         );
     }
 }

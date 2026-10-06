@@ -1,9 +1,11 @@
+use solana_transaction::versioned::TransactionVersion;
+
 use crate::{
     bundle::{constant::JITO_MOCK_BLOCK_ENGINE_URL, JitoConfig},
     config::{
-        AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods,
-        FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, LighthouseConfig, MetricsConfig,
-        NonceInstructionPolicy, PluginsConfig, ProgramsConfig, SplTokenConfig,
+        default_allowed_transaction_versions, AuthConfig, BundleConfig, CacheConfig, Config,
+        EnabledMethods, FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, LighthouseConfig,
+        MetricsConfig, NonceInstructionPolicy, PluginsConfig, ProgramsConfig, SplTokenConfig,
         SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
         Token2022InstructionPolicy, ValidationConfig, CORS_WILDCARD,
     },
@@ -92,6 +94,7 @@ impl ConfigMockBuilder {
                     price: PriceConfig::default(),
                     token_2022: Token2022Config::default(),
                     allow_durable_transactions: false,
+                    allowed_transaction_versions: default_allowed_transaction_versions(),
                     max_price_staleness_slots: 0,
                     require_one_of_programs: vec![],
                     cross_cluster_check: false,
@@ -273,6 +276,11 @@ impl ConfigMockBuilder {
         self
     }
 
+    pub fn with_allowed_transaction_versions(mut self, versions: Vec<TransactionVersion>) -> Self {
+        self.config.validation.allowed_transaction_versions = versions;
+        self
+    }
+
     /// Build and setup the config mock with mutex lock
     /// Returns a lock guard that should be held for the duration of the test
     pub fn build_and_setup(self) -> std::sync::MutexGuard<'static, ()> {
@@ -306,6 +314,7 @@ impl ValidationConfigBuilder {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,

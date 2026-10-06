@@ -268,6 +268,8 @@ export interface ValidationConfig {
     allowed_spl_paid_tokens: string[];
     /** List of allowed token mint addresses for fee payment */
     allowed_tokens: string[];
+    /** Transaction message versions the node accepts */
+    allowed_transaction_versions?: ('legacy' | 0 | 1)[];
     /** List of blocked account addresses */
     disallowed_accounts: string[];
     /** Policy controlling fee payer permissions */
@@ -664,6 +666,8 @@ export interface KitValidationConfig {
     allowed_spl_paid_tokens: Address[];
     /** List of allowed token mint addresses for fee payment */
     allowed_tokens: Address[];
+    /** Transaction message versions the node accepts */
+    allowed_transaction_versions?: ('legacy' | 0 | 1)[];
     /** List of blocked account addresses */
     disallowed_accounts: Address[];
     /** Policy controlling fee payer permissions */

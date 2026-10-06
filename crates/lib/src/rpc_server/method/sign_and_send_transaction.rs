@@ -98,6 +98,7 @@ mod tests {
         config_mock::ConfigMockBuilder,
         transaction_mock::create_mock_encoded_transaction,
     };
+    use solana_transaction::versioned::TransactionVersion;
 
     #[tokio::test]
     async fn test_sign_and_send_transaction_decode_error() {
@@ -209,5 +210,31 @@ mod tests {
             r#"{"transaction": "abc", "respond_after": "finalized"}"#,
         );
         assert!(result.is_err(), "Unknown respond_after milestone should be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_sign_and_send_transaction_rejects_disallowed_transaction_version() {
+        let _m = ConfigMockBuilder::new()
+            .with_allowed_transaction_versions(vec![TransactionVersion::Number(0)])
+            .build_and_setup();
+        let _ = setup_or_get_test_signer();
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().with_simulation().build());
+
+        let request = SignAndSendTransactionRequest {
+            transaction: create_mock_encoded_transaction(),
+            signer_key: None,
+            sig_verify: false,
+            user_id: None,
+            respond_after: RespondAfter::default(),
+        };
+
+        let result = sign_and_send_transaction(&rpc_client, request).await;
+
+        assert_eq!(
+            result.unwrap_err(),
+            KoraError::InvalidTransaction("Transaction version is not allowed".to_string())
+        );
     }
 }

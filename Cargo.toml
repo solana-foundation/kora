@@ -47,7 +47,7 @@ solana-commitment-config = "3.1.1"
 # the upper bounds here exclude the wincode-0.6 releases until upstream moves.
 # solana-sdk is exact-pinned by solana-keychain sdk-v4.
 solana-message = { version = ">=4.4.0,<4.5", features = ["wincode"] }
-solana-transaction = { version = ">=4.1.1,<4.2", features = ["wincode"] }
+solana-transaction = { version = ">=4.1.1,<4.2", features = ["serde", "wincode"] }
 wincode = "0.5"
 solana-system-interface = "2.0.0"
 solana-transaction-status-client-types = "4.2.1"
