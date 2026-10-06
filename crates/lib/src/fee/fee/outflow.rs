@@ -41,6 +41,7 @@ impl FeeConfigUtil {
             let mint_state = TokenUtil::get_mint(config, rpc_client, &ata_creation.mint).await?;
             let account_len =
                 if let Some(token2022_mint) = mint_state.as_any().downcast_ref::<Token2022Mint>() {
+                    #[allow(deprecated)]
                     let mut required_account_extensions =
                         ExtensionType::get_required_init_account_extensions(
                             &token2022_mint.extensions_types,

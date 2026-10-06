@@ -1761,6 +1761,46 @@ fn test_parse_spl_token_unwrap_lamports() {
 }
 
 #[test]
+fn test_parse_token_2022_unwrap_lamports() {
+    use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+    use solana_message::{Message, VersionedMessage};
+    use solana_sdk::{
+        signature::{Keypair, Signer},
+        transaction::VersionedTransaction,
+    };
+
+    let payer = Keypair::new();
+    let account = Pubkey::new_unique();
+    let destination = Pubkey::new_unique();
+
+    let ix = spl_token_2022_interface::instruction::unwrap_lamports(
+        &spl_token_2022_interface::id(),
+        &account,
+        &destination,
+        &payer.pubkey(),
+        &[],
+        Some(500),
+    )
+    .unwrap();
+
+    let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer.pubkey())));
+    let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+    let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+    let parsed = IxUtils::parse_token_instructions(&resolved_tx).unwrap();
+    let entries = parsed
+        .get(&ParsedSPLInstructionType::SplTokenUnwrapLamports)
+        .expect("Token-2022 UnwrapLamports must be parsed");
+    assert_eq!(entries.len(), 1);
+    if let ParsedSPLInstructionData::SplTokenUnwrapLamports { owner, is_2022, .. } = &entries[0] {
+        assert_eq!(*owner, payer.pubkey());
+        assert!(*is_2022);
+    } else {
+        panic!("Expected SplTokenUnwrapLamports variant");
+    }
+}
+
+#[test]
 fn test_parse_token_2022_malformed_instruction_rejected() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
     use solana_message::{Message, VersionedMessage};

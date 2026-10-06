@@ -15,6 +15,8 @@ use crate::{
 
 /// Discriminator of the p-token `Batch` instruction (`spl_token_interface` variant `Batch = 255`).
 pub(super) const BATCH_DISCRIMINATOR: u8 = 255;
+pub(crate) const TOKEN_2022_BATCH_UNSUPPORTED: &str =
+    "Token-2022 batch instructions are not supported";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ParsedSPLInstructionType {
@@ -454,6 +456,21 @@ macro_rules! match_shared_token_instruction {
                     },
                 );
             }
+            TokenInstruction::UnwrapLamports { .. } => {
+                use instruction_indexes::spl_token_unwrap_lamports as ix;
+                validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                Self::push_parsed_spl_instruction(
+                    &mut $parsed,
+                    ParsedSPLInstructionData::SplTokenUnwrapLamports {
+                        owner: $instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
+                        multisig_signers: Self::extract_multisig_signers(
+                            $instruction,
+                            ix::MULTISIG_SIGNERS_START_INDEX,
+                        ),
+                        is_2022: $is_2022,
+                    },
+                );
+            }
             $($program_arms)*
         }
     };
@@ -560,9 +577,7 @@ impl IxUtils {
             ix.program_id == spl_token_2022_interface::ID
                 && ix.data.first() == Some(&BATCH_DISCRIMINATOR)
         }) {
-            return Err(KoraError::InvalidTransaction(
-                "Token-2022 batch instructions are not supported".to_string(),
-            ));
+            return Err(KoraError::InvalidTransaction(TOKEN_2022_BATCH_UNSUPPORTED.to_string()));
         }
 
         if !instructions.iter().any(Self::is_spl_token_batch) {
@@ -664,21 +679,6 @@ impl IxUtils {
                     continue;
                 };
                 match_shared_token_instruction!(spl_ix, instruction, parsed_instructions, false, {
-                    TokenInstruction::UnwrapLamports { .. } => {
-                        use instruction_indexes::spl_token_unwrap_lamports as ix;
-                        validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                        Self::push_parsed_spl_instruction(
-                            &mut parsed_instructions,
-                            ParsedSPLInstructionData::SplTokenUnwrapLamports {
-                                owner: instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
-                                multisig_signers: Self::extract_multisig_signers(
-                                    instruction,
-                                    ix::MULTISIG_SIGNERS_START_INDEX,
-                                ),
-                                is_2022: false,
-                            },
-                        );
-                    }
                     _ => {}
                 });
             } else if program_id == spl_token_2022_interface::ID {

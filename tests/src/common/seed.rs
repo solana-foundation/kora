@@ -191,8 +191,8 @@ fn write_token_2022_mint(
                 transfer_fee_basis_points: TRANSFER_FEE_BASIS_POINTS.into(),
             };
             let config = state.init_extension::<TransferFeeConfig>(true)?;
-            config.transfer_fee_config_authority = Some(*authority).try_into()?;
-            config.withdraw_withheld_authority = Some(*authority).try_into()?;
+            config.transfer_fee_config_authority = (*authority).into();
+            config.withdraw_withheld_authority = (*authority).into();
             config.withheld_amount = 0.into();
             config.older_transfer_fee = fee;
             config.newer_transfer_fee = fee;

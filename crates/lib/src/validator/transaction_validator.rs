@@ -516,7 +516,7 @@ mod tests {
         transaction::TransactionUtil,
     };
     use serial_test::serial;
-    use spl_pod::optional_keys::OptionalNonZeroPubkey;
+    use solana_nullable::MaybeNull;
     use std::str::FromStr;
 
     use super::*;
@@ -4801,6 +4801,102 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_fee_payer_policy_token2022_withdraw_excess_lamports_is_enforced() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+
+        let build_withdraw = || {
+            let ix = spl_token_2022_interface::instruction::withdraw_excess_lamports(
+                &spl_token_2022_interface::id(),
+                &token_account,
+                &destination,
+                &fee_payer,
+                &[],
+            )
+            .unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_withdraw_excess_lamports = false;
+        setup_token2022_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mut transaction = build_withdraw();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("WithdrawExcessLamports"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022 WithdrawExcessLamports policy");
+        }
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_withdraw_excess_lamports = true;
+        setup_token2022_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mut transaction = build_withdraw();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_unwrap_lamports_is_enforced() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+
+        let build_unwrap = || {
+            let ix = spl_token_2022_interface::instruction::unwrap_lamports(
+                &spl_token_2022_interface::id(),
+                &token_account,
+                &destination,
+                &fee_payer,
+                &[],
+                Some(1000),
+            )
+            .unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_unwrap_lamports = false;
+        policy.spl_token.allow_unwrap_lamports = true;
+        setup_token2022_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mut transaction = build_unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("UnwrapLamports"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022 UnwrapLamports policy");
+        }
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_unwrap_lamports = true;
+        setup_token2022_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mut transaction = build_unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_token2022_reallocate_rejected_for_fee_payer() {
         let fee_payer = Pubkey::new_unique();
         let token_account = Pubkey::new_unique();
@@ -6358,7 +6454,7 @@ mod tests {
             &spl_token_2022_interface::id(),
             &metadata,
             &current_authority,
-            OptionalNonZeroPubkey::try_from(Some(fee_payer)).unwrap(),
+            MaybeNull::try_from(Some(fee_payer)).unwrap(),
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -6389,7 +6485,7 @@ mod tests {
             &spl_token_2022_interface::id(),
             &metadata,
             &current_authority,
-            OptionalNonZeroPubkey::try_from(Some(fee_payer)).unwrap(),
+            MaybeNull::try_from(Some(fee_payer)).unwrap(),
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
