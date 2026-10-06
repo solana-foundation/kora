@@ -38,7 +38,7 @@ impl PluginExecutionContext {
 trait TransactionPlugin: Send + Sync {
     async fn validate(
         &self,
-        transaction: &mut VersionedTransactionResolved,
+        transaction: &VersionedTransactionResolved,
         _config: &Config,
         _rpc_client: &RpcClient,
         fee_payer: &Pubkey,
@@ -104,7 +104,7 @@ impl TransactionPluginRunner {
 
     pub async fn run(
         &self,
-        transaction: &mut VersionedTransactionResolved,
+        transaction: &VersionedTransactionResolved,
         config: &Config,
         rpc_client: &RpcClient,
         fee_payer: &Pubkey,

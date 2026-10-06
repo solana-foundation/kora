@@ -44,7 +44,7 @@ impl GasSwapPlugin {
     }
 
     fn validate_parsed_system_transfer(
-        transaction: &mut VersionedTransactionResolved,
+        transaction: &VersionedTransactionResolved,
         fee_payer: &Pubkey,
         context: PluginExecutionContext,
     ) -> Result<(), KoraError> {
@@ -83,7 +83,7 @@ impl GasSwapPlugin {
     }
 
     fn validate_parsed_token_transfer(
-        transaction: &mut VersionedTransactionResolved,
+        transaction: &VersionedTransactionResolved,
         context: PluginExecutionContext,
     ) -> Result<(), KoraError> {
         let spl_instructions = transaction.get_or_parse_spl_instructions()?;
@@ -108,7 +108,7 @@ impl GasSwapPlugin {
 impl TransactionPlugin for GasSwapPlugin {
     async fn validate(
         &self,
-        transaction: &mut VersionedTransactionResolved,
+        transaction: &VersionedTransactionResolved,
         _config: &Config,
         _rpc_client: &RpcClient,
         fee_payer: &Pubkey,
@@ -206,12 +206,12 @@ mod tests {
         let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
             Message::new(&[token_ix, sol_ix], Some(&fee_payer)),
         ));
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
         let runner = TransactionPluginRunner::from_config(&config);
         let result = runner
             .run(
-                &mut resolved,
+                &resolved,
                 &config,
                 rpc_client.as_ref(),
                 &fee_payer,
@@ -248,12 +248,12 @@ mod tests {
         let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
             Message::new(&[token_ix, custom_ix, sol_ix], Some(&fee_payer)),
         ));
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
         let runner = TransactionPluginRunner::from_config(&config);
         let result = runner
             .run(
-                &mut resolved,
+                &resolved,
                 &config,
                 rpc_client.as_ref(),
                 &fee_payer,
@@ -287,12 +287,12 @@ mod tests {
         let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
             Message::new(&[token_ix, assign_ix], Some(&fee_payer)),
         ));
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
         let runner = TransactionPluginRunner::from_config(&config);
         let result = runner
             .run(
-                &mut resolved,
+                &resolved,
                 &config,
                 rpc_client.as_ref(),
                 &fee_payer,
@@ -329,12 +329,12 @@ mod tests {
         let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
             Message::new(&[token_ix, sol_ix], Some(&fee_payer)),
         ));
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
         let runner = TransactionPluginRunner::from_config(&config);
         let result = runner
             .run(
-                &mut resolved,
+                &resolved,
                 &config,
                 rpc_client.as_ref(),
                 &fee_payer,
@@ -357,12 +357,12 @@ mod tests {
         let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
             Message::new(&[sol_ix], Some(&fee_payer)),
         ));
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
         let runner = TransactionPluginRunner::from_config(&config);
         let result = runner
             .run(
-                &mut resolved,
+                &resolved,
                 &config,
                 rpc_client.as_ref(),
                 &fee_payer,
@@ -400,12 +400,12 @@ mod tests {
         let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
             Message::new(&[compute_limit_ix, compute_price_ix, token_ix, sol_ix], Some(&fee_payer)),
         ));
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
         let runner = TransactionPluginRunner::from_config(&config);
         let result = runner
             .run(
-                &mut resolved,
+                &resolved,
                 &config,
                 rpc_client.as_ref(),
                 &fee_payer,
@@ -442,12 +442,12 @@ mod tests {
         let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
             Message::new(&[token_ix, extra_ix, sol_ix], Some(&fee_payer)),
         ));
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
         let runner = TransactionPluginRunner::from_config(&config);
         let result = runner
             .run(
-                &mut resolved,
+                &resolved,
                 &config,
                 rpc_client.as_ref(),
                 &fee_payer,

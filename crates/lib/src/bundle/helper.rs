@@ -139,9 +139,7 @@ impl BundleProcessor {
                 transfer_hook_validation_flow,
             )?;
             if let Some(context) = plugin_context {
-                plugin_runner
-                    .run(&mut resolved_tx, config, rpc_client, &fee_payer, context)
-                    .await?;
+                plugin_runner.run(&resolved_tx, config, rpc_client, &fee_payer, context).await?;
             }
             all_bundle_instructions.extend(resolved_tx.all_instructions.clone());
             resolved_transactions.push(resolved_tx);
