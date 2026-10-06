@@ -3443,3 +3443,462 @@ fn test_reconstruct_unsupported_program_creates_stub() {
     assert!(compiled.accounts.is_empty());
     assert!(compiled.data.is_empty());
 }
+
+fn assert_reconstruction_matches_original(
+    label: &str,
+    instruction: &Instruction,
+) -> (solana_transaction_status_client_types::ParsedInstruction, Instruction) {
+    let message = Message::new(std::slice::from_ref(instruction), None);
+    let parsed = parse_instruction::parse(
+        &instruction.program_id,
+        &message.instructions[0],
+        &AccountKeys::new(&message.account_keys, None),
+        None,
+    )
+    .unwrap_or_else(|e| panic!("{label}: agave parser rejected the instruction: {e}"));
+    let compiled = IxUtils::reconstruct_spl_token_instruction(
+        &parsed,
+        &IxUtils::build_account_keys_hashmap(&message.account_keys),
+    )
+    .unwrap_or_else(|e| panic!("{label}: reconstruction failed: {e}"));
+    assert_eq!(compiled.accounts, message.instructions[0].accounts, "{label}: accounts");
+    assert_eq!(compiled.data, message.instructions[0].data, "{label}: data");
+    let reconstructed =
+        IxUtils::uncompile_instructions(&[compiled], &message.account_keys).unwrap().remove(0);
+    (parsed, reconstructed)
+}
+
+#[allow(deprecated)]
+fn multisig_token_cases(
+    program: &Pubkey,
+    (source, destination, mint, authority, signers): (Pubkey, Pubkey, Pubkey, Pubkey, &[&Pubkey]),
+) -> Vec<(&'static str, &'static str, Instruction)> {
+    use spl_token_2022_interface::instruction as ix;
+    vec![
+        (
+            "transfer",
+            "multisigAuthority",
+            ix::transfer(program, &source, &destination, &authority, signers, 5).unwrap(),
+        ),
+        (
+            "transferChecked",
+            "multisigAuthority",
+            ix::transfer_checked(program, &source, &mint, &destination, &authority, signers, 5, 6)
+                .unwrap(),
+        ),
+        (
+            "burn",
+            "multisigAuthority",
+            ix::burn(program, &source, &mint, &authority, signers, 5).unwrap(),
+        ),
+        (
+            "burnChecked",
+            "multisigAuthority",
+            ix::burn_checked(program, &source, &mint, &authority, signers, 5, 6).unwrap(),
+        ),
+        (
+            "setAuthority",
+            "multisigAuthority",
+            ix::set_authority(
+                program,
+                &source,
+                Some(&destination),
+                ix::AuthorityType::AccountOwner,
+                &authority,
+                signers,
+            )
+            .unwrap(),
+        ),
+        (
+            "approve",
+            "multisigOwner",
+            ix::approve(program, &source, &destination, &authority, signers, 5).unwrap(),
+        ),
+        (
+            "approveChecked",
+            "multisigOwner",
+            ix::approve_checked(program, &source, &mint, &destination, &authority, signers, 5, 6)
+                .unwrap(),
+        ),
+        ("revoke", "multisigOwner", ix::revoke(program, &source, &authority, signers).unwrap()),
+        (
+            "closeAccount",
+            "multisigOwner",
+            ix::close_account(program, &source, &destination, &authority, signers).unwrap(),
+        ),
+        (
+            "mintTo",
+            "multisigMintAuthority",
+            ix::mint_to(program, &mint, &destination, &authority, signers, 5).unwrap(),
+        ),
+        (
+            "mintToChecked",
+            "multisigMintAuthority",
+            ix::mint_to_checked(program, &mint, &destination, &authority, signers, 5, 6).unwrap(),
+        ),
+        (
+            "freezeAccount",
+            "multisigFreezeAuthority",
+            ix::freeze_account(program, &source, &mint, &authority, signers).unwrap(),
+        ),
+        (
+            "thawAccount",
+            "multisigFreezeAuthority",
+            ix::thaw_account(program, &source, &mint, &authority, signers).unwrap(),
+        ),
+    ]
+}
+
+#[test]
+fn test_reconstruct_spl_token_multisig_authority_matches_original() {
+    let (source, destination, mint, authority) =
+        (Pubkey::new_unique(), Pubkey::new_unique(), Pubkey::new_unique(), Pubkey::new_unique());
+    let signer_keys = [Pubkey::new_unique(), Pubkey::new_unique()];
+    let signers: &[&Pubkey] = &[&signer_keys[0], &signer_keys[1]];
+    let keys = (source, destination, mint, authority, signers);
+
+    let cases = multisig_token_cases(&spl_token_interface::ID, keys)
+        .into_iter()
+        .chain(multisig_token_cases(&spl_token_2022_interface::ID, keys));
+
+    for (label, multisig_field, instruction) in cases {
+        let label = format!("{label} ({})", instruction.program_id);
+        let (parsed, _) = assert_reconstruction_matches_original(&label, &instruction);
+        let info = &parsed.parsed[PARSED_DATA_FIELD_INFO];
+        assert_eq!(info[multisig_field], authority.to_string(), "{label}: {multisig_field}");
+        assert_eq!(
+            info[PARSED_DATA_FIELD_SIGNERS],
+            serde_json::json!([signer_keys[0].to_string(), signer_keys[1].to_string()]),
+            "{label}: signers"
+        );
+    }
+}
+
+#[test]
+fn test_reconstruct_token2022_transfer_hook_transfer_checked_keeps_extra_accounts() {
+    use crate::transaction::TransactionUtil;
+    use solana_message::VersionedMessage;
+
+    let source = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+    let destination = Pubkey::new_unique();
+    let authority = Pubkey::new_unique();
+    let extra_accounts = [Pubkey::new_unique(), Pubkey::new_unique(), Pubkey::new_unique()];
+
+    let mut instruction = spl_token_2022_interface::instruction::transfer_checked(
+        &spl_token_2022_interface::ID,
+        &source,
+        &mint,
+        &destination,
+        &authority,
+        &[],
+        1_000,
+        6,
+    )
+    .unwrap();
+    instruction
+        .accounts
+        .extend(extra_accounts.iter().map(|key| AccountMeta::new_readonly(*key, false)));
+
+    let (parsed, reconstructed) =
+        assert_reconstruction_matches_original("hooked transferChecked", &instruction);
+    let info = &parsed.parsed[PARSED_DATA_FIELD_INFO];
+    assert!(info.get(PARSED_DATA_FIELD_AUTHORITY).is_none());
+    assert_eq!(info[PARSED_DATA_FIELD_MULTISIG_AUTHORITY], authority.to_string());
+
+    let payer = Pubkey::new_unique();
+    let resolved_tx = TransactionUtil::new_unsigned_versioned_transaction_resolved(
+        VersionedMessage::Legacy(Message::new(&[reconstructed], Some(&payer))),
+    )
+    .unwrap();
+
+    let parsed_spl = IxUtils::parse_token_instructions(&resolved_tx).unwrap();
+    match parsed_spl.get(&ParsedSPLInstructionType::SplTokenTransfer).map(Vec::as_slice) {
+        Some(
+            [ParsedSPLInstructionData::SplTokenTransfer { owner, multisig_signers, mint: m, .. }],
+        ) => {
+            assert_eq!(*owner, authority);
+            assert_eq!(multisig_signers, &extra_accounts.to_vec());
+            assert_eq!(*m, Some(mint));
+        }
+        other => panic!("expected one SplTokenTransfer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_reconstruct_spl_token_multisig_authority_without_signers_is_rejected() {
+    let source = Pubkey::new_unique();
+    let destination = Pubkey::new_unique();
+    let multisig = Pubkey::new_unique();
+    let account_keys = vec![spl_token_interface::ID, source, destination, multisig];
+
+    let parsed = solana_transaction_status_client_types::ParsedInstruction {
+        program: "spl-token".to_string(),
+        program_id: spl_token_interface::ID.to_string(),
+        parsed: serde_json::json!({
+            "type": "transfer",
+            "info": {
+                "source": source.to_string(),
+                "destination": destination.to_string(),
+                "amount": "5",
+                "multisigAuthority": multisig.to_string(),
+            }
+        }),
+        stack_height: None,
+    };
+
+    let result = IxUtils::reconstruct_spl_token_instruction(
+        &parsed,
+        &IxUtils::build_account_keys_hashmap(&account_keys),
+    );
+    assert!(
+        matches!(result, Err(KoraError::SerializationError(ref msg)) if msg.contains("'signers'")),
+        "expected missing signers rejection, got {result:?}"
+    );
+}
+
+#[test]
+fn test_reconstruct_token2022_metadata_and_extension_inits_match_original() {
+    use solana_nullable::MaybeNull;
+    use spl_token_2022_interface::{
+        extension::{
+            group_member_pointer, group_pointer, metadata_pointer, transfer_fee, transfer_hook,
+        },
+        instruction as token_2022,
+    };
+    use spl_token_metadata_interface::{instruction as token_metadata, state::Field};
+
+    let program = spl_token_2022_interface::ID;
+    let mint = Pubkey::new_unique();
+    let metadata = Pubkey::new_unique();
+    let update_authority = Pubkey::new_unique();
+    let mint_authority = Pubkey::new_unique();
+    let authority = Pubkey::new_unique();
+    let address = Pubkey::new_unique();
+    let signer_keys = [Pubkey::new_unique(), Pubkey::new_unique()];
+    let signers: &[&Pubkey] = &[&signer_keys[0], &signer_keys[1]];
+
+    let cases = vec![
+        (
+            "initializeMetadataPointer",
+            metadata_pointer::instruction::initialize(
+                &program,
+                &mint,
+                Some(authority),
+                Some(address),
+            )
+            .unwrap(),
+        ),
+        (
+            "initializeMetadataPointer",
+            metadata_pointer::instruction::initialize(&program, &mint, None, None).unwrap(),
+        ),
+        (
+            "updateMetadataPointer",
+            metadata_pointer::instruction::update(&program, &mint, &authority, &[], Some(address))
+                .unwrap(),
+        ),
+        (
+            "updateMetadataPointer",
+            metadata_pointer::instruction::update(&program, &mint, &authority, signers, None)
+                .unwrap(),
+        ),
+        (
+            "initializeTokenMetadata",
+            token_metadata::initialize(
+                &program,
+                &metadata,
+                &update_authority,
+                &mint,
+                &mint_authority,
+                "Token".to_string(),
+                "TKN".to_string(),
+                "https://example.com/token.json".to_string(),
+            ),
+        ),
+        (
+            "updateTokenMetadataField",
+            token_metadata::update_field(
+                &program,
+                &metadata,
+                &update_authority,
+                Field::Uri,
+                "https://example.com/new.json".to_string(),
+            ),
+        ),
+        (
+            "updateTokenMetadataField",
+            token_metadata::update_field(
+                &program,
+                &metadata,
+                &update_authority,
+                Field::Key("website".to_string()),
+                "https://example.com".to_string(),
+            ),
+        ),
+        (
+            "removeTokenMetadataKey",
+            token_metadata::remove_key(
+                &program,
+                &metadata,
+                &update_authority,
+                "website".to_string(),
+                true,
+            ),
+        ),
+        (
+            "updateTokenMetadataAuthority",
+            token_metadata::update_authority(
+                &program,
+                &metadata,
+                &update_authority,
+                MaybeNull::try_from(Some(authority)).unwrap(),
+            ),
+        ),
+        (
+            "updateTokenMetadataAuthority",
+            token_metadata::update_authority(
+                &program,
+                &metadata,
+                &update_authority,
+                MaybeNull::try_from(None).unwrap(),
+            ),
+        ),
+        ("emitTokenMetadata", token_metadata::emit(&program, &metadata, Some(1), Some(10))),
+        ("emitTokenMetadata", token_metadata::emit(&program, &metadata, None, None)),
+        (
+            "initializeMintCloseAuthority",
+            token_2022::initialize_mint_close_authority(&program, &mint, Some(&authority)).unwrap(),
+        ),
+        (
+            "initializeMintCloseAuthority",
+            token_2022::initialize_mint_close_authority(&program, &mint, None).unwrap(),
+        ),
+        (
+            "initializePermanentDelegate",
+            token_2022::initialize_permanent_delegate(&program, &mint, &authority).unwrap(),
+        ),
+        (
+            "initializeNonTransferableMint",
+            token_2022::initialize_non_transferable_mint(&program, &mint).unwrap(),
+        ),
+        (
+            "initializeTransferHook",
+            transfer_hook::instruction::initialize(&program, &mint, Some(authority), Some(address))
+                .unwrap(),
+        ),
+        (
+            "initializeGroupPointer",
+            group_pointer::instruction::initialize(&program, &mint, Some(authority), Some(address))
+                .unwrap(),
+        ),
+        (
+            "initializeGroupMemberPointer",
+            group_member_pointer::instruction::initialize(
+                &program,
+                &mint,
+                Some(authority),
+                Some(address),
+            )
+            .unwrap(),
+        ),
+        (
+            "initializeTransferFeeConfig",
+            transfer_fee::instruction::initialize_transfer_fee_config(
+                &program,
+                &mint,
+                Some(&authority),
+                Some(&address),
+                250,
+                u64::MAX,
+            )
+            .unwrap(),
+        ),
+        (
+            "initializeTransferFeeConfig",
+            transfer_fee::instruction::initialize_transfer_fee_config(
+                &program, &mint, None, None, 0, 0,
+            )
+            .unwrap(),
+        ),
+    ];
+
+    for (index, (expected_type, instruction)) in cases.into_iter().enumerate() {
+        let label = format!("case {index} ({expected_type})");
+        let (parsed, _) = assert_reconstruction_matches_original(&label, &instruction);
+        assert_eq!(parsed.parsed[PARSED_DATA_FIELD_TYPE], expected_type, "{label}: type");
+    }
+}
+
+#[test]
+fn test_reconstruct_token_metadata_custom_key_shadowing_builtin_field_keeps_accounts() {
+    use spl_token_metadata_interface::{instruction as token_metadata, state::Field};
+
+    let program = spl_token_2022_interface::ID;
+    let metadata = Pubkey::new_unique();
+    let update_authority = Pubkey::new_unique();
+    let update_field = |field: Field| {
+        token_metadata::update_field(
+            &program,
+            &metadata,
+            &update_authority,
+            field,
+            "value".to_string(),
+        )
+    };
+
+    for (key, builtin) in [("name", Field::Name), ("symbol", Field::Symbol), ("uri", Field::Uri)] {
+        let custom_key = update_field(Field::Key(key.to_string()));
+        let message = Message::new(std::slice::from_ref(&custom_key), None);
+        let parsed = parse_instruction::parse(
+            &program,
+            &message.instructions[0],
+            &AccountKeys::new(&message.account_keys, None),
+            None,
+        )
+        .unwrap();
+        assert_eq!(parsed.parsed[PARSED_DATA_FIELD_INFO][PARSED_DATA_FIELD_FIELD], key);
+
+        let compiled = IxUtils::reconstruct_spl_token_instruction(
+            &parsed,
+            &IxUtils::build_account_keys_hashmap(&message.account_keys),
+        )
+        .unwrap();
+
+        assert_ne!(compiled.data, custom_key.data, "{key}: Agave output is lossy");
+        assert_eq!(compiled.data, update_field(builtin).data, "{key}: rebuilt as built-in field");
+        assert_eq!(compiled.accounts, message.instructions[0].accounts, "{key}: accounts");
+    }
+}
+
+#[test]
+fn test_reconstruct_token_metadata_instruction_rejected_for_spl_token_program() {
+    let metadata = Pubkey::new_unique();
+    let update_authority = Pubkey::new_unique();
+    let account_keys = vec![spl_token_interface::ID, metadata, update_authority];
+
+    let parsed = solana_transaction_status_client_types::ParsedInstruction {
+        program: "spl-token".to_string(),
+        program_id: spl_token_interface::ID.to_string(),
+        parsed: serde_json::json!({
+            "type": "removeTokenMetadataKey",
+            "info": {
+                "metadata": metadata.to_string(),
+                "updateAuthority": update_authority.to_string(),
+                "key": "website",
+                "idempotent": false,
+            }
+        }),
+        stack_height: None,
+    };
+
+    let result = IxUtils::reconstruct_spl_token_instruction(
+        &parsed,
+        &IxUtils::build_account_keys_hashmap(&account_keys),
+    );
+    assert!(
+        matches!(result, Err(KoraError::InvalidTransaction(ref msg))
+            if msg.contains("Unrecognized SPL Token instruction type 'removeTokenMetadataKey'")),
+        "expected spl-token metadata CPI rejection, got {result:?}"
+    );
+}

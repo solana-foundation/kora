@@ -621,6 +621,47 @@ mod tests {
         setup_both_configs(config);
     }
 
+    async fn validate_with_parsed_token2022_cpi(
+        fee_payer: Pubkey,
+        cpi: Instruction,
+    ) -> Result<(), KoraError> {
+        use crate::transaction::IxUtils;
+        use solana_message::AccountKeys;
+        use solana_transaction_status::parse_instruction;
+        use solana_transaction_status_client_types::{UiInstruction, UiParsedInstruction};
+
+        let cpi_message = Message::new(std::slice::from_ref(&cpi), None);
+        let parsed = parse_instruction::parse(
+            &spl_token_2022_interface::id(),
+            &cpi_message.instructions[0],
+            &AccountKeys::new(&cpi_message.account_keys, None),
+            None,
+        )
+        .unwrap();
+        let mut account_keys = cpi_message.account_keys.clone();
+        let compiled = IxUtils::reconstruct_instruction_from_ui(
+            &UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed)),
+            &mut account_keys,
+        )?;
+        let reconstructed =
+            IxUtils::uncompile_instructions(&[compiled], &account_keys).unwrap().remove(0);
+
+        let rpc_client = RpcMockBuilder::new().with_mint_account(2).build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let outer = spl_token_2022_interface::instruction::sync_native(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[outer], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        transaction.all_instructions.push(reconstructed);
+
+        validator.validate_transaction(config, &mut transaction, &rpc_client).await
+    }
+
     fn setup_config_with_policy_and_disallowed(
         policy: FeePayerPolicy,
         allowed_programs: Vec<String>,
@@ -5208,6 +5249,45 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_token2022_transfer_hook_cpi_rejects_fee_payer_as_extra_account() {
+        let fee_payer = Pubkey::new_unique();
+
+        for (extra_account, expect_denied) in [(fee_payer, true), (Pubkey::new_unique(), false)] {
+            let mut policy = FeePayerPolicy::default();
+            policy.token_2022.allow_transfer = false;
+            setup_token2022_config_with_policy(policy);
+
+            let mut hooked = spl_token_2022_interface::instruction::transfer_checked(
+                &spl_token_2022_interface::id(),
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &[],
+                1,
+                2,
+            )
+            .unwrap();
+            hooked.accounts.extend([
+                AccountMeta::new_readonly(Pubkey::new_unique(), false),
+                AccountMeta::new_readonly(extra_account, false),
+            ]);
+
+            let result = validate_with_parsed_token2022_cpi(fee_payer, hooked).await;
+            if expect_denied {
+                assert!(
+                    matches!(result, Err(KoraError::InvalidTransaction(ref msg))
+                        if msg.contains("Fee payer cannot be used for 'Token2022 Token Transfer'")),
+                    "fee payer as a hook extra account must be denied, got {result:?}"
+                );
+            } else {
+                assert!(result.is_ok(), "hooked transfer without fee payer failed: {result:?}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_token2022_initialize_transfer_fee_config_rejects_fee_payer_authorities_by_default(
     ) {
         let fee_payer = Keypair::new();
@@ -6567,6 +6647,98 @@ mod tests {
             result.is_ok(),
             "allow_initialize_extension_authority opt-in should allow assigning the fee payer: {result:?}"
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_metadata_cpi_rejected_when_metadata_opt_in_disabled() {
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let cases = [
+            spl_token_metadata_interface::instruction::initialize(
+                &spl_token_2022_interface::id(),
+                &mint,
+                &fee_payer,
+                &mint,
+                &Pubkey::new_unique(),
+                "Token".to_string(),
+                "TKN".to_string(),
+                "https://example.com/token.json".to_string(),
+            ),
+            spl_token_metadata_interface::instruction::update_authority(
+                &spl_token_2022_interface::id(),
+                &mint,
+                &fee_payer,
+                MaybeNull::try_from(None).unwrap(),
+            ),
+        ];
+
+        for cpi in cases {
+            setup_token2022_config_with_policy(FeePayerPolicy::default());
+            let result = validate_with_parsed_token2022_cpi(fee_payer, cpi).await;
+            assert!(
+                matches!(result, Err(KoraError::InvalidTransaction(ref msg))
+                    if msg.contains("token-metadata interface instructions are not supported")),
+                "metadata CPI must be rejected while the opt-in is off, got {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_metadata_cpi_with_opt_in_still_gates_fee_payer_authority() {
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let other = Pubkey::new_unique();
+        let initialize_metadata = |update_authority: &Pubkey| {
+            spl_token_metadata_interface::instruction::initialize(
+                &spl_token_2022_interface::id(),
+                &mint,
+                update_authority,
+                &mint,
+                &other,
+                "Token".to_string(),
+                "TKN".to_string(),
+                "https://example.com/token.json".to_string(),
+            )
+        };
+        let cases = [
+            ("planted update authority", initialize_metadata(&fee_payer), Some("planted")),
+            (
+                "current update authority",
+                spl_token_metadata_interface::instruction::update_authority(
+                    &spl_token_2022_interface::id(),
+                    &mint,
+                    &fee_payer,
+                    MaybeNull::try_from(Some(other)).unwrap(),
+                ),
+                Some("current Token2022 extension authority"),
+            ),
+            (
+                "planted metadata pointer authority",
+                spl_token_2022_interface::extension::metadata_pointer::instruction::initialize(
+                    &spl_token_2022_interface::id(),
+                    &mint,
+                    Some(fee_payer),
+                    Some(mint),
+                )
+                .unwrap(),
+                Some("planted"),
+            ),
+            ("fee payer not involved", initialize_metadata(&other), None),
+        ];
+
+        for (label, cpi, expected_error) in cases {
+            setup_token2022_config_interface_allowed(FeePayerPolicy::default());
+            let result = validate_with_parsed_token2022_cpi(fee_payer, cpi).await;
+            match expected_error {
+                Some(expected) => assert!(
+                    matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains(expected)),
+                    "{label}: expected '{expected}' rejection, got {result:?}"
+                ),
+                None => assert!(result.is_ok(), "{label}: expected success, got {result:?}"),
+            }
+        }
     }
 
     #[tokio::test]
