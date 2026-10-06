@@ -12,6 +12,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.14.0",
   "dependencies": {
+    "@solana/kit": "^5.5.1",
     "@solana/kora": "^0.1.3",
     "@x402/core": "^2.0.0",
     "@x402/svm": "^2.0.0",

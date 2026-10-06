@@ -111,3 +111,5 @@ Facilitators are a crucial component in the x402 ecosystem. They act as speciali
 - **Abstract Complexity**: Remove the need for servers to directly interact with blockchain infrastructure (signing and paying network fees)
 - **Settle Transactions**: Submit validated transactions to Solana (or other networks)
 
+In this demo the facilitator runs the `exact` scheme from `@x402/svm`, which checks the payment against `paymentRequirements` (amount, asset, recipient, instruction layout), and uses Kora as the fee payer signer. Kora's signing policy protects the fee payer; it does not check that the payment matches what the resource server asked for, so a facilitator must not treat a successful Kora signature as a valid payment.
+

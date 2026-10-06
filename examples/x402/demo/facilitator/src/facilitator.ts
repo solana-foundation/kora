@@ -3,149 +3,157 @@ import express, { Request, Response } from "express";
 import {
     type PaymentRequirements,
     type PaymentPayload,
-    type SettleRequest,
-    type SettleResponse,
     type Network,
-    type VerifyRequest,
-    type VerifyResponse
+    type VerifyResponse,
+    type SettleResponse,
 } from "@x402/core/types";
-import { SOLANA_DEVNET_CAIP2 } from "@x402/svm";
+import { x402Facilitator } from "@x402/core/facilitator";
+import {
+    SOLANA_DEVNET_CAIP2,
+    TransactionOnchainFailureError,
+    createRpcClient,
+    type FacilitatorSvmSigner,
+} from "@x402/svm";
+import { registerExactSvmScheme } from "@x402/svm/exact/facilitator";
+import { address, signature, type Base64EncodedWireTransaction } from "@solana/kit";
 import { KoraClient } from "@solana/kora";
 import path from "path";
 
 config({ path: path.join(process.cwd(), '..', '.env') });
 
 const KORA_RPC_URL = process.env.KORA_RPC_URL || "http://localhost:8080/";
+const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL;
 const FACILITATOR_PORT = process.env.FACILITATOR_PORT || 3000;
 const NETWORK = (process.env.NETWORK || SOLANA_DEVNET_CAIP2) as Network;
 const KORA_API_KEY = process.env.KORA_API_KEY || "kora_facilitator_api_key_example";
+const CONFIRM_TIMEOUT_MS = 30_000;
+const CONFIRM_POLL_MS = 1_000;
 
-const app = express();
+const kora = new KoraClient({ rpcUrl: KORA_RPC_URL, apiKey: KORA_API_KEY });
+const rpc = createRpcClient(NETWORK, SOLANA_RPC_URL);
 
-app.use(express.json());
+async function createKoraSigner(): Promise<FacilitatorSvmSigner> {
+    const { signer_address } = await kora.getPayerSigner();
+    const feePayer = address(signer_address);
 
-app.get("/verify", (req: Request, res: Response) => {
-    res.json({
-        endpoint: "/verify",
-        description: "POST to verify x402 payments",
-        body: {
-            paymentPayload: "PaymentPayload",
-            paymentRequirements: "PaymentRequirements",
+    return {
+        getAddresses: () => [feePayer],
+
+        signTransaction: async (transaction) => {
+            const { signed_transaction } = await kora.signTransaction({ transaction });
+            return signed_transaction;
         },
-    });
-});
 
-app.post("/verify", async (req: Request, res: Response) => {
-    console.log("=== /verify endpoint called ===");
-
-    const kora = new KoraClient({ rpcUrl: KORA_RPC_URL, apiKey: KORA_API_KEY });
-
-    try {
-        const body: VerifyRequest = req.body;
-        const { paymentPayload, paymentRequirements } = req.body as {
-            paymentPayload: PaymentPayload;
-            paymentRequirements: PaymentRequirements;
-        };
-
-        if(!paymentRequirements.network.startsWith("solana:")) {
-            throw new Error("Invalid network");
-        }
-
-        const { transaction } = paymentPayload.payload as { transaction: string };
-        
-        const { signed_transaction } = await kora.signTransaction({
-            transaction
-        });
-
-        const verifyResponse: VerifyResponse = {
-            isValid: true,
-        };
-
-        res.json(verifyResponse);
-    } catch (error) {
-        const verifyResponse: VerifyResponse = {
-            isValid: false,
-            invalidReason: error instanceof Error ? error.message : "Kora validation failed",
-        };
-        res.status(400).json(verifyResponse);
-    }
-});
-
-app.get("/settle", (req: Request, res: Response) => {
-    res.json({
-        endpoint: "/settle",
-        description: "POST to settle x402 payments",
-        body: {
-            paymentPayload: "PaymentPayload",
-            paymentRequirements: "PaymentRequirements",
+        simulateTransaction: async (transaction) => {
+            await kora.signTransaction({ transaction });
         },
+
+        sendTransaction: async (transaction) => {
+            return await rpc
+                .sendTransaction(transaction as Base64EncodedWireTransaction, { encoding: "base64" })
+                .send();
+        },
+
+        confirmTransaction: async (txSignature) => {
+            const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
+            while (Date.now() < deadline) {
+                const { value: [status] } = await rpc.getSignatureStatuses([signature(txSignature)]).send();
+                if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") {
+                    if (status.err) {
+                        throw new TransactionOnchainFailureError(`Transaction failed onchain: ${JSON.stringify(status.err)}`);
+                    }
+                    return { slot: status.slot };
+                }
+                await new Promise((resolve) => setTimeout(resolve, CONFIRM_POLL_MS));
+            }
+            throw new Error("Transaction confirmation timeout");
+        },
+    };
+}
+
+async function main() {
+    const facilitator = registerExactSvmScheme(new x402Facilitator(), {
+        signer: await createKoraSigner(),
+        networks: NETWORK,
     });
-});
 
-app.get("/supported", async (req: Request, res: Response) => {
-    console.log("=== /supported endpoint called ===");
-    try {
-        const kora = new KoraClient({ rpcUrl: KORA_RPC_URL, apiKey: KORA_API_KEY });
+    const app = express();
 
-        const { signer_address } = await kora.getPayerSigner();
+    app.use(express.json());
 
-        const kinds = [{
-            x402Version: 2,
-            scheme: "exact",
-            network: NETWORK,
-            extra: {
-                feePayer: signer_address,
-            },
-        }];
-
+    app.get("/verify", (req: Request, res: Response) => {
         res.json({
-            kinds,
+            endpoint: "/verify",
+            description: "POST to verify x402 payments",
+            body: {
+                paymentPayload: "PaymentPayload",
+                paymentRequirements: "PaymentRequirements",
+            },
         });
-    } catch (error) {
-        res.status(500).json({
-            error: `Failed to get supported payment kinds: ${error instanceof Error ? error.message : String(error)}`
-        });
-    }
-});
+    });
 
-app.post("/settle", async (req: Request, res: Response) => {
-    console.log("=== /settle endpoint called ===");
-    try {
-        const body: SettleRequest = req.body;
-        const { paymentPayload, paymentRequirements } = req.body as {
-            paymentPayload: PaymentPayload;
-            paymentRequirements: PaymentRequirements;
-        };
+    app.post("/verify", async (req: Request, res: Response) => {
+        console.log("=== /verify endpoint called ===");
+        try {
+            const { paymentPayload, paymentRequirements } = req.body as {
+                paymentPayload: PaymentPayload;
+                paymentRequirements: PaymentRequirements;
+            };
 
-        if(!paymentRequirements.network.startsWith("solana:")) {
-            throw new Error("Invalid network");
+            const verifyResponse = await facilitator.verify(paymentPayload, paymentRequirements);
+            res.status(verifyResponse.isValid ? 200 : 400).json(verifyResponse);
+        } catch (error) {
+            const verifyResponse: VerifyResponse = {
+                isValid: false,
+                invalidReason: error instanceof Error ? error.message : "Verification failed",
+            };
+            res.status(400).json(verifyResponse);
         }
+    });
 
-        const { transaction } = paymentPayload.payload as { transaction: string };
-
-        const kora = new KoraClient({ rpcUrl: KORA_RPC_URL, apiKey: KORA_API_KEY });
-        const { signature } = await kora.signAndSendTransaction({
-            transaction
+    app.get("/settle", (req: Request, res: Response) => {
+        res.json({
+            endpoint: "/settle",
+            description: "POST to settle x402 payments",
+            body: {
+                paymentPayload: "PaymentPayload",
+                paymentRequirements: "PaymentRequirements",
+            },
         });
+    });
 
-        const response: SettleResponse = {
-            transaction: signature,
-            success: true,
-            network: NETWORK,
+    app.get("/supported", (req: Request, res: Response) => {
+        console.log("=== /supported endpoint called ===");
+        res.json(facilitator.getSupported());
+    });
+
+    app.post("/settle", async (req: Request, res: Response) => {
+        console.log("=== /settle endpoint called ===");
+        try {
+            const { paymentPayload, paymentRequirements } = req.body as {
+                paymentPayload: PaymentPayload;
+                paymentRequirements: PaymentRequirements;
+            };
+
+            const response = await facilitator.settle(paymentPayload, paymentRequirements);
+            res.status(response.success ? 200 : 400).json(response);
+        } catch (error) {
+            const response: SettleResponse = {
+                transaction: "",
+                success: false,
+                network: NETWORK,
+                errorReason: error instanceof Error ? error.message : "Settlement failed",
+            };
+            res.status(400).json(response);
         }
+    });
 
-        res.json(response);
-    } catch (error) {
-        const response: SettleResponse = {
-            transaction: "",
-            success: false,
-            network: NETWORK,
-            errorReason: error instanceof Error ? error.message : "Kora validation failed",
-        };
-        res.status(400).json(response);
-    }
-});
+    app.listen(FACILITATOR_PORT, () => {
+        console.log(`Server listening at http://localhost:${FACILITATOR_PORT}`);
+    });
+}
 
-app.listen(FACILITATOR_PORT, () => {
-    console.log(`Server listening at http://localhost:${FACILITATOR_PORT}`);
+main().catch((error) => {
+    console.error("Failed to start facilitator:", error);
+    process.exit(1);
 });
