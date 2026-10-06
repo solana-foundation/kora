@@ -1,7 +1,8 @@
 #![no_main]
 
-use std::sync::LazyLock;
+use std::{collections::HashMap, sync::LazyLock};
 
+use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use kora_fuzz::{
     oracle::expected_rejection,
@@ -13,39 +14,107 @@ use kora_lib::{
 };
 use libfuzzer_sys::fuzz_target;
 use serde_json::{json, Value};
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_request::RpcRequest};
-use solana_sdk::instruction::Instruction;
+use solana_client::{
+    client_error::Result as ClientResult,
+    nonblocking::rpc_client::RpcClient,
+    rpc_client::RpcClientConfig,
+    rpc_request::RpcRequest,
+    rpc_sender::{RpcSender, RpcTransportStats},
+};
+use solana_program_pack::Pack;
+use solana_rpc_client::mock_sender::MockSender;
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use spl_token_interface::state::{Account as TokenAccount, AccountState, Mint};
 use tokio::runtime::{Builder, Runtime};
 
-const MINT_LEN: usize = 82;
-const MINT_DECIMALS_OFFSET: usize = 44;
-const MINT_IS_INITIALIZED_OFFSET: usize = 45;
-const ACCOUNT_INFO_RESPONSES: usize = 64;
+const TOKEN_TRANSFER_TAG: u8 = 3;
+const MINT_DECIMALS: u8 = 6;
 
 static RUNTIME: LazyLock<Runtime> =
     LazyLock::new(|| Builder::new_current_thread().enable_all().build().unwrap());
 
-static MINT_ACCOUNT_INFO: LazyLock<Value> = LazyLock::new(|| {
-    let mut data = [0u8; MINT_LEN];
-    data[MINT_DECIMALS_OFFSET] = 6;
-    data[MINT_IS_INITIALIZED_OFFSET] = 1;
+fn source_mint(program: Pubkey) -> Pubkey {
+    if program == spl_token_2022_interface::ID {
+        Pubkey::new_from_array([6; 32])
+    } else {
+        Pubkey::new_from_array([5; 32])
+    }
+}
+
+fn mint_data() -> Vec<u8> {
+    let mut data = vec![0; Mint::LEN];
+    Mint { decimals: MINT_DECIMALS, is_initialized: true, ..Mint::default() }
+        .pack_into_slice(&mut data);
+    data
+}
+
+fn token_account_data(mint: Pubkey) -> Vec<u8> {
+    let mut data = vec![0; TokenAccount::LEN];
+    TokenAccount { mint, state: AccountState::Initialized, ..TokenAccount::default() }
+        .pack_into_slice(&mut data);
+    data
+}
+
+fn account_info(owner: Pubkey, data: &[u8]) -> Value {
     json!({
         "context": { "slot": 1 },
         "value": {
             "data": [STANDARD.encode(data), "base64"],
             "executable": false,
             "lamports": 1_461_600,
-            "owner": spl_token_interface::ID.to_string(),
+            "owner": owner.to_string(),
             "rentEpoch": 0
         }
     })
-});
+}
 
-fn mock_rpc_client() -> RpcClient {
-    let mocks = (0..ACCOUNT_INFO_RESPONSES)
-        .map(|_| (RpcRequest::GetAccountInfo, MINT_ACCOUNT_INFO.clone()))
-        .collect();
-    RpcClient::new_mock_with_mocks_map("succeeds".to_string(), mocks)
+struct AccountsByAddress {
+    transfer_sources: HashMap<Pubkey, Pubkey>,
+    fallback: MockSender,
+}
+
+impl AccountsByAddress {
+    fn new(instructions: &[Instruction]) -> Self {
+        let transfer_sources = instructions
+            .iter()
+            .filter(|ix| {
+                (ix.program_id == spl_token_interface::ID
+                    || ix.program_id == spl_token_2022_interface::ID)
+                    && ix.data.first() == Some(&TOKEN_TRANSFER_TAG)
+            })
+            .filter_map(|ix| Some((ix.accounts.first()?.pubkey, ix.program_id)))
+            .collect();
+        Self { transfer_sources, fallback: MockSender::new("succeeds") }
+    }
+}
+
+#[async_trait]
+impl RpcSender for AccountsByAddress {
+    async fn send(&self, request: RpcRequest, params: Value) -> ClientResult<Value> {
+        if request != RpcRequest::GetAccountInfo {
+            return self.fallback.send(request, params).await;
+        }
+        let address = params[0].as_str().and_then(|key| key.parse::<Pubkey>().ok());
+        let token_2022_mint = source_mint(spl_token_2022_interface::ID);
+        Ok(match address {
+            Some(address) if self.transfer_sources.contains_key(&address) => {
+                let program = self.transfer_sources[&address];
+                account_info(program, &token_account_data(source_mint(program)))
+            }
+            Some(address) if address == token_2022_mint => {
+                account_info(spl_token_2022_interface::ID, &mint_data())
+            }
+            _ => account_info(spl_token_interface::ID, &mint_data()),
+        })
+    }
+
+    fn get_transport_stats(&self) -> RpcTransportStats {
+        RpcTransportStats::default()
+    }
+
+    fn url(&self) -> String {
+        "succeeds".to_string()
+    }
 }
 
 fuzz_target!(|scenario: Scenario| {
@@ -61,7 +130,8 @@ fuzz_target!(|scenario: Scenario| {
 
     let config = scenario.config();
     let validator = TransactionValidator::new(&config, FEE_PAYER).unwrap();
-    let rpc_client = mock_rpc_client();
+    let rpc_client =
+        RpcClient::new_sender(AccountsByAddress::new(&instructions), RpcClientConfig::default());
     let result =
         RUNTIME.block_on(validator.validate_transaction(&config, &mut resolved, &rpc_client));
 
