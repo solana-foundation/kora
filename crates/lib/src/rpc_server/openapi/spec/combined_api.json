@@ -2215,7 +2215,7 @@
           },
           "allow_initialize_mint": {
             "type": "boolean",
-            "description": "Allow fee payer to be the mint authority in SPL Token InitializeMint/InitializeMint2 instructions"
+            "description": "Allow fee payer to be the mint or freeze authority in SPL Token InitializeMint/InitializeMint2 instructions"
           },
           "allow_initialize_multisig": {
             "type": "boolean",
@@ -2231,7 +2231,7 @@
           },
           "allow_set_authority": {
             "type": "boolean",
-            "description": "Allow fee payer to be the current authority in SPL Token SetAuthority instructions"
+            "description": "Allow fee payer to be the current or the new authority in SPL Token SetAuthority instructions"
           },
           "allow_thaw_account": {
             "type": "boolean",
@@ -2367,7 +2367,7 @@
           },
           "allow_initialize_mint": {
             "type": "boolean",
-            "description": "Allow fee payer to be the mint authority in Token2022 InitializeMint/InitializeMint2 instructions",
+            "description": "Allow fee payer to be the mint or freeze authority in Token2022 InitializeMint/InitializeMint2 instructions",
             "default": false
           },
           "allow_initialize_multisig": {
@@ -2387,7 +2387,7 @@
           },
           "allow_set_authority": {
             "type": "boolean",
-            "description": "Allow fee payer to be the current authority in Token2022 SetAuthority instructions",
+            "description": "Allow fee payer to be the current or the new authority in Token2022 SetAuthority instructions",
             "default": false
           },
           "allow_thaw_account": {

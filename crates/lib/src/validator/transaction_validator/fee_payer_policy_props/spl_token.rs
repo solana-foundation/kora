@@ -18,9 +18,11 @@ enum SplTokenRole {
     CloseAccount,
     Approve,
     Revoke,
-    SetAuthority,
+    SetAuthorityCurrent,
+    SetAuthorityNew,
     MintTo,
-    InitializeMint,
+    InitializeMintAuthority,
+    InitializeMintFreezeAuthority,
     InitializeAccount,
     InitializeMultisig,
     FreezeAccount,
@@ -36,9 +38,11 @@ impl DrainRole for SplTokenRole {
         Self::CloseAccount,
         Self::Approve,
         Self::Revoke,
-        Self::SetAuthority,
+        Self::SetAuthorityCurrent,
+        Self::SetAuthorityNew,
         Self::MintTo,
-        Self::InitializeMint,
+        Self::InitializeMintAuthority,
+        Self::InitializeMintFreezeAuthority,
         Self::InitializeAccount,
         Self::InitializeMultisig,
         Self::FreezeAccount,
@@ -58,9 +62,13 @@ impl DrainRole for SplTokenRole {
             Self::CloseAccount => &mut policy.spl_token.allow_close_account,
             Self::Approve => &mut policy.spl_token.allow_approve,
             Self::Revoke => &mut policy.spl_token.allow_revoke,
-            Self::SetAuthority => &mut policy.spl_token.allow_set_authority,
+            Self::SetAuthorityCurrent | Self::SetAuthorityNew => {
+                &mut policy.spl_token.allow_set_authority
+            }
             Self::MintTo => &mut policy.spl_token.allow_mint_to,
-            Self::InitializeMint => &mut policy.spl_token.allow_initialize_mint,
+            Self::InitializeMintAuthority | Self::InitializeMintFreezeAuthority => {
+                &mut policy.spl_token.allow_initialize_mint
+            }
             Self::InitializeAccount => &mut policy.spl_token.allow_initialize_account,
             Self::InitializeMultisig => &mut policy.spl_token.allow_initialize_multisig,
             Self::FreezeAccount => &mut policy.spl_token.allow_freeze_account,
@@ -71,8 +79,9 @@ impl DrainRole for SplTokenRole {
     }
 
     // `actor` goes in the slot the validator reads for this role: owner for the account
-    // operations, mint authority for mint-to and initialize-mint, freeze authority for
-    // freeze and thaw, current authority for set-authority, and a signer for the multisig.
+    // operations, mint authority for mint-to, mint or freeze authority for initialize-mint,
+    // freeze authority for freeze and thaw, current or new authority for set-authority, and a
+    // signer for the multisig.
     fn instruction(self, actor: &Pubkey) -> Instruction {
         let program = spl_token_id();
         let account = Pubkey::new_unique();
@@ -84,7 +93,7 @@ impl DrainRole for SplTokenRole {
             Self::CloseAccount => close_account(&program, &account, &other, actor, &[]).unwrap(),
             Self::Approve => approve(&program, &account, &other, actor, &[], 1).unwrap(),
             Self::Revoke => revoke(&program, &account, actor, &[]).unwrap(),
-            Self::SetAuthority => set_authority(
+            Self::SetAuthorityCurrent => set_authority(
                 &program,
                 &account,
                 Some(&other),
@@ -93,8 +102,22 @@ impl DrainRole for SplTokenRole {
                 &[],
             )
             .unwrap(),
+            Self::SetAuthorityNew => set_authority(
+                &program,
+                &mint,
+                Some(actor),
+                AuthorityType::FreezeAccount,
+                &other,
+                &[],
+            )
+            .unwrap(),
             Self::MintTo => mint_to(&program, &mint, &account, actor, &[], 1).unwrap(),
-            Self::InitializeMint => initialize_mint(&program, &mint, actor, None, 0).unwrap(),
+            Self::InitializeMintAuthority => {
+                initialize_mint(&program, &mint, actor, None, 0).unwrap()
+            }
+            Self::InitializeMintFreezeAuthority => {
+                initialize_mint(&program, &mint, &other, Some(actor), 0).unwrap()
+            }
             Self::InitializeAccount => {
                 initialize_account(&program, &account, &mint, actor).unwrap()
             }
