@@ -200,6 +200,7 @@ struct TokenFlags {
     approve: bool,
     set_authority: bool,
     mint_to: bool,
+    freeze_account: bool,
 }
 
 fn token_flags(policy: &FeePayerPolicy, program: TokenProgram) -> TokenFlags {
@@ -213,6 +214,7 @@ fn token_flags(policy: &FeePayerPolicy, program: TokenProgram) -> TokenFlags {
                 approve: p.allow_approve,
                 set_authority: p.allow_set_authority,
                 mint_to: p.allow_mint_to,
+                freeze_account: p.allow_freeze_account,
             }
         }
         TokenProgram::Token2022 => {
@@ -224,6 +226,7 @@ fn token_flags(policy: &FeePayerPolicy, program: TokenProgram) -> TokenFlags {
                 approve: p.allow_approve,
                 set_authority: p.allow_set_authority,
                 mint_to: p.allow_mint_to,
+                freeze_account: p.allow_freeze_account,
             }
         }
     }
@@ -319,6 +322,31 @@ fn authority_violation(
     }
 }
 
+fn freeze_violation(
+    kind: Seeded,
+    pre: &Account,
+    post: &Account,
+    seeded: &[(Pubkey, Seeded, Account)],
+    policy: &FeePayerPolicy,
+) -> Option<&'static str> {
+    let Seeded::TokenAccount { program, mint, .. } = kind else {
+        return None;
+    };
+    let fee_payer_freezes = seeded.iter().any(|(pubkey, kind, _)| {
+        *pubkey == mint.pubkey()
+            && matches!(kind, Seeded::Mint { authority, .. } if authority.is_fee_payer())
+    });
+    if !fee_payer_freezes {
+        return None;
+    }
+    let before: TokenAccount = unpack(program, pre)?;
+    let after: TokenAccount = unpack(program, post)?;
+    (before.state != AccountState::Frozen
+        && after.state == AccountState::Frozen
+        && !token_flags(policy, program).freeze_account)
+        .then_some("token account frozen by fee payer freeze authority")
+}
+
 fn fee_payer_violation(post: &Account, policy: &FeePayerPolicy) -> Option<&'static str> {
     let system = &policy.system;
     if post.owner != solana_system_interface::program::ID
@@ -402,7 +430,9 @@ fuzz_target!(|input: Input| {
             if let Some(rule) = fee_payer_violation(after, policy) {
                 panic!("validator accepted a transaction where `{rule}`");
             }
-        } else if let Some(rule) = authority_violation(*kind, pre, after, policy) {
+        } else if let Some(rule) = authority_violation(*kind, pre, after, policy)
+            .or_else(|| freeze_violation(*kind, pre, after, &seeded, policy))
+        {
             panic!("validator accepted a transaction where `{rule}`");
         }
         if *pubkey == FEE_PAYER || controlled(*kind) {
