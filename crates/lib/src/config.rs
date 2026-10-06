@@ -1,6 +1,7 @@
 use http::HeaderValue;
 use serde::{Deserialize, Deserializer, Serialize};
 use solana_sdk::pubkey::Pubkey;
+use solana_transaction::versioned::TransactionVersion;
 use spl_token_2022_interface::extension::ExtensionType;
 use std::{env, fs, path::Path, str::FromStr};
 use toml;
@@ -258,6 +259,29 @@ impl ProgramsConfig {
     }
 }
 
+fn transaction_versions_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+    use utoipa::openapi::{schema::Type, ArrayBuilder, ObjectBuilder, OneOfBuilder};
+    ArrayBuilder::new()
+        .items(
+            OneOfBuilder::new()
+                .item(
+                    ObjectBuilder::new()
+                        .schema_type(Type::String)
+                        .enum_values(Some(vec!["legacy"])),
+                )
+                .item(
+                    ObjectBuilder::new()
+                        .schema_type(Type::Integer)
+                        .minimum(Some(0))
+                        .maximum(Some(255)),
+                ),
+        )
+        .description(Some(
+            "Transaction message versions accepted: any of \"legacy\", 0, 1.\nDefault: all versions.",
+        ))
+        .into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ValidationConfig {
@@ -283,6 +307,11 @@ pub struct ValidationConfig {
     /// WARNING: Enabling with dynamic pricing creates price arbitrage risk.
     #[serde(default)]
     pub allow_durable_transactions: bool,
+    /// Transaction message versions accepted: any of "legacy", 0, 1.
+    /// Default: all versions.
+    #[serde(default = "default_allowed_transaction_versions")]
+    #[schema(schema_with = transaction_versions_schema)]
+    pub allowed_transaction_versions: Vec<TransactionVersion>,
     /// Maximum allowed age of oracle price data in slots. 0 = disabled (default).
     /// When >0, prices with a block_id older than `current_slot - max_price_staleness_slots` are rejected.
     #[serde(default)]
@@ -300,6 +329,10 @@ pub struct ValidationConfig {
     pub cross_cluster_check: bool,
     #[serde(default = "default_cross_cluster_endpoints")]
     pub cross_cluster_endpoints: Vec<String>,
+}
+
+pub(crate) fn default_allowed_transaction_versions() -> Vec<TransactionVersion> {
+    vec![TransactionVersion::LEGACY, TransactionVersion::Number(0), TransactionVersion::Number(1)]
 }
 
 fn default_cross_cluster_endpoints() -> Vec<String> {
@@ -1153,6 +1186,67 @@ mod tests {
         let config = crate::tests::toml_mock::create_invalid_config(toml_content)
             .expect("TOML with allowed_programs = \"All\" should parse");
         assert_eq!(config.validation.allowed_programs, ProgramsConfig::All);
+    }
+
+    fn validation_toml_with(extra: &str) -> String {
+        format!(
+            r#"
+            [validation]
+            max_allowed_lamports = 1
+            max_signatures = 1
+            allowed_programs = []
+            allowed_tokens = []
+            allowed_spl_paid_tokens = []
+            disallowed_accounts = []
+            price_source = "Mock"
+            {extra}
+
+            [kora]
+            rate_limit = 1
+            "#
+        )
+    }
+
+    #[test]
+    fn test_allowed_transaction_versions_defaults_to_all() {
+        let config = crate::tests::toml_mock::create_invalid_config(&validation_toml_with(""))
+            .expect("TOML without allowed_transaction_versions should parse");
+        assert_eq!(
+            config.validation.allowed_transaction_versions,
+            vec![
+                TransactionVersion::LEGACY,
+                TransactionVersion::Number(0),
+                TransactionVersion::Number(1)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_allowed_transaction_versions_parses_mixed_array() {
+        let config = crate::tests::toml_mock::create_invalid_config(&validation_toml_with(
+            r#"allowed_transaction_versions = ["legacy", 1]"#,
+        ))
+        .expect("TOML with a mixed allowed_transaction_versions array should parse");
+        assert_eq!(
+            config.validation.allowed_transaction_versions,
+            vec![TransactionVersion::LEGACY, TransactionVersion::Number(1)]
+        );
+    }
+
+    #[test]
+    fn test_allowed_transaction_versions_rejects_non_version_values() {
+        for value in [r#"["0"]"#, r#"["v0"]"#, r#"["Legacy"]"#, "[256]", "[-1]"] {
+            let result = crate::tests::toml_mock::create_invalid_config(&validation_toml_with(
+                &format!("allowed_transaction_versions = {value}"),
+            ));
+            assert!(result.is_err(), "allowed_transaction_versions = {value} should not parse");
+        }
+    }
+
+    #[test]
+    fn test_transaction_version_json_serialization() {
+        let json = serde_json::to_string(&default_allowed_transaction_versions()).unwrap();
+        assert_eq!(json, r#"["legacy",0,1]"#);
     }
 
     #[test]

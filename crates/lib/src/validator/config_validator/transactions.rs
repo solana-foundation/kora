@@ -9,6 +9,7 @@ use crate::{
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
+use solana_transaction::versioned::TransactionVersion;
 use spl_token_2022_interface::ID as TOKEN_2022_PROGRAM_ID;
 use spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID;
 use std::{collections::HashSet, str::FromStr};
@@ -26,6 +27,25 @@ impl ConfigValidator {
 
         if config.validation.max_signatures == 0 {
             warnings.push("Max signatures is 0 - this will block all transactions".to_string());
+        }
+
+        if config.validation.allowed_transaction_versions.is_empty() {
+            errors.push(
+                "allowed_transaction_versions is empty - this will block all transactions. \
+                Remove it to allow all versions, or list the versions to accept"
+                    .to_string(),
+            );
+        }
+
+        for version in &config.validation.allowed_transaction_versions {
+            if let TransactionVersion::Number(number) = version {
+                if *number > 1 {
+                    errors.push(format!(
+                        "allowed_transaction_versions contains unsupported version {number}. \
+                        Supported versions are \"legacy\", 0 and 1"
+                    ));
+                }
+            }
         }
 
         if matches!(config.validation.price_source, PriceSource::Mock) {

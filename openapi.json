@@ -623,7 +623,7 @@
         "properties": {
           "lighthouse_assertion_added": {
             "type": "boolean",
-            "description": "Whether a Lighthouse fee payer assertion was appended to the message before signing.\nWhen true, the returned message differs from the request and any client signature\ntaken over the original message is invalid; sign the returned transaction instead."
+            "description": "Whether a Lighthouse fee payer assertion was appended to the message before signing.\nReports only the assertion. It is not a statement that the message is otherwise\nunchanged: a request with an empty signature array also gets a fresh blockhash."
           },
           "signed_transaction": {
             "type": "string",
@@ -1029,6 +1029,25 @@
             "items": {
               "type": "string"
             }
+          },
+          "allowed_transaction_versions": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "legacy"
+                  ]
+                },
+                {
+                  "type": "integer",
+                  "maximum": 255,
+                  "minimum": 0
+                }
+              ]
+            },
+            "description": "Transaction message versions accepted: any of \"legacy\", 0, 1.\nDefault: all versions."
           },
           "cross_cluster_check": {
             "type": "boolean",

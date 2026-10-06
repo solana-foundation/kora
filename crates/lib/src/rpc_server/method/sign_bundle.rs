@@ -156,6 +156,7 @@ mod tests {
             config_mock::{
                 mock_state::setup_config_mock, ConfigMockBuilder, ValidationConfigBuilder,
             },
+            transaction_mock::create_mock_encoded_transaction,
         },
         transaction::TransactionUtil,
     };
@@ -164,6 +165,7 @@ mod tests {
     use solana_message::{Message, VersionedMessage};
     use solana_sdk::pubkey::Pubkey;
     use solana_system_interface::instruction::transfer;
+    use solana_transaction::versioned::TransactionVersion;
 
     #[tokio::test]
     async fn test_sign_bundle_empty_bundle() {
@@ -518,5 +520,32 @@ mod tests {
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Total transfer amount"), "Unexpected error: {err}");
         assert!(err.contains("exceeds maximum allowed"), "Unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn test_sign_bundle_rejects_disallowed_transaction_version() {
+        let _m = ConfigMockBuilder::new()
+            .with_bundle_enabled(true)
+            .with_allowed_transaction_versions(vec![TransactionVersion::Number(0)])
+            .build_and_setup();
+        let _ = setup_or_get_test_signer();
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().with_simulation().build());
+
+        let request = SignBundleRequest {
+            transactions: vec![create_mock_encoded_transaction()],
+            signer_key: None,
+            sig_verify: false,
+            user_id: None,
+            sign_only_indices: None,
+        };
+
+        let result = sign_bundle(&rpc_client, request).await;
+
+        assert_eq!(
+            result.unwrap_err(),
+            KoraError::InvalidTransaction("Transaction version is not allowed".to_string())
+        );
     }
 }
