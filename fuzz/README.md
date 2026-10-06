@@ -4,6 +4,25 @@ Coverage-guided fuzzing for Kora's untrusted-input paths, using [`cargo-fuzz`](h
 
 Kora runs off-chain (native Rust), so the fuzzable surface is the code that turns bytes from a JSON-RPC client into typed instructions — not on-chain sBPF, which is why an SVM fuzzer like Crucible does not apply here.
 
+## Layout
+
+```
+fuzz/
+├── fuzz_targets/                one binary per target
+│   ├── parse_transaction.rs       parsers must not panic on arbitrary bytes
+│   ├── decode_b64_transaction.rs  base64 decode entry point must not panic
+│   ├── validate_transaction.rs    full validator vs an independent oracle
+│   └── differential_litesvm.rs    validator vs real execution in LiteSVM
+├── src/                         shared library used by the validator targets
+│   ├── scenario.rs                turns fuzzer bytes into a transaction, policy and config
+│   └── oracle.rs                  expected rejection for each generated instruction
+├── corpus/<target>/seed_*       committed starting inputs, loaded by default
+├── examples/gen_seed_corpus.rs  regenerates the generated seeds (`just fuzz-seeds`)
+└── artifacts/                   crash reproducers (gitignored)
+```
+
+The fee-payer drain and outflow-cap property tests are proptest, not cargo-fuzz, and live in `kora-lib` (see [Property tests](#property-tests)).
+
 ## Setup
 
 ```bash
@@ -48,4 +67,6 @@ just fuzz-seeds   # or: cd fuzz && cargo run --example gen_seed_corpus
 
 ## Property tests
 
-Structural invariants (e.g. fee-payer drain safety across the policy matrix) live as `proptest` cases in the `kora-lib` unit tests, not here — see `crates/lib/src/validator/transaction_validator/fee_payer_policy_props/`, one file per gated program type implementing the `DrainRole` trait. System, SPL Token, ALT, BPF Loader Upgradeable, and Loader v4 are covered; Token-2022 is open work. Run with `cargo test -p kora-lib --lib fee_payer_policy_props`.
+Structural invariants (e.g. fee-payer drain safety across the policy matrix) live as `proptest` cases in the `kora-lib` unit tests, not here — see `crates/lib/src/validator/transaction_validator/fee_payer_policy_props/`, one file per gated program type implementing the `DrainRole` trait. All six gated programs are covered. Run with `cargo test -p kora-lib --lib fee_payer_policy_props`.
+
+The outflow cap (net fee-payer outflow within `max_allowed_lamports`, no panic or truncation in the outflow accounting) is covered by `crates/lib/src/validator/transaction_validator/fee_payer_outflow_props.rs`. Run with `cargo test -p kora-lib --lib fee_payer_outflow_props`.
