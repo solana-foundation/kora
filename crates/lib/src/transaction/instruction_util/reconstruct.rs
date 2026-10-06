@@ -84,6 +84,10 @@ pub const PARSED_DATA_FIELD_FREEZE_AUTHORITY: &str = "freezeAuthority";
 pub const PARSED_DATA_FIELD_AUTHORITY_TYPE: &str = "authorityType";
 pub const PARSED_DATA_FIELD_MULTISIG_ACCOUNT: &str = "multisig";
 pub const PARSED_DATA_FIELD_SIGNERS: &str = "signers";
+pub const PARSED_DATA_FIELD_MULTISIG_AUTHORITY: &str = "multisigAuthority";
+pub const PARSED_DATA_FIELD_MULTISIG_OWNER: &str = "multisigOwner";
+pub const PARSED_DATA_FIELD_MULTISIG_MINT_AUTHORITY: &str = "multisigMintAuthority";
+pub const PARSED_DATA_FIELD_MULTISIG_FREEZE_AUTHORITY: &str = "multisigFreezeAuthority";
 pub const PARSED_DATA_FIELD_M: &str = "m";
 pub const PARSED_DATA_FIELD_RENT_SYSVAR: &str = "rentSysvar";
 
@@ -577,6 +581,36 @@ impl IxUtils {
             let decimals = Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_DECIMALS)? as u8;
             Ok((amount, decimals))
         };
+        let signer_indices = || -> Result<Vec<u8>, KoraError> {
+            let signers = info
+                .get(PARSED_DATA_FIELD_SIGNERS)
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| {
+                    KoraError::SerializationError("Missing or invalid 'signers' field".to_string())
+                })?;
+            let mut signer_indices = Vec::with_capacity(signers.len());
+            for signer in signers {
+                let signer_str = signer.as_str().ok_or_else(|| {
+                    KoraError::SerializationError("'signers' entry is not a string".to_string())
+                })?;
+                let signer_pubkey = signer_str.parse::<Pubkey>().map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Invalid multisig signer '{}': {}",
+                        signer_str,
+                        sanitize_error!(e)
+                    ))
+                })?;
+                signer_indices.push(Self::get_account_index(account_keys_hashmap, &signer_pubkey)?);
+            }
+            Ok(signer_indices)
+        };
+        let authority_accounts =
+            |field: &str, multisig_field: &str| -> Result<Vec<u8>, KoraError> {
+                if info.get(multisig_field).is_none() {
+                    return Ok(vec![index(field)?]);
+                }
+                Ok([vec![index(multisig_field)?], signer_indices()?].concat())
+            };
 
         macro_rules! pack {
             ($($variant:tt)+) => {
@@ -594,82 +628,111 @@ impl IxUtils {
                 let amount = Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT)?;
                 (
                     pack!(Transfer { amount }),
-                    vec![
-                        index(PARSED_DATA_FIELD_SOURCE)?,
-                        index(PARSED_DATA_FIELD_DESTINATION)?,
-                        index(PARSED_DATA_FIELD_AUTHORITY)?,
-                    ],
+                    [
+                        vec![index(PARSED_DATA_FIELD_SOURCE)?, index(PARSED_DATA_FIELD_DESTINATION)?],
+                        authority_accounts(
+                            PARSED_DATA_FIELD_AUTHORITY,
+                            PARSED_DATA_FIELD_MULTISIG_AUTHORITY,
+                        )?,
+                    ]
+                    .concat(),
                 )
             }
             PARSED_DATA_FIELD_TRANSFER_CHECKED => {
                 let (amount, decimals) = token_amount()?;
                 (
                     pack!(TransferChecked { amount, decimals }),
-                    vec![
-                        index(PARSED_DATA_FIELD_SOURCE)?,
-                        index(PARSED_DATA_FIELD_MINT)?,
-                        index(PARSED_DATA_FIELD_DESTINATION)?,
-                        index(PARSED_DATA_FIELD_AUTHORITY)?,
-                    ],
+                    [
+                        vec![
+                            index(PARSED_DATA_FIELD_SOURCE)?,
+                            index(PARSED_DATA_FIELD_MINT)?,
+                            index(PARSED_DATA_FIELD_DESTINATION)?,
+                        ],
+                        authority_accounts(
+                            PARSED_DATA_FIELD_AUTHORITY,
+                            PARSED_DATA_FIELD_MULTISIG_AUTHORITY,
+                        )?,
+                    ]
+                    .concat(),
                 )
             }
             PARSED_DATA_FIELD_BURN_CHECKED => {
                 let (amount, decimals) = token_amount()?;
                 (
                     pack!(BurnChecked { amount, decimals }),
-                    vec![
-                        index(PARSED_DATA_FIELD_ACCOUNT)?,
-                        index(PARSED_DATA_FIELD_MINT)?,
-                        index(PARSED_DATA_FIELD_AUTHORITY)?,
-                    ],
+                    [
+                        vec![index(PARSED_DATA_FIELD_ACCOUNT)?, index(PARSED_DATA_FIELD_MINT)?],
+                        authority_accounts(
+                            PARSED_DATA_FIELD_AUTHORITY,
+                            PARSED_DATA_FIELD_MULTISIG_AUTHORITY,
+                        )?,
+                    ]
+                    .concat(),
                 )
             }
             PARSED_DATA_FIELD_BURN => {
                 let amount = Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT).unwrap_or(0);
                 let account_idx = index(PARSED_DATA_FIELD_ACCOUNT)?;
-                let authority_idx = index(PARSED_DATA_FIELD_AUTHORITY)?;
+                let authority = authority_accounts(
+                    PARSED_DATA_FIELD_AUTHORITY,
+                    PARSED_DATA_FIELD_MULTISIG_AUTHORITY,
+                )?;
                 // Parsed non-checked burns may omit the mint, or name one missing from the key
                 // map; fall back to [source, authority].
                 let accounts = match index(PARSED_DATA_FIELD_MINT) {
-                    Ok(mint_idx) => vec![account_idx, mint_idx, authority_idx],
-                    Err(_) => vec![account_idx, authority_idx],
+                    Ok(mint_idx) => [vec![account_idx, mint_idx], authority].concat(),
+                    Err(_) if authority.len() == 1 => [vec![account_idx], authority].concat(),
+                    Err(e) => return Err(e),
                 };
                 (pack!(Burn { amount }), accounts)
             }
             PARSED_DATA_FIELD_CLOSE_ACCOUNT => (
                 pack!(CloseAccount),
-                vec![
-                    index(PARSED_DATA_FIELD_ACCOUNT)?,
-                    index(PARSED_DATA_FIELD_DESTINATION)?,
-                    index(PARSED_DATA_FIELD_OWNER)?,
-                ],
+                [
+                    vec![index(PARSED_DATA_FIELD_ACCOUNT)?, index(PARSED_DATA_FIELD_DESTINATION)?],
+                    authority_accounts(PARSED_DATA_FIELD_OWNER, PARSED_DATA_FIELD_MULTISIG_OWNER)?,
+                ]
+                .concat(),
             ),
             PARSED_DATA_FIELD_APPROVE => {
                 let amount = Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT)?;
                 (
                     pack!(Approve { amount }),
-                    vec![
-                        index(PARSED_DATA_FIELD_SOURCE)?,
-                        index(PARSED_DATA_FIELD_DELEGATE)?,
-                        index(PARSED_DATA_FIELD_OWNER)?,
-                    ],
+                    [
+                        vec![index(PARSED_DATA_FIELD_SOURCE)?, index(PARSED_DATA_FIELD_DELEGATE)?],
+                        authority_accounts(
+                            PARSED_DATA_FIELD_OWNER,
+                            PARSED_DATA_FIELD_MULTISIG_OWNER,
+                        )?,
+                    ]
+                    .concat(),
                 )
             }
             PARSED_DATA_FIELD_APPROVE_CHECKED => {
                 let (amount, decimals) = token_amount()?;
                 (
                     pack!(ApproveChecked { amount, decimals }),
-                    vec![
-                        index(PARSED_DATA_FIELD_SOURCE)?,
-                        index(PARSED_DATA_FIELD_MINT)?,
-                        index(PARSED_DATA_FIELD_DELEGATE)?,
-                        index(PARSED_DATA_FIELD_OWNER)?,
-                    ],
+                    [
+                        vec![
+                            index(PARSED_DATA_FIELD_SOURCE)?,
+                            index(PARSED_DATA_FIELD_MINT)?,
+                            index(PARSED_DATA_FIELD_DELEGATE)?,
+                        ],
+                        authority_accounts(
+                            PARSED_DATA_FIELD_OWNER,
+                            PARSED_DATA_FIELD_MULTISIG_OWNER,
+                        )?,
+                    ]
+                    .concat(),
                 )
             }
             PARSED_DATA_FIELD_REVOKE => (
                 pack!(Revoke),
-                vec![index(PARSED_DATA_FIELD_SOURCE)?, index(PARSED_DATA_FIELD_OWNER)?],
+                [
+                    vec![index(PARSED_DATA_FIELD_SOURCE)?],
+                    authority_accounts(PARSED_DATA_FIELD_OWNER, PARSED_DATA_FIELD_MULTISIG_OWNER)?,
+                ]
+                .concat(),
             ),
             PARSED_DATA_FIELD_SET_AUTHORITY => {
                 // The parser names the target field by authority level: `account` for
@@ -682,7 +745,10 @@ impl IxUtils {
                     PARSED_DATA_FIELD_MINT
                 };
                 let account_idx = index(target_field)?;
-                let current_authority_idx = index(PARSED_DATA_FIELD_AUTHORITY)?;
+                let current_authority = authority_accounts(
+                    PARSED_DATA_FIELD_AUTHORITY,
+                    PARSED_DATA_FIELD_MULTISIG_AUTHORITY,
+                )?;
                 let new_authority = optional_pubkey(PARSED_DATA_FIELD_NEW_AUTHORITY)?;
 
                 // authority_type is dropped during parsing and never read downstream; any
@@ -702,28 +768,34 @@ impl IxUtils {
                     }
                     .pack()
                 };
-                (data, vec![account_idx, current_authority_idx])
+                (data, [vec![account_idx], current_authority].concat())
             }
             PARSED_DATA_FIELD_MINT_TO => {
                 let amount = Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT)?;
                 (
                     pack!(MintTo { amount }),
-                    vec![
-                        index(PARSED_DATA_FIELD_MINT)?,
-                        index(PARSED_DATA_FIELD_ACCOUNT)?,
-                        index(PARSED_DATA_FIELD_MINT_AUTHORITY)?,
-                    ],
+                    [
+                        vec![index(PARSED_DATA_FIELD_MINT)?, index(PARSED_DATA_FIELD_ACCOUNT)?],
+                        authority_accounts(
+                            PARSED_DATA_FIELD_MINT_AUTHORITY,
+                            PARSED_DATA_FIELD_MULTISIG_MINT_AUTHORITY,
+                        )?,
+                    ]
+                    .concat(),
                 )
             }
             PARSED_DATA_FIELD_MINT_TO_CHECKED => {
                 let (amount, decimals) = token_amount()?;
                 (
                     pack!(MintToChecked { amount, decimals }),
-                    vec![
-                        index(PARSED_DATA_FIELD_MINT)?,
-                        index(PARSED_DATA_FIELD_ACCOUNT)?,
-                        index(PARSED_DATA_FIELD_MINT_AUTHORITY)?,
-                    ],
+                    [
+                        vec![index(PARSED_DATA_FIELD_MINT)?, index(PARSED_DATA_FIELD_ACCOUNT)?],
+                        authority_accounts(
+                            PARSED_DATA_FIELD_MINT_AUTHORITY,
+                            PARSED_DATA_FIELD_MULTISIG_MINT_AUTHORITY,
+                        )?,
+                    ]
+                    .concat(),
                 )
             }
             PARSED_DATA_FIELD_INITIALIZE_MINT | PARSED_DATA_FIELD_INITIALIZE_MINT2 => {
@@ -785,30 +857,7 @@ impl IxUtils {
                             "Multisig threshold 'm' exceeds u8 range".to_string(),
                         )
                     })?;
-
-                let signers = info
-                    .get(PARSED_DATA_FIELD_SIGNERS)
-                    .and_then(|v| v.as_array())
-                    .ok_or_else(|| {
-                        KoraError::SerializationError(
-                            "Missing or invalid 'signers' field".to_string(),
-                        )
-                    })?;
-                let mut signer_indices = Vec::with_capacity(signers.len());
-                for signer in signers {
-                    let signer_str = signer.as_str().ok_or_else(|| {
-                        KoraError::SerializationError("'signers' entry is not a string".to_string())
-                    })?;
-                    let signer_pubkey = signer_str.parse::<Pubkey>().map_err(|e| {
-                        KoraError::SerializationError(format!(
-                            "Invalid multisig signer '{}': {}",
-                            signer_str,
-                            sanitize_error!(e)
-                        ))
-                    })?;
-                    signer_indices
-                        .push(Self::get_account_index(account_keys_hashmap, &signer_pubkey)?);
-                }
+                let signer_indices = signer_indices()?;
 
                 let (data, mut accounts) =
                     if instruction_type == PARSED_DATA_FIELD_INITIALIZE_MULTISIG {
@@ -824,19 +873,25 @@ impl IxUtils {
             }
             PARSED_DATA_FIELD_FREEZE_ACCOUNT => (
                 pack!(FreezeAccount),
-                vec![
-                    index(PARSED_DATA_FIELD_ACCOUNT)?,
-                    index(PARSED_DATA_FIELD_MINT)?,
-                    index(PARSED_DATA_FIELD_FREEZE_AUTHORITY)?,
-                ],
+                [
+                    vec![index(PARSED_DATA_FIELD_ACCOUNT)?, index(PARSED_DATA_FIELD_MINT)?],
+                    authority_accounts(
+                        PARSED_DATA_FIELD_FREEZE_AUTHORITY,
+                        PARSED_DATA_FIELD_MULTISIG_FREEZE_AUTHORITY,
+                    )?,
+                ]
+                .concat(),
             ),
             PARSED_DATA_FIELD_THAW_ACCOUNT => (
                 pack!(ThawAccount),
-                vec![
-                    index(PARSED_DATA_FIELD_ACCOUNT)?,
-                    index(PARSED_DATA_FIELD_MINT)?,
-                    index(PARSED_DATA_FIELD_FREEZE_AUTHORITY)?,
-                ],
+                [
+                    vec![index(PARSED_DATA_FIELD_ACCOUNT)?, index(PARSED_DATA_FIELD_MINT)?],
+                    authority_accounts(
+                        PARSED_DATA_FIELD_FREEZE_AUTHORITY,
+                        PARSED_DATA_FIELD_MULTISIG_FREEZE_AUTHORITY,
+                    )?,
+                ]
+                .concat(),
             ),
             PARSED_DATA_FIELD_GET_ACCOUNT_DATA_SIZE => {
                 let mint_idx = index(PARSED_DATA_FIELD_MINT)?;
