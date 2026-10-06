@@ -456,7 +456,10 @@ impl TransactionValidator {
             config,
         )
         .await?;
-        Ok(net.max(0) as u64)
+        u64::try_from(net.max(0)).map_err(|_| {
+            log::error!("Net fee payer outflow {net} exceeds u64");
+            KoraError::ValidationError("Outflow calculation overflow".to_string())
+        })
     }
 
     pub async fn validate_token_payment(
@@ -6871,3 +6874,6 @@ mod tests {
 // gates the fee payer exactly when the role's flag is off, and never gates a non-fee-payer.
 #[cfg(test)]
 mod fee_payer_policy_props;
+
+#[cfg(test)]
+mod fee_payer_outflow_props;
