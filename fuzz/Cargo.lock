@@ -285,6 +285,9 @@ name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
+dependencies = [
+ "derive_arbitrary",
+]
 
 [[package]]
 name = "arc-swap"
@@ -1983,6 +1986,17 @@ name = "derivation-path"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e5c37193a1db1d8ed868c03ec7b152175f26160a5b740e5e484143877e0adf0"
+
+[[package]]
+name = "derive_arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "digest"
@@ -3776,19 +3790,25 @@ dependencies = [
 name = "kora-fuzz"
 version = "0.0.0"
 dependencies = [
+ "arbitrary",
  "base64 0.22.1",
  "bincode",
  "kora-lib",
  "libfuzzer-sys",
  "serde",
+ "serde_json",
  "solana-address-lookup-table-interface",
+ "solana-client",
  "solana-loader-v3-interface 6.1.1",
  "solana-loader-v4-interface",
+ "solana-message",
  "solana-sdk",
  "solana-system-interface 2.0.0",
+ "spl-associated-token-account-interface",
  "spl-token-2022-interface 2.1.0",
  "spl-token-interface",
  "spl-token-metadata-interface 0.8.0",
+ "tokio",
  "wincode",
 ]
 

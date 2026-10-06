@@ -14,6 +14,7 @@ cargo install cargo-fuzz   # nightly toolchain required (already pinned in rust-
 
 - `parse_transaction` — raw bytes → `bincode` `VersionedTransaction` → `from_kora_built_transaction` → every `get_or_parse_*` instruction parser. Finds panics in instruction decoding (out-of-bounds indexing, bad discriminators).
 - `decode_b64_transaction` — arbitrary strings → `TransactionUtil::decode_b64_transaction`. Exercises the base64 + `bincode` decode entry point used by the RPC layer.
+- `validate_transaction`: runs the full `TransactionValidator::validate_transaction` against a mock RPC client. The input is an `arbitrary`-derived `Scenario` (`src/scenario.rs`): a random `FeePayerPolicy` (every flag drawn from the input), a message version, and up to six structurally valid instructions for System, SPL Token, Token-2022, ATA, ALT, BPF Loader Upgradeable, and Loader v4, built with the upstream interface crates, with the fee payer randomly placed in their account and data slots. Raw instructions for the same programs are mixed in for malformed input. The oracle (`src/oracle.rs`) decides from the generated instruction alone, not Kora's parsers, whether the fee payer holds a gated role whose flag is off (or hits an unconditional drain guard), and the target panics if validation then returns `Ok`. `src/` is a library so later targets can reuse the generator.
 
 ## Running
 
@@ -44,4 +45,4 @@ just fuzz-seeds   # or: cd fuzz && cargo run --example gen_seed_corpus
 
 ## Property tests
 
-Structural invariants (e.g. fee-payer drain safety across the policy matrix) live as `proptest` cases in the `kora-lib` unit tests, not here — see `crates/lib/src/validator/transaction_validator/fee_payer_policy_props/`, one file per gated program type implementing the `DrainRole` trait. System is covered today; SPL Token, Token-2022, ALT, BPF Loader Upgradeable, and Loader v4 are open work. Run with `cargo test -p kora-lib --lib fee_payer_policy_props`.
+Structural invariants (e.g. fee-payer drain safety across the policy matrix) live as `proptest` cases in the `kora-lib` unit tests, not here — see `crates/lib/src/validator/transaction_validator/fee_payer_policy_props/`, one file per gated program type implementing the `DrainRole` trait. System, SPL Token, ALT, BPF Loader Upgradeable, and Loader v4 are covered; Token-2022 is open work. Run with `cargo test -p kora-lib --lib fee_payer_policy_props`.
