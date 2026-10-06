@@ -374,11 +374,11 @@ pub struct SplTokenInstructionPolicy {
     pub allow_approve: bool,
     /// Allow fee payer to be the owner in SPL Token Revoke instructions
     pub allow_revoke: bool,
-    /// Allow fee payer to be the current authority in SPL Token SetAuthority instructions
+    /// Allow fee payer to be the current or the new authority in SPL Token SetAuthority instructions
     pub allow_set_authority: bool,
     /// Allow fee payer to be the mint authority in SPL Token MintTo/MintToChecked instructions
     pub allow_mint_to: bool,
-    /// Allow fee payer to be the mint authority in SPL Token InitializeMint/InitializeMint2 instructions
+    /// Allow fee payer to be the mint or freeze authority in SPL Token InitializeMint/InitializeMint2 instructions
     pub allow_initialize_mint: bool,
     /// Allow fee payer to be set as the owner in SPL Token InitializeAccount instructions
     pub allow_initialize_account: bool,
@@ -409,11 +409,11 @@ pub struct Token2022InstructionPolicy {
     pub allow_approve: bool,
     /// Allow fee payer to be the owner in Token2022 Revoke instructions
     pub allow_revoke: bool,
-    /// Allow fee payer to be the current authority in Token2022 SetAuthority instructions
+    /// Allow fee payer to be the current or the new authority in Token2022 SetAuthority instructions
     pub allow_set_authority: bool,
     /// Allow fee payer to be the mint authority in Token2022 MintTo/MintToChecked instructions
     pub allow_mint_to: bool,
-    /// Allow fee payer to be the mint authority in Token2022 InitializeMint/InitializeMint2 instructions
+    /// Allow fee payer to be the mint or freeze authority in Token2022 InitializeMint/InitializeMint2 instructions
     pub allow_initialize_mint: bool,
     /// Allow fee payer to be set as the owner in Token2022 InitializeAccount instructions
     pub allow_initialize_account: bool,

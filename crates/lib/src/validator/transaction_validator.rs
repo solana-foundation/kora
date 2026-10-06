@@ -4082,6 +4082,55 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_fee_payer_policy_token2022_rejects_fee_payer_as_new_authority() {
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let current_authority = Pubkey::new_unique();
+
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instructions = [
+            spl_token_2022_interface::instruction::set_authority(
+                &spl_token_2022_interface::id(),
+                &mint,
+                Some(&fee_payer),
+                spl_token_2022_interface::instruction::AuthorityType::PermanentDelegate,
+                &current_authority,
+                &[],
+            )
+            .unwrap(),
+            spl_token_2022_interface::instruction::initialize_mint2(
+                &spl_token_2022_interface::id(),
+                &mint,
+                &current_authority,
+                Some(&fee_payer),
+                6,
+            )
+            .unwrap(),
+        ];
+
+        for instruction in instructions {
+            let rpc_client = RpcMockBuilder::new().build();
+            let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let result =
+                validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+            match result {
+                Err(KoraError::InvalidTransaction(msg)) => {
+                    assert!(msg.contains("Fee payer cannot be used for"), "{msg}")
+                }
+                other => {
+                    panic!("Expected fee payer as new authority to be rejected, got {other:?}")
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_mint_to() {
         let fee_payer = Pubkey::new_unique();
         let mint = Pubkey::new_unique();

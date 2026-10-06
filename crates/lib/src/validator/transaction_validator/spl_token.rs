@@ -37,8 +37,10 @@ impl TransactionValidator {
             unless token_policy(self.fee_payer_policy, *is_2022).allow_revoke, "Revoke");
 
         deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenSetAuthority,
-            ParsedSPLInstructionData::SplTokenSetAuthority { authority, multisig_signers, is_2022, .. } =>
-            self.fee_payer_signs(authority, multisig_signers),
+            ParsedSPLInstructionData::SplTokenSetAuthority {
+                authority, new_authority, multisig_signers, is_2022
+            } => (self.fee_payer_signs(authority, multisig_signers)
+                || *new_authority == Some(self.fee_payer_pubkey)),
             unless token_policy(self.fee_payer_policy, *is_2022).allow_set_authority,
             "SetAuthority");
 
@@ -48,8 +50,10 @@ impl TransactionValidator {
             unless token_policy(self.fee_payer_policy, *is_2022).allow_mint_to, "MintTo");
 
         deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenInitializeMint,
-            ParsedSPLInstructionData::SplTokenInitializeMint { mint_authority, is_2022, .. } =>
-            *mint_authority == self.fee_payer_pubkey,
+            ParsedSPLInstructionData::SplTokenInitializeMint {
+                mint_authority, freeze_authority, is_2022
+            } => (*mint_authority == self.fee_payer_pubkey
+                || *freeze_authority == Some(self.fee_payer_pubkey)),
             unless token_policy(self.fee_payer_policy, *is_2022).allow_initialize_mint,
             "InitializeMint");
 
