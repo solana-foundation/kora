@@ -973,6 +973,82 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_validate_with_result_create_account_only_via_not_in_allowed_programs() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        let program = solana_sdk::pubkey::Pubkey::new_unique().to_string();
+        config.validation.fee_payer_policy.system.allow_create_account = true;
+        config.validation.fee_payer_policy.system.create_account_only_via = vec![program.clone()];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let errors = ConfigValidator::validate_with_result(&rpc_client, true).await.unwrap_err();
+
+        assert!(errors.iter().any(|e| {
+            e.contains(
+                "fee_payer_policy.system.create_account_only_via must also be in allowed_programs",
+            ) && e.contains(&program)
+        }));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_create_account_only_via_invalid_pubkey() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.validation.fee_payer_policy.system.create_account_only_via =
+            vec!["not-a-pubkey".to_string()];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let errors = ConfigValidator::validate_with_result(&rpc_client, true).await.unwrap_err();
+
+        assert!(errors.iter().any(|e| e.contains(
+            "Invalid base58 pubkey format in fee_payer_policy.system.create_account_only_via"
+        )));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_create_account_only_via_warnings() {
+        let listed = SYSTEM_PROGRAM_ID.to_string();
+        let cases = [
+            (true, vec![], "pay for arbitrary account creations"),
+            (true, vec![listed.clone()], "only inside a CPI from"),
+            (false, vec![listed.clone()], "create_account_only_via has no effect"),
+        ];
+        for (allow_create_account, only_via, expected) in cases {
+            let mut config = ConfigMockBuilder::new().build();
+            config.kora.cache.enabled = false;
+            config.validation.fee_payer_policy.system.allow_create_account = allow_create_account;
+            config.validation.fee_payer_policy.system.create_account_only_via = only_via.clone();
+            let _ = update_config(config);
+
+            let rpc_client = RpcMockBuilder::new().build();
+            let warnings = ConfigValidator::validate_with_result(&rpc_client, true).await.unwrap();
+            assert!(
+                warnings.iter().any(|w| w.contains(expected)),
+                "allow_create_account={allow_create_account} only_via={only_via:?}: {warnings:?}"
+            );
+        }
+
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.validation.fee_payer_policy.system.allow_create_account = true;
+        config.validation.fee_payer_policy.system.create_account_only_via = vec![listed];
+        let _ = update_config(config);
+        let rpc_client = RpcMockBuilder::new().build();
+        let warnings = ConfigValidator::validate_with_result(&rpc_client, true).await.unwrap();
+        assert!(
+            !warnings.iter().any(|w| w.contains("pay for arbitrary account creations")),
+            "restricted creation must not carry the unrestricted warning: {warnings:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_require_one_of_programs_allows_compute_budget_program() {
         let mut config = ConfigMockBuilder::new().build();
         config.kora.cache.enabled = false;
@@ -1762,6 +1838,7 @@ mod tests {
                         allow_transfer: true,
                         allow_assign: true,
                         allow_create_account: true,
+                        create_account_only_via: vec![],
                         allow_allocate: true,
                         nonce: NonceInstructionPolicy {
                             allow_initialize: true,

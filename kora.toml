@@ -99,6 +99,7 @@ disallowed_accounts = []
 allow_transfer = true           # Allow fee payer to be sender in System Transfer/TransferWithSeed
 allow_assign = true             # Allow fee payer to be authority in System Assign/AssignWithSeed
 allow_create_account = true     # Allow fee payer to be payer in System CreateAccount/CreateAccountWithSeed
+# create_account_only_via = []  # Programs whose CPIs are the only place the fee payer may fund account creation (System or ATA). Each must also appear in allowed_programs.
 allow_allocate = true           # Allow fee payer to be account in System Allocate/AllocateWithSeed
 
 [validation.fee_payer_policy.system.nonce]

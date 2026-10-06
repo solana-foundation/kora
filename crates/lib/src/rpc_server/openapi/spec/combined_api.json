@@ -1760,6 +1760,7 @@
               "allow_assign": false,
               "allow_create_account": false,
               "allow_transfer": false,
+              "create_account_only_via": [],
               "nonce": {
                 "allow_advance": false,
                 "allow_authorize": false,
@@ -2274,6 +2275,14 @@
             "type": "boolean",
             "description": "Allow fee payer to be the sender in System Transfer/TransferWithSeed instructions",
             "default": false
+          },
+          "create_account_only_via": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "When non-empty, the fee payer may fund account creation (System CreateAccount variants and\nAssociated Token Account Create/CreateIdempotent) only as a CPI issued by one of these\nprograms. A top-level creation funded by the fee payer is rejected. Each program must also\nbe in `allowed_programs`. Empty means no restriction beyond `allow_create_account`.",
+            "default": []
           },
           "nonce": {
             "oneOf": [

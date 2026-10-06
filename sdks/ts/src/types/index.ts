@@ -382,6 +382,8 @@ export interface SystemInstructionPolicy {
     allow_assign: boolean;
     /** Allow fee payer to be the payer in System CreateAccount/CreateAccountWithSeed */
     allow_create_account: boolean;
+    /** Programs whose CPIs are the only place the fee payer may fund account creation; empty means no restriction */
+    create_account_only_via: string[];
     /** Allow fee payer to be the sender in System Transfer/TransferWithSeed */
     allow_transfer: boolean;
     /** Nested policy for nonce account operations */

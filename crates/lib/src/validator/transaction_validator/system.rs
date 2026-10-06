@@ -1,12 +1,74 @@
 use super::TransactionValidator;
 use crate::{
     error::KoraError,
-    transaction::{ParsedSystemInstructionData, ParsedSystemInstructionType},
+    token::token::TokenUtil,
+    transaction::{
+        InstructionOrigin, IxUtils, ParsedSystemInstructionData, ParsedSystemInstructionType,
+        VersionedTransactionResolved,
+    },
 };
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use std::collections::HashMap;
 
 impl TransactionValidator {
+    pub(super) fn validate_create_account_only_via(
+        &self,
+        transaction_resolved: &VersionedTransactionResolved,
+    ) -> Result<(), KoraError> {
+        if self.create_account_only_via.is_empty() {
+            return Ok(());
+        }
+
+        let all_instructions = &transaction_resolved.all_instructions;
+        let origins = &transaction_resolved.instruction_origins;
+        if all_instructions.len() != origins.len() {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Resolved {} instructions but {} instruction origins; cannot apply create_account_only_via",
+                all_instructions.len(),
+                origins.len()
+            )));
+        }
+        for (index, (instruction, origin)) in all_instructions.iter().zip(origins).enumerate() {
+            let Some(creation) = self.fee_payer_funded_creation(instruction)? else {
+                continue;
+            };
+            let issued_by = match origin {
+                InstructionOrigin::TopLevel => None,
+                InstructionOrigin::Inner { parent_index } => {
+                    Some(all_instructions[*parent_index].program_id)
+                }
+            };
+            if issued_by.is_some_and(|program| self.create_account_only_via.contains(&program)) {
+                continue;
+            }
+            let location = match issued_by {
+                None => "a top-level instruction".to_string(),
+                Some(program) => format!("a CPI from program {program}"),
+            };
+            return Err(KoraError::InvalidTransaction(format!(
+                "Fee payer may fund account creation only inside a CPI from one of \
+                 create_account_only_via; instruction {index} ('{creation}') is {location}"
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Names the account creation `instruction` performs with the fee payer as funder, if any.
+    fn fee_payer_funded_creation(
+        &self,
+        instruction: &Instruction,
+    ) -> Result<Option<&'static str>, KoraError> {
+        if let Some(ParsedSystemInstructionData::SystemCreateAccount { payer, .. }) =
+            IxUtils::parse_system_instruction(instruction)?
+        {
+            return Ok((payer == self.fee_payer_pubkey).then_some("System Create Account"));
+        }
+        Ok(TokenUtil::parse_ata_creation_instruction(instruction)
+            .filter(|ata| ata.payer == self.fee_payer_pubkey)
+            .map(|_| "Associated Token Account Create"))
+    }
+
     pub(super) fn validate_system_fee_payer_usage(
         &self,
         system_instructions: &HashMap<

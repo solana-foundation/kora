@@ -30,9 +30,6 @@ impl ConfigValidator {
             system, allow_assign, "System Assign instructions",
                 "Users can make the fee payer reassign ownership of its accounts. This can compromise account control";
 
-            system, allow_create_account, "System CreateAccount instructions",
-                "Users can make the fee payer pay for arbitrary account creations. This can drain your fee payer account";
-
             system, allow_allocate, "System Allocate instructions",
                 "Users can make the fee payer allocate space for accounts. This can be used to waste resources";
 
@@ -173,6 +170,30 @@ impl ConfigValidator {
 
             bpf_loader_upgradeable, allow_migrate, "BPF Loader Upgradeable Migrate instructions",
                 "Users can make the fee payer migrate programs from loader-v3 to loader-v4. Authority moves to a less-validated path on this Kora";
+        }
+
+        let only_via = &policy.system.create_account_only_via;
+        match (policy.system.allow_create_account, only_via.is_empty()) {
+            (true, true) => warnings.push(
+                "⚠️  SECURITY: Fee payer policy allows System CreateAccount instructions \
+                 (allow_create_account). Risk: Users can make the fee payer pay for arbitrary \
+                 account creations. This can drain your fee payer account. Consider setting \
+                 [validation.fee_payer_policy.system] allow_create_account=false, or restricting \
+                 it with create_account_only_via."
+                    .to_string(),
+            ),
+            (true, false) => warnings.push(format!(
+                "⚠️  SECURITY: Fee payer policy allows account creation funded by the fee payer \
+                 only inside a CPI from {only_via:?} (create_account_only_via). Risk: those \
+                 programs decide which accounts the fee payer funds, bounded per request by \
+                 max_allowed_lamports."
+            )),
+            (false, false) => warnings.push(
+                "[validation.fee_payer_policy.system] create_account_only_via has no effect \
+                 while allow_create_account=false: the fee payer cannot fund any account creation"
+                    .to_string(),
+            ),
+            (false, true) => {}
         }
 
         // Check nonce policy separately (nested structure)
