@@ -3280,6 +3280,83 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_create_account_only_via_rejects_parsed_ata_cpi_from_simulation() {
+        let fixture = OnlyViaFixture::setup(true);
+        let ata_instruction =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &fixture.fee_payer,
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &spl_token_interface::id(),
+            );
+        let ata_message = Message::new(&[ata_instruction.clone()], None);
+        let parsed_ata = solana_transaction_status::parse_instruction::parse(
+            &ata_instruction.program_id,
+            &ata_message.instructions[0],
+            &solana_message::AccountKeys::new(&ata_message.account_keys, None),
+            Some(2),
+        )
+        .unwrap();
+
+        let mut unlisted_call = fixture.call(fixture.unlisted_program);
+        unlisted_call.accounts = ata_instruction.accounts.clone();
+        unlisted_call.accounts.push(AccountMeta::new_readonly(ata_instruction.program_id, false));
+        let message = VersionedMessage::Legacy(Message::new(
+            &[fixture.call(fixture.listed_program), unlisted_call],
+            Some(&fixture.fee_payer),
+        ));
+        let transaction = VersionedTransaction {
+            signatures: vec![Default::default(); message.header().num_required_signatures as usize],
+            message,
+        };
+
+        let rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::SimulateTransaction,
+                serde_json::json!({
+                    "context": { "slot": 1 },
+                    "value": {
+                        "err": null,
+                        "logs": [],
+                        "accounts": null,
+                        "unitsConsumed": 1000,
+                        "innerInstructions": [{
+                            "index": 1,
+                            "instructions": [
+                                solana_transaction_status_client_types::UiInstruction::Parsed(
+                                    solana_transaction_status_client_types::UiParsedInstruction::Parsed(
+                                        parsed_ata,
+                                    ),
+                                ),
+                            ],
+                        }],
+                    },
+                }),
+            )
+            .build();
+        let config = get_config().unwrap();
+        let mut resolved = VersionedTransactionResolved::from_transaction(
+            &transaction,
+            config,
+            &rpc_client,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+        let validator = TransactionValidator::new(config, fixture.fee_payer).unwrap();
+
+        assert_only_via_rejection(
+            validator.validate_transaction(config, &mut resolved, &fixture.rpc_client).await,
+            &format!(
+                "instruction 2 ('Associated Token Account Create') is a CPI from program {}",
+                fixture.unlisted_program
+            ),
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_create_account_only_via_ignores_creations_funded_by_others() {
         let fixture = OnlyViaFixture::setup(true);
 
