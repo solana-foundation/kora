@@ -1,7 +1,7 @@
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use spl_token_2022_interface::{extension::ExtensionType, instruction::TokenInstruction};
 
-use crate::{error::KoraError, sanitize_error};
+use crate::{error::KoraError, sanitize_error, transaction::TOKEN_2022_BATCH_UNSUPPORTED};
 
 mod extensions;
 mod interface;
@@ -207,14 +207,25 @@ impl Token2022SecurityParser {
                         Some(ExtensionType::NonTransferable),
                     ));
                 }
-                TokenInstruction::WithdrawExcessLamports
-                | TokenInstruction::ConfidentialTransferExtension
+                TokenInstruction::PermissionedBurnExtension => {
+                    parsed.push(Self::unsupported_fee_payer_account_check(
+                        instruction,
+                        "PermissionedBurn extension instruction",
+                        Some(ExtensionType::PermissionedBurn),
+                    ));
+                }
+                TokenInstruction::ConfidentialTransferExtension
                 | TokenInstruction::ConfidentialTransferFeeExtension
                 | TokenInstruction::ConfidentialMintBurnExtension => {
                     parsed.push(Self::unsupported_fee_payer_account_check(
                         instruction,
                         "unsupported Token-2022 extension instruction",
                         None,
+                    ));
+                }
+                TokenInstruction::Batch { .. } => {
+                    return Err(KoraError::InvalidTransaction(
+                        TOKEN_2022_BATCH_UNSUPPORTED.to_string(),
                     ));
                 }
                 _ => {}
@@ -294,8 +305,8 @@ impl Token2022SecurityParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solana_nullable::MaybeNull;
     use solana_sdk::instruction::AccountMeta;
-    use spl_pod::optional_keys::OptionalNonZeroPubkey;
 
     #[test]
     fn test_parse_metadata_pointer_initialize_security_fields() {
@@ -404,7 +415,7 @@ mod tests {
             &spl_token_2022_interface::id(),
             &metadata,
             &current_authority,
-            OptionalNonZeroPubkey::try_from(Some(new_authority)).unwrap(),
+            MaybeNull::try_from(Some(new_authority)).unwrap(),
         );
 
         let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
@@ -497,9 +508,51 @@ mod tests {
         let instruction = Instruction {
             program_id: spl_token_2022_interface::id(),
             accounts: vec![],
-            data: vec![0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+            data: vec![0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
         };
 
         assert!(Token2022SecurityParser::parse(&[instruction]).is_err());
+    }
+
+    #[test]
+    fn test_token2022_batch_instruction_fails_closed() {
+        let instruction = Instruction {
+            program_id: spl_token_2022_interface::id(),
+            accounts: vec![],
+            data: vec![0xff, 0x00, 0x01, 0x09],
+        };
+
+        assert!(Token2022SecurityParser::parse(&[instruction]).is_err());
+    }
+
+    #[test]
+    fn test_parse_permissioned_burn_marks_accounts_reject_if_fee_payer_present() {
+        let instruction = Instruction {
+            program_id: spl_token_2022_interface::id(),
+            accounts: vec![AccountMeta::new(Pubkey::new_unique(), false)],
+            data: vec![46, 0],
+        };
+
+        let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].extension_type, Some(ExtensionType::PermissionedBurn));
+        assert_eq!(
+            parsed[0].account_usage_policy,
+            Token2022AccountUsagePolicy::RejectIfFeePayerPresent
+        );
+    }
+
+    #[test]
+    fn test_withdraw_excess_lamports_is_left_to_fee_payer_policy() {
+        let instruction = spl_token_2022_interface::instruction::withdraw_excess_lamports(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &[],
+        )
+        .unwrap();
+
+        assert!(Token2022SecurityParser::parse(&[instruction]).unwrap().is_empty());
     }
 }

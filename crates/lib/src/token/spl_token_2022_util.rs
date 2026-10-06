@@ -51,6 +51,7 @@ use spl_token_2022_interface::{
         non_transferable::{NonTransferable, NonTransferableAccount},
         pausable::{PausableAccount, PausableConfig},
         permanent_delegate::PermanentDelegate,
+        permissioned_burn::PermissionedBurnConfig,
         scaled_ui_amount::ScaledUiAmountConfig,
         transfer_fee::TransferFeeConfig,
         transfer_hook::{TransferHook, TransferHookAccount},
@@ -108,6 +109,7 @@ define_extensions!(MintExtension, [
     GroupMemberPointer(GroupMemberPointer) => ExtensionType::GroupMemberPointer, "group_member_pointer",
     ScaledUiAmountConfig(ScaledUiAmountConfig) => ExtensionType::ScaledUiAmount, "scaled_ui_amount",
     PausableConfig(PausableConfig) => ExtensionType::Pausable, "pausable",
+    PermissionedBurnConfig(PermissionedBurnConfig) => ExtensionType::PermissionedBurn, "permissioned_burn",
     // Unit payload: the metadata content is never consumed, and borsh-parsing it
     // (several String allocations) would run on every unpack_mint of a
     // metadata-carrying mint. Presence is all the blocked-extension check needs.
@@ -234,6 +236,10 @@ pub fn try_parse_mint_extension(
             .get_extension::<PausableConfig>()
             .ok()
             .map(|ext| ParsedExtension::Mint(MintExtension::PausableConfig(*ext))),
+        ExtensionType::PermissionedBurn => mint
+            .get_extension::<PermissionedBurnConfig>()
+            .ok()
+            .map(|ext| ParsedExtension::Mint(MintExtension::PermissionedBurnConfig(*ext))),
         ExtensionType::TokenMetadata => mint
             .get_extension_bytes::<TokenMetadata>()
             .ok()
@@ -378,6 +384,7 @@ mod tests {
             "group_member_pointer",
             "scaled_ui_amount",
             "pausable",
+            "permissioned_burn",
             "token_metadata",
             "token_group",
             "token_group_member",
@@ -415,6 +422,7 @@ mod tests {
             ExtensionType::GroupMemberPointer,
             ExtensionType::ScaledUiAmount,
             ExtensionType::Pausable,
+            ExtensionType::PermissionedBurn,
             ExtensionType::TokenMetadata,
             ExtensionType::TokenGroup,
             ExtensionType::TokenGroupMember,
@@ -677,6 +685,7 @@ mod tests {
             ExtensionType::ScaledUiAmount,
             ExtensionType::Pausable,
             ExtensionType::ConfidentialMintBurn,
+            ExtensionType::PermissionedBurn,
             ExtensionType::TokenMetadata,
             ExtensionType::TokenGroup,
             ExtensionType::TokenGroupMember,
