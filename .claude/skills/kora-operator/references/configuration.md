@@ -202,8 +202,7 @@ allowed_spl_paid_tokens = ["<usdc-mint>"]
 # Blocked accounts
 disallowed_accounts = []
 
-# At least one of these programs must be called. Each must also appear in allowed_programs.
-# This does not restrict what the fee payer funds next to the call; see create_account_only_via.
+# Programs a transaction must call (at least one)
 # require_one_of_programs = []
 ```
 
@@ -271,10 +270,10 @@ not price its own SOL outflow, so transfer flags in particular must stay `false`
 
 ### Sponsoring rent for one program
 
-`allow_create_account = true` lets any request make the fee payer fund any account creation, and
-`require_one_of_programs` does not narrow that: it checks that a program is called, not what the
-fee payer pays for next to the call. To sponsor only the accounts your own program creates, list
-it in `create_account_only_via`:
+`allow_create_account = true` lets any request make the fee payer fund any account creation.
+`require_one_of_programs` keeps the fee payer from paying fees for transactions that never call
+your program; `create_account_only_via` keeps it from funding accounts your program did not ask
+for. A relay for one program needs both:
 
 ```toml
 [validation]

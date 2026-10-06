@@ -97,8 +97,7 @@ impl IxUtils {
         Ok(parsed_instructions)
     }
 
-    /// Parses one System program instruction; `None` for other programs and for System
-    /// instructions the fee payer policy does not track.
+    /// Parses one System instruction; `None` if it is not one the fee payer policy tracks.
     pub fn parse_system_instruction(
         instruction: &Instruction,
     ) -> Result<Option<ParsedSystemInstructionData>, KoraError> {

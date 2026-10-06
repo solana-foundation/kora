@@ -63,8 +63,7 @@ fn get_or_try_init<T>(
 pub enum InstructionOrigin {
     /// Listed in the message itself.
     TopLevel,
-    /// Surfaced by simulation as a CPI, at any depth, under the top-level instruction at
-    /// `parent_index` in `all_instructions`.
+    /// A CPI, at any depth, under the top-level instruction at `all_instructions[parent_index]`.
     Inner { parent_index: usize },
 }
 
