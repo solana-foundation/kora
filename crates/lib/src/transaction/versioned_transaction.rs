@@ -16,6 +16,7 @@ use solana_sdk::{
 use std::{
     collections::{HashMap, HashSet},
     ops::Deref,
+    sync::OnceLock,
 };
 use utoipa::ToSchema;
 
@@ -46,6 +47,17 @@ use super::retry_util::{set_signature_at, sign_with_signer_pool};
 
 type AltCache<'a> = Option<&'a mut HashMap<Pubkey, Vec<Pubkey>>>;
 
+fn get_or_try_init<T>(
+    cell: &OnceLock<T>,
+    init: impl FnOnce() -> Result<T, KoraError>,
+) -> Result<&T, KoraError> {
+    if let Some(value) = cell.get() {
+        return Ok(value);
+    }
+    let value = init()?;
+    Ok(cell.get_or_init(|| value))
+}
+
 /// A fully resolved transaction with lookup tables and inner instructions resolved
 pub struct VersionedTransactionResolved {
     pub transaction: VersionedTransaction,
@@ -56,31 +68,31 @@ pub struct VersionedTransactionResolved {
     // Includes all instructions, including inner instructions
     pub all_instructions: Vec<Instruction>,
 
-    // Parsed instructions by type (None if not parsed yet)
+    // Parsed instructions by type
     parsed_system_instructions:
-        Option<HashMap<ParsedSystemInstructionType, Vec<ParsedSystemInstructionData>>>,
+        OnceLock<HashMap<ParsedSystemInstructionType, Vec<ParsedSystemInstructionData>>>,
 
-    // Parsed SPL instructions by type (None if not parsed yet)
+    // Parsed SPL instructions by type
     parsed_spl_instructions:
-        Option<HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>>,
+        OnceLock<HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>>,
 
-    // Parsed ALT instructions by type (None if not parsed yet)
+    // Parsed ALT instructions by type
     parsed_alt_instructions:
-        Option<HashMap<ParsedALTInstructionType, Vec<ParsedALTInstructionData>>>,
+        OnceLock<HashMap<ParsedALTInstructionType, Vec<ParsedALTInstructionData>>>,
 
-    // Parsed Loader-v4 instructions by type (None if not parsed yet)
+    // Parsed Loader-v4 instructions by type
     parsed_loader_v4_instructions:
-        Option<HashMap<ParsedLoaderV4InstructionType, Vec<ParsedLoaderV4InstructionData>>>,
+        OnceLock<HashMap<ParsedLoaderV4InstructionType, Vec<ParsedLoaderV4InstructionData>>>,
 
-    // Parsed BPF Loader Upgradeable (loader-v3) instructions by type (None if not parsed yet)
-    parsed_bpf_loader_upgradeable_instructions: Option<
+    // Parsed BPF Loader Upgradeable (loader-v3) instructions by type
+    parsed_bpf_loader_upgradeable_instructions: OnceLock<
         HashMap<
             ParsedBpfLoaderUpgradeableInstructionType,
             Vec<ParsedBpfLoaderUpgradeableInstructionData>,
         >,
     >,
 
-    parsed_token2022_security_instructions: Option<Vec<Token2022SecurityInstruction>>,
+    parsed_token2022_security_instructions: OnceLock<Vec<Token2022SecurityInstruction>>,
 }
 
 impl Deref for VersionedTransactionResolved {
@@ -193,12 +205,12 @@ impl VersionedTransactionResolved {
             transaction,
             all_account_keys,
             all_instructions,
-            parsed_system_instructions: None,
-            parsed_spl_instructions: None,
-            parsed_alt_instructions: None,
-            parsed_loader_v4_instructions: None,
-            parsed_bpf_loader_upgradeable_instructions: None,
-            parsed_token2022_security_instructions: None,
+            parsed_system_instructions: OnceLock::new(),
+            parsed_spl_instructions: OnceLock::new(),
+            parsed_alt_instructions: OnceLock::new(),
+            parsed_loader_v4_instructions: OnceLock::new(),
+            parsed_bpf_loader_upgradeable_instructions: OnceLock::new(),
+            parsed_token2022_security_instructions: OnceLock::new(),
         }
     }
 
@@ -264,51 +276,39 @@ impl VersionedTransactionResolved {
     }
 
     pub fn get_or_parse_system_instructions(
-        &mut self,
+        &self,
     ) -> Result<&HashMap<ParsedSystemInstructionType, Vec<ParsedSystemInstructionData>>, KoraError>
     {
-        let parsed = match self.parsed_system_instructions.take() {
-            Some(parsed) => parsed,
-            None => IxUtils::parse_system_instructions(self)?,
-        };
-        Ok(self.parsed_system_instructions.insert(parsed))
+        get_or_try_init(&self.parsed_system_instructions, || {
+            IxUtils::parse_system_instructions(self)
+        })
     }
 
     pub fn get_or_parse_spl_instructions(
-        &mut self,
+        &self,
     ) -> Result<&HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>, KoraError> {
-        let parsed = match self.parsed_spl_instructions.take() {
-            Some(parsed) => parsed,
-            None => IxUtils::parse_token_instructions(self)?,
-        };
-        Ok(self.parsed_spl_instructions.insert(parsed))
+        get_or_try_init(&self.parsed_spl_instructions, || IxUtils::parse_token_instructions(self))
     }
 
     pub fn get_or_parse_alt_instructions(
-        &mut self,
+        &self,
     ) -> Result<&HashMap<ParsedALTInstructionType, Vec<ParsedALTInstructionData>>, KoraError> {
-        let parsed = match self.parsed_alt_instructions.take() {
-            Some(parsed) => parsed,
-            None => IxUtils::parse_alt_instructions(self)?,
-        };
-        Ok(self.parsed_alt_instructions.insert(parsed))
+        get_or_try_init(&self.parsed_alt_instructions, || IxUtils::parse_alt_instructions(self))
     }
 
     pub fn get_or_parse_loader_v4_instructions(
-        &mut self,
+        &self,
     ) -> Result<
         &HashMap<ParsedLoaderV4InstructionType, Vec<ParsedLoaderV4InstructionData>>,
         KoraError,
     > {
-        let parsed = match self.parsed_loader_v4_instructions.take() {
-            Some(parsed) => parsed,
-            None => IxUtils::parse_loader_v4_instructions(self)?,
-        };
-        Ok(self.parsed_loader_v4_instructions.insert(parsed))
+        get_or_try_init(&self.parsed_loader_v4_instructions, || {
+            IxUtils::parse_loader_v4_instructions(self)
+        })
     }
 
     pub fn get_or_parse_bpf_loader_upgradeable_instructions(
-        &mut self,
+        &self,
     ) -> Result<
         &HashMap<
             ParsedBpfLoaderUpgradeableInstructionType,
@@ -316,21 +316,17 @@ impl VersionedTransactionResolved {
         >,
         KoraError,
     > {
-        let parsed = match self.parsed_bpf_loader_upgradeable_instructions.take() {
-            Some(parsed) => parsed,
-            None => IxUtils::parse_bpf_loader_upgradeable_instructions(self)?,
-        };
-        Ok(self.parsed_bpf_loader_upgradeable_instructions.insert(parsed))
+        get_or_try_init(&self.parsed_bpf_loader_upgradeable_instructions, || {
+            IxUtils::parse_bpf_loader_upgradeable_instructions(self)
+        })
     }
 
     pub fn get_or_parse_token2022_security_instructions(
-        &mut self,
+        &self,
     ) -> Result<&Vec<Token2022SecurityInstruction>, KoraError> {
-        let parsed = match self.parsed_token2022_security_instructions.take() {
-            Some(parsed) => parsed,
-            None => Token2022SecurityParser::parse(&self.all_instructions)?,
-        };
-        Ok(self.parsed_token2022_security_instructions.insert(parsed))
+        get_or_try_init(&self.parsed_token2022_security_instructions, || {
+            Token2022SecurityParser::parse(&self.all_instructions)
+        })
     }
 }
 
@@ -945,9 +941,9 @@ mod tests {
         assert_eq!(resolved_instruction.data, instruction.data);
         assert_eq!(resolved_instruction.accounts.len(), instruction.accounts.len());
 
-        assert!(resolved.parsed_system_instructions.is_none());
-        assert!(resolved.parsed_spl_instructions.is_none());
-        assert!(resolved.parsed_alt_instructions.is_none());
+        assert!(resolved.parsed_system_instructions.get().is_none());
+        assert!(resolved.parsed_spl_instructions.get().is_none());
+        assert!(resolved.parsed_alt_instructions.get().is_none());
     }
 
     #[test]
@@ -1299,7 +1295,7 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        let mut resolved =
+        let resolved =
             VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
 
         let parsed1_len = {

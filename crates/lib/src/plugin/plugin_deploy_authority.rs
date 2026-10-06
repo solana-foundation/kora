@@ -122,7 +122,7 @@ pub(super) struct DeployAuthorityPlugin;
 impl TransactionPlugin for DeployAuthorityPlugin {
     async fn validate(
         &self,
-        transaction: &mut VersionedTransactionResolved,
+        transaction: &VersionedTransactionResolved,
         config: &Config,
         rpc_client: &RpcClient,
         fee_payer: &Pubkey,
@@ -131,7 +131,7 @@ impl TransactionPlugin for DeployAuthorityPlugin {
         let registry_gating = registry_gating_enabled(config);
 
         // ---- Loader-v4 ----
-        let loader_v4 = transaction.get_or_parse_loader_v4_instructions()?.clone();
+        let loader_v4 = transaction.get_or_parse_loader_v4_instructions()?;
         for data in loader_v4.values().flatten() {
             match data {
                 ParsedLoaderV4InstructionData::Write { authority, .. }
@@ -161,7 +161,7 @@ impl TransactionPlugin for DeployAuthorityPlugin {
         }
 
         // ---- BPF Loader Upgradeable (loader-v3) ----
-        let bpf_v3 = transaction.get_or_parse_bpf_loader_upgradeable_instructions()?.clone();
+        let bpf_v3 = transaction.get_or_parse_bpf_loader_upgradeable_instructions()?;
         for data in bpf_v3.values().flatten() {
             match data {
                 ParsedBpfLoaderUpgradeableInstructionData::InitializeBuffer {
@@ -333,7 +333,7 @@ impl TransactionPlugin for DeployAuthorityPlugin {
             HashSet::new()
         };
 
-        let system = transaction.get_or_parse_system_instructions()?.clone();
+        let system = transaction.get_or_parse_system_instructions()?;
         for data in
             system.get(&ParsedSystemInstructionType::SystemCreateAccount).into_iter().flatten()
         {
@@ -551,11 +551,11 @@ mod tests {
         let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
             Message::new(ixs, Some(fee_payer)),
         ));
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
         let runner = TransactionPluginRunner::from_config(config);
         runner
             .run(
-                &mut resolved,
+                &resolved,
                 config,
                 rpc_client.as_ref(),
                 fee_payer,
@@ -737,11 +737,11 @@ mod tests {
         let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
             Message::new(&[sol_ix, write_ix], Some(&fee_payer)),
         ));
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
         let runner = TransactionPluginRunner::from_config(&config);
         let err = runner
             .run(
-                &mut resolved,
+                &resolved,
                 &config,
                 rpc_client.as_ref(),
                 &fee_payer,
@@ -1235,11 +1235,11 @@ mod tests {
             tx.partial_sign(signers, blockhash);
         }
         let tx = VersionedTransaction::from(tx);
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
         let runner = TransactionPluginRunner::from_config(config);
         runner
             .run(
-                &mut resolved,
+                &resolved,
                 config,
                 rpc_client.as_ref(),
                 fee_payer,
