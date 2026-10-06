@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 
+use solana_nullable::MaybeNull;
 use solana_program::program_pack::Pack;
 use solana_sdk::{account::Account, program_option::COption, pubkey::Pubkey};
-use spl_pod::{
-    optional_keys::OptionalNonZeroPubkey,
-    primitives::{PodU16, PodU64},
-};
+use spl_pod::primitives::{PodU16, PodU64};
 use spl_token_2022_interface::{
     extension::{
         self,
@@ -470,13 +468,20 @@ impl MintAccountMockBuilder {
                             true,
                         )?;
                     }
+                    ExtensionType::PermissionedBurn => {
+                        state
+                            .init_extension::<extension::permissioned_burn::PermissionedBurnConfig>(
+                                true,
+                            )?;
+                    }
                     ExtensionType::TransferHook => {
                         let transfer_hook =
                             state.init_extension::<extension::transfer_hook::TransferHook>(true)?;
-                        transfer_hook.authority =
-                            OptionalNonZeroPubkey::try_from(self.transfer_hook_authority)?;
+                        transfer_hook.authority = MaybeNull::try_from(self.transfer_hook_authority)
+                            .map_err(|e| e.to_string())?;
                         transfer_hook.program_id =
-                            OptionalNonZeroPubkey::try_from(self.transfer_hook_program_id)?;
+                            MaybeNull::try_from(self.transfer_hook_program_id)
+                                .map_err(|e| e.to_string())?;
                     }
                     // Add other extension types as needed
                     _ => {}
@@ -572,11 +577,11 @@ pub fn create_mock_token2022_mint_with_extensions(
 /// Helper to create Transfer Fee Config for testing
 pub fn create_transfer_fee_config(basis_points: u16, max_fee: u64) -> TransferFeeConfig {
     TransferFeeConfig {
-        transfer_fee_config_authority: OptionalNonZeroPubkey::try_from(Some(
+        transfer_fee_config_authority: MaybeNull::try_from(Some(
             spl_pod::solana_pubkey::Pubkey::new_unique(),
         ))
         .unwrap(),
-        withdraw_withheld_authority: OptionalNonZeroPubkey::try_from(Some(
+        withdraw_withheld_authority: MaybeNull::try_from(Some(
             spl_pod::solana_pubkey::Pubkey::new_unique(),
         ))
         .unwrap(),

@@ -434,11 +434,9 @@ mod tests {
     };
 
     use super::*;
+    use solana_nullable::MaybeNull;
     use solana_sdk::pubkey::Pubkey;
-    use spl_pod::{
-        optional_keys::OptionalNonZeroPubkey,
-        primitives::{PodU16, PodU64},
-    };
+    use spl_pod::primitives::{PodU16, PodU64};
     use spl_token_2022_interface::extension::{
         transfer_fee::{TransferFee, TransferFeeConfig},
         ExtensionType,
@@ -699,11 +697,11 @@ mod tests {
 
         // Create config with different fees for different epochs
         let transfer_fee_config = TransferFeeConfig {
-            transfer_fee_config_authority: OptionalNonZeroPubkey::try_from(Some(
+            transfer_fee_config_authority: MaybeNull::try_from(Some(
                 spl_pod::solana_pubkey::Pubkey::new_unique(),
             ))
             .unwrap(),
-            withdraw_withheld_authority: OptionalNonZeroPubkey::try_from(Some(
+            withdraw_withheld_authority: MaybeNull::try_from(Some(
                 spl_pod::solana_pubkey::Pubkey::new_unique(),
             ))
             .unwrap(),

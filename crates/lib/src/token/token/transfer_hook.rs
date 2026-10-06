@@ -38,7 +38,7 @@ impl TokenUtil {
         if let Some(ParsedExtension::Mint(MintExtension::TransferHook(transfer_hook))) =
             mint.get_extension(spl_token_2022_interface::extension::ExtensionType::TransferHook)
         {
-            if transfer_hook.authority != spl_pod::optional_keys::OptionalNonZeroPubkey::default() {
+            if transfer_hook.authority != solana_nullable::MaybeNull::default() {
                 return Err(KoraError::ValidationError(format!(
                     "Mutable transfer-hook authority found on mint account {mint_pubkey}",
                 )));

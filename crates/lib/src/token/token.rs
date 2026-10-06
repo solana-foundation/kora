@@ -802,6 +802,40 @@ mod tests_token {
     }
 
     #[tokio::test]
+    async fn test_validate_token2022_partial_for_ata_creation_rejects_blocked_permissioned_burn_mint(
+    ) {
+        let _lock = ConfigMockBuilder::new()
+            .with_cache_enabled(false)
+            .with_blocked_token2022_mint_extensions(vec!["permissioned_burn".to_string()])
+            .build_and_setup();
+
+        let source_address = Pubkey::new_unique();
+        let mint_address = Pubkey::new_unique();
+
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(spl_token_2022_interface::extension::ExtensionType::PermissionedBurn)
+            .build_token2022();
+        let source_account =
+            TokenAccountMockBuilder::new().with_mint(&mint_address).build_token2022();
+
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&mint_account, &source_account]);
+
+        let config = get_config().unwrap();
+        let result = TokenUtil::validate_token2022_partial_for_ata_creation(
+            &config,
+            &rpc_client,
+            &source_address,
+            &mint_address,
+        )
+        .await;
+
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("Blocked mint extension found on mint account"));
+    }
+
+    #[tokio::test]
     async fn test_validate_token2022_extensions_for_payment_no_mint_provided() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
 

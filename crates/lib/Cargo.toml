@@ -66,6 +66,7 @@ clap = { workspace = true }
 rand = "0.10.1"
 utoipa = { workspace = true }
 spl-pod = "0.7.3"
+solana-nullable = "1.3.0"
 chrono = { workspace = true }
 hex = { workspace = true }
 # RPC server dependencies
