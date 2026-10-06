@@ -1,5 +1,5 @@
 use crate::{
-    constant::{X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP},
+    constant::{MAX_TIMESTAMP_CLOCK_SKEW, X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP},
     rpc_server::middleware_utils::{
         build_response_with_graceful_error, extract_parts_and_body_bytes, get_jsonrpc_method,
     },
@@ -235,7 +235,10 @@ where
                 .unwrap_or_else(|_| std::time::Duration::from_secs(0))
                 .as_secs() as i64;
 
-            if (now - ts).abs() > max_timestamp_age {
+            let Some(age) = now.checked_sub(ts) else {
+                return Ok(auth_rejection_response());
+            };
+            if age > max_timestamp_age || age < -MAX_TIMESTAMP_CLOCK_SKEW {
                 return Ok(auth_rejection_response());
             }
 
@@ -494,6 +497,86 @@ mod tests {
             response.extensions().get::<RejectionReason>(),
             Some(&RejectionReason::AuthFailure)
         );
+    }
+
+    #[tokio::test]
+    async fn test_hmac_auth_future_timestamp_beyond_clock_skew() {
+        let secret = "test-secret";
+        let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
+        let mut service = layer.layer(MockService);
+
+        let timestamp =
+            (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+                + 60)
+                .to_string();
+
+        let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
+        let message = format!("{timestamp}{body}");
+
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(message.as_bytes());
+        let signature = hex::encode(mac.finalize().into_bytes());
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/test")
+            .header(X_TIMESTAMP, &timestamp)
+            .header(X_HMAC_SIGNATURE, &signature)
+            .body(Body::from(body))
+            .unwrap();
+
+        let response = service.ready().await.unwrap().call(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_hmac_auth_future_timestamp_within_clock_skew() {
+        let secret = "test-secret";
+        let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
+        let mut service = layer.layer(MockService);
+
+        let timestamp =
+            (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+                + 10)
+                .to_string();
+
+        let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
+        let message = format!("{timestamp}{body}");
+
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(message.as_bytes());
+        let signature = hex::encode(mac.finalize().into_bytes());
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/test")
+            .header(X_TIMESTAMP, &timestamp)
+            .header(X_HMAC_SIGNATURE, &signature)
+            .body(Body::from(body))
+            .unwrap();
+
+        let response = service.ready().await.unwrap().call(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_hmac_auth_overflowing_timestamp() {
+        let secret = "test-secret";
+        let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
+        let mut service = layer.layer(MockService);
+
+        let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/test")
+            .header(X_TIMESTAMP, i64::MIN.to_string())
+            .header(X_HMAC_SIGNATURE, "some-signature")
+            .body(Body::from(body))
+            .unwrap();
+
+        let response = service.ready().await.unwrap().call(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

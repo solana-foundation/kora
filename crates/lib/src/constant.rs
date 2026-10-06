@@ -14,6 +14,7 @@ pub const X_API_KEY: &str = "x-api-key";
 pub const X_HMAC_SIGNATURE: &str = "x-hmac-signature";
 pub const X_TIMESTAMP: &str = "x-timestamp";
 pub const DEFAULT_MAX_TIMESTAMP_AGE: i64 = 300;
+pub const MAX_TIMESTAMP_CLOCK_SKEW: i64 = 30;
 pub const MIN_RECAPTCHA_SCORE: f64 = 0.0;
 pub const MAX_RECAPTCHA_SCORE: f64 = 1.0;
 pub const DEFAULT_RECAPTCHA_SCORE_THRESHOLD: f64 = 0.5;
