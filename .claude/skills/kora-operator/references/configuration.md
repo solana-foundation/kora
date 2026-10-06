@@ -319,6 +319,7 @@ Exposes Prometheus `/metrics` endpoint with:
 - `kora_http_requests_total{method, status}` - Request count
 - `kora_http_request_duration_seconds` - Response time percentiles
 - `signer_balance_lamports{signer_name, signer_pubkey}` - SOL balance per signer
+- `signer_balance_fetch_errors_total{signer_name, signer_pubkey}` - Failed balance fetches. On failure `signer_balance_lamports` keeps its last value instead of dropping to 0, so alert on this counter for "balance unknown"
 
 Use with Prometheus + Grafana. Run `just run-metrics` for local setup.
 
