@@ -15,7 +15,7 @@ use solana_sdk::{
 
 pub const FEE_PAYER: Pubkey = Pubkey::new_from_array([1; 32]);
 
-const POOL: [Pubkey; 4] = [
+pub const POOL: [Pubkey; 4] = [
     FEE_PAYER,
     Pubkey::new_from_array([2; 32]),
     Pubkey::new_from_array([3; 32]),
@@ -1194,9 +1194,13 @@ impl Scenario {
     }
 
     pub fn config(&self) -> Config {
+        self.config_with_max_allowed_lamports(u64::MAX)
+    }
+
+    pub fn config_with_max_allowed_lamports(&self, max_allowed_lamports: u64) -> Config {
         serde_json::from_value(json!({
             "validation": {
-                "max_allowed_lamports": u64::MAX,
+                "max_allowed_lamports": max_allowed_lamports,
                 "max_signatures": u64::MAX,
                 "allowed_programs": "All",
                 "allowed_tokens": [],
