@@ -23,8 +23,8 @@ tests are in `tests.rs`.
 
 Fee-payer-policy drain-safety property tests are the exception to that inline pattern: they are
 split one file per gated program under
-`validator/transaction_validator/fee_payer_policy_props/`. Token-2022 is the only program still
-uncovered. Run them with `cargo test -p kora-lib --lib fee_payer_policy_props`.
+`validator/transaction_validator/fee_payer_policy_props/`. Run them with
+`cargo test -p kora-lib --lib fee_payer_policy_props`.
 
 ## Gotchas
 
