@@ -1,0 +1,60 @@
+# Free pricing; the fee payer funds account creation only inside the CPI forwarder's calls
+[kora]
+rate_limit = 100
+cors_allow_origins = ["*"]
+
+[kora.auth]
+
+[kora.cache]
+enabled = false
+default_ttl = 300
+account_ttl = 60
+
+[kora.enabled_methods]
+liveness = true
+estimate_transaction_fee = true
+get_supported_tokens = true
+sign_transaction = true
+sign_and_send_transaction = true
+transfer_transaction = true
+get_blockhash = true
+get_config = true
+get_payer_signer = true
+get_version = true
+
+[validation]
+max_allowed_lamports = 5000000
+max_signatures = 10
+price_source = "Mock"
+allow_durable_transactions = false
+allowed_programs = [
+    "11111111111111111111111111111111",             # System Program
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
+    "ComputeBudget111111111111111111111111111111",  # Compute Budget Program
+    "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA", # Transfer-hook example (test CPI forwarder)
+]
+require_one_of_programs = ["Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA"]
+allowed_tokens = [
+    "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
+]
+allowed_spl_paid_tokens = []
+disallowed_accounts = []
+
+[validation.price]
+type = "free"
+
+[validation.fee_payer_policy]
+
+[validation.fee_payer_policy.system]
+allow_create_account = true
+create_account_only_via = ["Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA"]
+
+[kora.usage_limit]
+enabled = false
+cache_url = "redis://redis:6379"
+fallback_if_unavailable = false
+rules = []
+
+[kora.bundle]
+enabled = false
