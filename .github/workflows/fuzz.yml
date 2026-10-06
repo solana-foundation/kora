@@ -57,7 +57,7 @@ jobs:
         run: cargo fuzz build --target x86_64-unknown-linux-gnu
       - name: Smoke each target
         run: |
-          for target in parse_transaction decode_b64_transaction; do
+          for target in parse_transaction decode_b64_transaction validate_transaction differential_litesvm; do
             echo "::group::fuzz $target"
             cargo fuzz run "$target" --target x86_64-unknown-linux-gnu -- -max_total_time=60
             echo "::endgroup::"
@@ -80,7 +80,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [parse_transaction, decode_b64_transaction]
+        target: [parse_transaction, decode_b64_transaction, validate_transaction, differential_litesvm]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
