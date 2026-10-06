@@ -456,10 +456,8 @@ impl TransactionValidator {
             config,
         )
         .await?;
-        u64::try_from(net.max(0)).map_err(|_| {
-            log::error!("Net fee payer outflow {net} exceeds u64");
-            KoraError::ValidationError("Outflow calculation overflow".to_string())
-        })
+        u64::try_from(net.max(0))
+            .map_err(|_| KoraError::ValidationError("Outflow calculation overflow".to_string()))
     }
 
     pub async fn validate_token_payment(
