@@ -2,8 +2,8 @@
 use crate::state::get_config;
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
-use crate::{cache::CacheUtil, config::Config, error::KoraError, state::get_signers_info};
-use prometheus::{register_gauge_vec, GaugeVec};
+use crate::{error::KoraError, sanitize_error, signer::SignerInfo, state::get_signers_info};
+use prometheus::{register_counter_vec, register_gauge_vec, CounterVec, GaugeVec};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
 use std::{str::FromStr, sync::Arc};
@@ -15,6 +15,8 @@ use tokio::{
 
 /// Global Prometheus gauge vector for tracking all signer balances
 static SIGNER_BALANCE_GAUGES: OnceCell<GaugeVec> = OnceCell::const_new();
+
+static SIGNER_BALANCE_FETCH_ERRORS: OnceCell<CounterVec> = OnceCell::const_new();
 
 /// Balance tracker for monitoring signer SOL balance
 pub struct BalanceTracker;
@@ -46,52 +48,67 @@ impl BalanceTracker {
             })
             .await?;
 
+        SIGNER_BALANCE_FETCH_ERRORS
+            .get_or_try_init(|| async {
+                register_counter_vec!(
+                    "signer_balance_fetch_errors_total",
+                    "Failed signer balance fetches; signer_balance_lamports keeps its last value",
+                    &["signer_name", "signer_pubkey"]
+                )
+                .map_err(|e| {
+                    KoraError::InternalServerError(format!(
+                        "Failed to register balance fetch error counter: {e}"
+                    ))
+                })
+            })
+            .await?;
+
         Ok(())
     }
 
     /// Track all signers' balances and update Prometheus metrics
-    pub async fn track_all_signer_balances(
-        config: &Config,
-        rpc_client: &Arc<RpcClient>,
-    ) -> Result<(), KoraError> {
+    pub async fn track_all_signer_balances(rpc_client: &Arc<RpcClient>) -> Result<(), KoraError> {
         if !BalanceTracker::is_enabled() {
             return Ok(());
         }
 
         let signers_info = get_signers_info()?;
 
-        if let Some(gauge_vec) = SIGNER_BALANCE_GAUGES.get() {
-            let mut balance_results = Vec::new();
+        let (Some(gauge_vec), Some(fetch_errors)) =
+            (SIGNER_BALANCE_GAUGES.get(), SIGNER_BALANCE_FETCH_ERRORS.get())
+        else {
+            log::warn!("Balance metrics not initialized, skipping metrics update");
+            return Ok(());
+        };
 
-            for signer_info in &signers_info {
-                let pubkey = Pubkey::from_str(&signer_info.public_key).map_err(|e| {
-                    KoraError::InternalServerError(format!(
-                        "Invalid signer pubkey {}: {e}",
-                        signer_info.public_key
-                    ))
-                })?;
+        for signer_info in &signers_info {
+            let pubkey = Pubkey::from_str(&signer_info.public_key).map_err(|e| {
+                KoraError::InternalServerError(format!(
+                    "Invalid signer pubkey {}: {e}",
+                    signer_info.public_key
+                ))
+            })?;
 
-                match CacheUtil::get_account(config, rpc_client, &pubkey, false).await {
-                    Ok(account) => {
-                        balance_results.push((signer_info, account.lamports));
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to get balance for signer {} ({}): {e}",
-                            signer_info.name,
-                            signer_info.public_key
-                        );
-                        // Set balance to 0 on error to indicate issue
-                        balance_results.push((signer_info, 0));
-                    }
-                }
-            }
+            Self::update_signer_balance(rpc_client, gauge_vec, fetch_errors, signer_info, &pubkey)
+                .await;
+        }
 
-            for (signer_info, balance_lamports) in balance_results {
-                let gauge =
-                    gauge_vec.with_label_values(&[&signer_info.name, &signer_info.public_key]);
+        Ok(())
+    }
 
-                gauge.set(balance_lamports as f64);
+    /// `getBalance` returns 0 for a missing account, so an error always means the fetch failed.
+    async fn update_signer_balance(
+        rpc_client: &RpcClient,
+        gauge_vec: &GaugeVec,
+        fetch_errors: &CounterVec,
+        signer_info: &SignerInfo,
+        pubkey: &Pubkey,
+    ) {
+        let labels = [signer_info.name.as_str(), signer_info.public_key.as_str()];
+
+        match rpc_client.get_balance(pubkey).await {
+            Ok(balance_lamports) => {
+                gauge_vec.with_label_values(&labels).set(balance_lamports as f64);
 
                 log::debug!(
                     "Updated balance metrics: {} lamports for signer {} ({})",
@@ -100,11 +117,17 @@ impl BalanceTracker {
                     signer_info.public_key
                 );
             }
-        } else {
-            log::warn!("Balance gauge vector not initialized, skipping metrics update");
-        }
+            Err(e) => {
+                fetch_errors.with_label_values(&labels).inc();
 
-        Ok(())
+                log::warn!(
+                    "Failed to fetch balance for signer {} ({}): {}",
+                    signer_info.name,
+                    signer_info.public_key,
+                    sanitize_error!(e)
+                );
+            }
+        }
     }
 
     /// Start a background task that tracks balance at regular intervals
@@ -126,17 +149,13 @@ impl BalanceTracker {
         let interval_seconds = config.metrics.fee_payer_balance.expiry_seconds;
         log::info!("Starting multi-signer balance tracking background task with {interval_seconds}s interval");
 
-        let config = config.clone();
-
         let handle = tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(interval_seconds));
 
             loop {
                 interval.tick().await;
 
-                if let Err(e) =
-                    BalanceTracker::track_all_signer_balances(&config, &rpc_client).await
-                {
+                if let Err(e) = BalanceTracker::track_all_signer_balances(&rpc_client).await {
                     log::warn!("Failed to track signer balances in background task: {e}");
                 }
             }
@@ -161,11 +180,12 @@ mod tests {
         signer::{pool::SignerWithMetadata, SignerPool},
         state::update_signer_pool,
         tests::{
-            account_mock::create_mock_account_with_balance,
             common::RpcMockBuilder,
             config_mock::{ConfigMockBuilder, MetricsConfigBuilder},
         },
     };
+    use serde_json::json;
+    use solana_client::rpc_request::RpcRequest;
     use solana_keychain::Signer;
     use solana_sdk::signature::Keypair;
 
@@ -303,58 +323,8 @@ mod tests {
             )
             .build_and_setup();
 
-        let config = get_config().unwrap();
         let mock_rpc = RpcMockBuilder::new().build();
-        let result = BalanceTracker::track_all_signer_balances(&config, &mock_rpc).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_track_all_signer_balances_successful() {
-        let _m = ConfigMockBuilder::new()
-            .with_metrics(
-                MetricsConfigBuilder::new()
-                    .with_enabled(true)
-                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
-                        enabled: true,
-                        expiry_seconds: 30,
-                    })
-                    .build(),
-            )
-            .build_and_setup();
-
-        setup_test_signer_pool();
-        let _ = BalanceTracker::init().await;
-
-        let config = get_config().unwrap();
-        let account = create_mock_account_with_balance(1_000_000_000); // 1 SOL
-        let mock_rpc = RpcMockBuilder::new().with_account_info(&account).build();
-
-        let result = BalanceTracker::track_all_signer_balances(&config, &mock_rpc).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_track_all_signer_balances_handles_rpc_errors() {
-        let _m = ConfigMockBuilder::new()
-            .with_metrics(
-                MetricsConfigBuilder::new()
-                    .with_enabled(true)
-                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
-                        enabled: true,
-                        expiry_seconds: 30,
-                    })
-                    .build(),
-            )
-            .build_and_setup();
-
-        setup_test_signer_pool();
-        let _ = BalanceTracker::init().await;
-
-        let config = get_config().unwrap();
-        let mock_rpc = RpcMockBuilder::new().with_account_not_found().build();
-
-        let result = BalanceTracker::track_all_signer_balances(&config, &mock_rpc).await;
+        let result = BalanceTracker::track_all_signer_balances(&mock_rpc).await;
         assert!(result.is_ok());
     }
 
@@ -403,5 +373,106 @@ mod tests {
         if let Some(task) = handle {
             task.abort();
         }
+    }
+
+    fn enabled_metrics_config() -> ConfigMockBuilder {
+        ConfigMockBuilder::new().with_metrics(
+            MetricsConfigBuilder::new()
+                .with_enabled(true)
+                .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
+                    enabled: true,
+                    expiry_seconds: 30,
+                })
+                .build(),
+        )
+    }
+
+    fn unique_signer_info() -> SignerInfo {
+        SignerInfo {
+            public_key: Pubkey::new_unique().to_string(),
+            name: "balance_test_signer".to_string(),
+            weight: 1,
+            last_used: 0,
+        }
+    }
+
+    fn balance_rpc(lamports: u64) -> Arc<RpcClient> {
+        RpcMockBuilder::new()
+            .with_custom_mock(
+                RpcRequest::GetBalance,
+                json!({ "context": { "slot": 1 }, "value": lamports }),
+            )
+            .build()
+    }
+
+    async fn update(rpc_client: &RpcClient, signer_info: &SignerInfo) -> (f64, f64) {
+        let gauge_vec = SIGNER_BALANCE_GAUGES.get().unwrap();
+        let fetch_errors = SIGNER_BALANCE_FETCH_ERRORS.get().unwrap();
+        let pubkey = Pubkey::from_str(&signer_info.public_key).unwrap();
+
+        BalanceTracker::update_signer_balance(
+            rpc_client,
+            gauge_vec,
+            fetch_errors,
+            signer_info,
+            &pubkey,
+        )
+        .await;
+
+        let labels = [signer_info.name.as_str(), signer_info.public_key.as_str()];
+        (gauge_vec.with_label_values(&labels).get(), fetch_errors.with_label_values(&labels).get())
+    }
+
+    #[tokio::test]
+    async fn test_update_signer_balance_sets_fetched_balance() {
+        let _m = enabled_metrics_config().build_and_setup();
+        BalanceTracker::init().await.unwrap();
+        let signer_info = unique_signer_info();
+
+        let (balance, errors) = update(&balance_rpc(1_850_000_000), &signer_info).await;
+
+        assert_eq!(balance, 1_850_000_000.0);
+        assert_eq!(errors, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_update_signer_balance_zero_overwrites_prior_value_without_error() {
+        let _m = enabled_metrics_config().build_and_setup();
+        BalanceTracker::init().await.unwrap();
+        let signer_info = unique_signer_info();
+        update(&balance_rpc(1_000), &signer_info).await;
+
+        let (balance, errors) = update(&balance_rpc(0), &signer_info).await;
+
+        assert_eq!(balance, 0.0);
+        assert_eq!(errors, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_update_signer_balance_http_500_keeps_last_balance_and_counts_error() {
+        let _m = enabled_metrics_config().build_and_setup();
+        BalanceTracker::init().await.unwrap();
+        let signer_info = unique_signer_info();
+        update(&balance_rpc(1_850_000_000), &signer_info).await;
+
+        let mut server = mockito::Server::new_async().await;
+        let outage = server
+            .mock("POST", "/")
+            .with_status(500)
+            .with_body("Internal Server Error")
+            .expect(2)
+            .create_async()
+            .await;
+        let failing_rpc = RpcClient::new(server.url());
+
+        let (balance, errors) = update(&failing_rpc, &signer_info).await;
+        assert_eq!(balance, 1_850_000_000.0);
+        assert_eq!(errors, 1.0);
+
+        let (balance, errors) = update(&failing_rpc, &signer_info).await;
+        assert_eq!(balance, 1_850_000_000.0);
+        assert_eq!(errors, 2.0);
+
+        outage.assert_async().await;
     }
 }
