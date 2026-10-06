@@ -117,6 +117,11 @@ fuzz-build:
 fuzz-list:
     cd fuzz && cargo fuzz list
 
+# Regenerate the committed fuzz seed corpus
+[group('fuzz')]
+fuzz-seeds:
+    cd fuzz && cargo run --example gen_seed_corpus
+
 # Build transfer hook test program
 [group('test')]
 build-transfer-hook:

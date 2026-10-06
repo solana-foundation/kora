@@ -3776,9 +3776,19 @@ dependencies = [
 name = "kora-fuzz"
 version = "0.0.0"
 dependencies = [
+ "base64 0.22.1",
+ "bincode",
  "kora-lib",
  "libfuzzer-sys",
+ "serde",
+ "solana-address-lookup-table-interface",
+ "solana-loader-v3-interface 6.1.1",
+ "solana-loader-v4-interface",
  "solana-sdk",
+ "solana-system-interface 2.0.0",
+ "spl-token-2022-interface 2.1.0",
+ "spl-token-interface",
+ "spl-token-metadata-interface 0.8.0",
  "wincode",
 ]
 

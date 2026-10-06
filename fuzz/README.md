@@ -25,6 +25,16 @@ just fuzz-list
 
 A crash writes a reproducer to `fuzz/artifacts/<target>/`; re-run it with `cargo fuzz run <target> fuzz/artifacts/<target>/<crash-file>`.
 
+## Seed corpus
+
+`fuzz/corpus/<target>/seed_*` holds committed seeds that `cargo fuzz run` (and CI) loads by default: legacy and V0 transactions covering System (incl. nonce), SPL Token (incl. p-token batch), Token-2022, ALT, BPF Loader Upgradeable, and Loader v4 instructions. `decode_b64_transaction` gets a base64-encoded subset. Entries libFuzzer adds during a run are gitignored; only `seed_*` files are tracked.
+
+Regenerate after changing `examples/gen_seed_corpus.rs` (output is deterministic):
+
+```bash
+just fuzz-seeds   # or: cd fuzz && cargo run --example gen_seed_corpus
+```
+
 ## CI
 
 `.github/workflows/fuzz.yml` runs two jobs:
