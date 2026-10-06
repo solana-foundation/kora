@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::HashMap, sync::LazyLock};
 use arbitrary::Arbitrary;
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use kora_fuzz::scenario::{Key, Scenario, TokenProgram, FEE_PAYER, POOL};
+use kora_fuzz::scenario::{Key, Op, Scenario, TokenOp, TokenProgram, FEE_PAYER, POOL};
 use kora_lib::{
     config::FeePayerPolicy, transaction::VersionedTransactionResolved,
     validator::transaction_validator::TransactionValidator,
@@ -322,27 +322,35 @@ fn authority_violation(
     }
 }
 
+fn fee_payer_signed_freeze(built: &[(&Op, Instruction)], target: Pubkey) -> bool {
+    let signed = |op: &TokenOp| {
+        matches!(op, TokenOp::FreezeAccount { account, authority, signers, .. }
+            if account.pubkey() == target
+                && (authority.is_fee_payer() || signers.contains_fee_payer()))
+    };
+    built.iter().any(|(op, _)| match op {
+        Op::Token(_, op) => signed(op),
+        Op::SplBatch(ops) => Op::batch_ops(ops).iter().any(signed),
+        _ => false,
+    })
+}
+
 fn freeze_violation(
     kind: Seeded,
+    pubkey: Pubkey,
     pre: &Account,
     post: &Account,
-    seeded: &[(Pubkey, Seeded, Account)],
+    built: &[(&Op, Instruction)],
     policy: &FeePayerPolicy,
 ) -> Option<&'static str> {
-    let Seeded::TokenAccount { program, mint, .. } = kind else {
+    let Seeded::TokenAccount { program, .. } = kind else {
         return None;
     };
-    let fee_payer_freezes = seeded.iter().any(|(pubkey, kind, _)| {
-        *pubkey == mint.pubkey()
-            && matches!(kind, Seeded::Mint { authority, .. } if authority.is_fee_payer())
-    });
-    if !fee_payer_freezes {
-        return None;
-    }
     let before: TokenAccount = unpack(program, pre)?;
     let after: TokenAccount = unpack(program, post)?;
     (before.state != AccountState::Frozen
         && after.state == AccountState::Frozen
+        && fee_payer_signed_freeze(built, pubkey)
         && !token_flags(policy, program).freeze_account)
         .then_some("token account frozen by fee payer freeze authority")
 }
@@ -362,8 +370,8 @@ fn fee_payer_violation(post: &Account, policy: &FeePayerPolicy) -> Option<&'stat
 
 fuzz_target!(|input: Input| {
     let scenario = &input.scenario;
-    let instructions: Vec<Instruction> =
-        scenario.built_ops().into_iter().map(|(_, ix)| ix).collect();
+    let built = scenario.built_ops();
+    let instructions: Vec<Instruction> = built.iter().map(|(_, ix)| ix.clone()).collect();
     if instructions.is_empty() {
         return;
     }
@@ -431,7 +439,7 @@ fuzz_target!(|input: Input| {
                 panic!("validator accepted a transaction where `{rule}`");
             }
         } else if let Some(rule) = authority_violation(*kind, pre, after, policy)
-            .or_else(|| freeze_violation(*kind, pre, after, &seeded, policy))
+            .or_else(|| freeze_violation(*kind, *pubkey, pre, after, &built, policy))
         {
             panic!("validator accepted a transaction where `{rule}`");
         }

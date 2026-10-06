@@ -50,7 +50,7 @@ A crash writes a reproducer to `fuzz/artifacts/<target>/`; re-run it with `cargo
 
 `fuzz/corpus/<target>/seed_*` holds committed seeds that `cargo fuzz run` (and CI) loads by default: legacy and V0 transactions covering System (incl. nonce), SPL Token (incl. p-token batch), Token-2022, ALT, BPF Loader Upgradeable, and Loader v4 instructions. `decode_b64_transaction` gets a base64-encoded subset. Entries libFuzzer adds during a run are gitignored; only `seed_*` files are tracked.
 
-`differential_litesvm/seed_freeze_by_fee_payer` is not generated: it is a fuzzer-found input that reaches a successful `FreezeAccount` signed by the fee payer as freeze authority, so CI always exercises the frozen-account check. Its bytes follow the target's `Input` layout; if that layout changes, find a replacement with a temporary target that panics on the same precondition.
+The `differential_litesvm` seeds are not generated: they are fuzzer-found inputs that pin the frozen-account check. `seed_freeze_by_fee_payer` reaches a successful `FreezeAccount` signed by the fee payer as freeze authority (must be flagged when `allow_freeze_account` is off); `seed_freeze_after_authority_handoff` hands freeze authority to another wallet via an allowed `SetAuthority`, which then freezes (must not be flagged). Their bytes follow the target's `Input` layout; if that layout changes, find a replacement with a temporary target that panics on the same precondition.
 
 Regenerate after changing `examples/gen_seed_corpus.rs` (output is deterministic):
 
