@@ -19,6 +19,21 @@ docker run \
   ghcr.io/solana-foundation/kora:v<version>
 ```
 
+To avoid depending on a single RPC provider, set `RPC_URLS` to a comma-separated
+list instead. Kora retries each RPC call against the next endpoint when the current
+one is unreachable or answers 5xx, so a provider outage does not take the paymaster
+down or require a redeploy to rotate the URL. The first entry is the primary:
+
+```bash
+docker run \
+  -v ./kora.toml:/kora.toml \
+  -v ./signers.toml:/signers.toml \
+  -e RPC_URLS=https://primary.example/?api-key=KEY,https://api.mainnet-beta.solana.com \
+  -e KORA_PRIVATE_KEY=<key> \
+  -p 8080:8080 \
+  ghcr.io/solana-foundation/kora:v<version>
+```
+
 Building from source instead:
 
 ```dockerfile
