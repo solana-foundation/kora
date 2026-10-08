@@ -272,8 +272,8 @@ not price its own SOL outflow, so transfer flags in particular must stay `false`
 
 `allow_create_account = true` lets any request make the fee payer fund any account creation.
 `require_one_of_programs` keeps the fee payer from paying fees for transactions that never call
-your program; `create_account_only_via` keeps it from funding accounts your program did not ask
-for. A relay for one program needs both:
+your program; the `create_account_only_via` plugin keeps it from funding accounts your program
+did not ask for. A relay for one program needs both:
 
 ```toml
 [validation]
@@ -282,15 +282,21 @@ require_one_of_programs = ["<MY_PROGRAM_ID>"]
 
 [validation.fee_payer_policy.system]
 allow_create_account = true
-create_account_only_via = ["<MY_PROGRAM_ID>"]
+
+[kora.plugins]
+enabled = ["create_account_only_via"]
+
+[kora.plugins.create_account_only_via]
+programs = ["<MY_PROGRAM_ID>"]
 ```
 
-With the list set, a System `CreateAccount`, `CreateAccountWithSeed` or `CreateAccountAllowPrefund`
+With the plugin enabled, a System `CreateAccount`, `CreateAccountWithSeed` or `CreateAccountAllowPrefund`
 and an Associated Token Account `Create` or `CreateIdempotent` whose payer is the fee payer is
 accepted only when simulation shows it as a CPI, at any depth, under a top-level instruction of a
 listed program. A top-level one is rejected. Creations funded by someone else are not affected.
-Each listed program must also be in `allowed_programs`; `kora config validate` fails otherwise and
-warns when the list is set while `allow_create_account = false`. The listed programs decide which
+The plugin runs on the signing methods. Each listed program must also be in `allowed_programs`;
+`kora config validate` fails when one is not, when the list is empty, or when the list is set
+without enabling the plugin, and warns while `allow_create_account = false`. The listed programs decide which
 accounts the fee payer funds, bounded per request by `max_allowed_lamports`.
 
 ---

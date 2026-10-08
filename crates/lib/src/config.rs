@@ -374,11 +374,6 @@ pub struct SystemInstructionPolicy {
     /// Allow fee payer to be the funder, the seeded base signer, or the account being created, in
     /// System CreateAccount/CreateAccountWithSeed/CreateAccountAllowPrefund instructions
     pub allow_create_account: bool,
-    /// When non-empty, the fee payer may fund account creation (System CreateAccount variants and
-    /// Associated Token Account Create/CreateIdempotent) only as a CPI issued by one of these
-    /// programs. A top-level creation funded by the fee payer is rejected. Each program must also
-    /// be in `allowed_programs`. Empty means no restriction beyond `allow_create_account`.
-    pub create_account_only_via: Vec<String>,
     /// Allow fee payer to be the account in System Allocate/AllocateWithSeed instructions
     pub allow_allocate: bool,
     /// Nested policy for nonce account operations
@@ -776,6 +771,7 @@ impl CacheConfig {
 pub enum TransactionPluginType {
     GasSwap,
     DeployAuthority,
+    CreateAccountOnlyVia,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
@@ -783,6 +779,15 @@ pub enum TransactionPluginType {
 pub struct PluginsConfig {
     /// List of enabled transaction plugins, executed for sign/signAndSend flows
     pub enabled: Vec<TransactionPluginType>,
+    /// Settings for the `create_account_only_via` plugin
+    pub create_account_only_via: CreateAccountOnlyViaConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct CreateAccountOnlyViaConfig {
+    /// Programs whose CPIs are the only place the fee payer may fund account creation
+    pub programs: Vec<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]

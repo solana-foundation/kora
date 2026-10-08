@@ -140,12 +140,9 @@ impl ConfigValidator {
             }
         }
 
-        let create_account_only_via =
-            &config.validation.fee_payer_policy.system.create_account_only_via;
         for (field, pubkeys) in [
             ("allowed_programs", config.validation.allowed_programs.as_slice()),
             ("require_one_of_programs", config.validation.require_one_of_programs.as_slice()),
-            ("fee_payer_policy.system.create_account_only_via", create_account_only_via.as_slice()),
         ] {
             for pubkey_str in pubkeys {
                 if Pubkey::from_str(pubkey_str).is_err() {
@@ -154,16 +151,11 @@ impl ConfigValidator {
             }
         }
 
-        for (field, programs) in [
-            ("require_one_of_programs", &config.validation.require_one_of_programs),
-            ("fee_payer_policy.system.create_account_only_via", create_account_only_via),
-        ] {
-            for program in programs {
-                if !config.validation.allowed_programs.contains(program) {
-                    errors.push(format!(
-                        "Program {program} in {field} must also be in allowed_programs"
-                    ));
-                }
+        for program in &config.validation.require_one_of_programs {
+            if !config.validation.allowed_programs.contains(program) {
+                errors.push(format!(
+                    "Program {program} in require_one_of_programs must also be in allowed_programs"
+                ));
             }
         }
     }

@@ -529,7 +529,6 @@ impl FeePayerPolicyBuilder {
                     allow_transfer: false,
                     allow_assign: false,
                     allow_create_account: false,
-                    create_account_only_via: vec![],
                     allow_allocate: false,
                     nonce: NonceInstructionPolicy {
                         allow_initialize: false,

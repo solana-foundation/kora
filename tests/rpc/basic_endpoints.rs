@@ -132,7 +132,6 @@ async fn test_fee_payer_policy_is_present() {
     assert!(system.contains_key("allow_create_account"));
     assert!(system.contains_key("allow_allocate"));
     assert!(system.contains_key("nonce"));
-    assert_eq!(system["create_account_only_via"], serde_json::json!([]));
     assert_eq!(system["allow_transfer"], true);
     assert_eq!(system["allow_assign"], true);
     assert_eq!(system["allow_create_account"], true);

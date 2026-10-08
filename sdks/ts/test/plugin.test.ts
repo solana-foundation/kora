@@ -138,8 +138,6 @@ describe('Kora Kit Plugin', () => {
                                 allow_allocate: true,
                                 allow_assign: true,
                                 allow_create_account: true,
-
-                                create_account_only_via: [],
                                 allow_transfer: true,
                                 nonce: {
                                     allow_advance: true,

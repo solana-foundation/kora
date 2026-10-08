@@ -147,7 +147,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(config.validation_config.fee_payer_policy.system.allow_transfer).toBeDefined();
             expect(config.validation_config.fee_payer_policy.system.allow_assign).toBeDefined();
             expect(config.validation_config.fee_payer_policy.system.allow_create_account).toBeDefined();
-            expect(config.validation_config.fee_payer_policy.system.create_account_only_via).toEqual([]);
             expect(config.validation_config.fee_payer_policy.system.allow_allocate).toBeDefined();
 
             expect(config.validation_config.fee_payer_policy.system.nonce).toBeDefined();

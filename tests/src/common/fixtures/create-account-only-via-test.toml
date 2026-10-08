@@ -48,7 +48,12 @@ type = "free"
 
 [validation.fee_payer_policy.system]
 allow_create_account = true
-create_account_only_via = ["Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA"]
+
+[kora.plugins]
+enabled = ["create_account_only_via"]
+
+[kora.plugins.create_account_only_via]
+programs = ["Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA"]
 
 [kora.usage_limit]
 enabled = false

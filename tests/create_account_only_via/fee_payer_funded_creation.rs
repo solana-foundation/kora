@@ -14,7 +14,7 @@ use solana_system_interface::{
 use std::str::FromStr;
 
 const ONLY_VIA_ERROR: &str =
-    "Fee payer may fund account creation only inside a CPI from one of create_account_only_via";
+    "Plugin create_account_only_via lets the fee payer fund account creation only inside a CPI";
 
 fn via_forwarder(target: Instruction) -> Instruction {
     let mut accounts = vec![AccountMeta::new_readonly(target.program_id, false)];
@@ -136,17 +136,5 @@ async fn test_top_level_ata_create_funded_by_fee_payer_rejected() {
         .expect_err("top-level ATA Create funded by the fee payer must be rejected");
     error.assert_contains_message(
         "instruction 1 ('Associated Token Account Create') is a top-level instruction",
-    );
-}
-
-#[tokio::test]
-async fn test_get_config_reports_create_account_only_via() {
-    let ctx = crate::ctx().await;
-
-    let response: serde_json::Value =
-        ctx.rpc_call("getConfig", rpc_params![]).await.expect("getConfig failed");
-    assert_eq!(
-        response["validation_config"]["fee_payer_policy"]["system"]["create_account_only_via"],
-        serde_json::json!([TRANSFER_HOOK_PROGRAM_ID])
     );
 }

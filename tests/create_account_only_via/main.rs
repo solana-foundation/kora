@@ -1,7 +1,7 @@
 // create_account_only_via Tests
 //
 // CONFIG: Uses tests/src/common/fixtures/create-account-only-via-test.toml
-//         (free pricing, allow_create_account = true, create_account_only_via = [CPI forwarder])
+//         (free pricing, allow_create_account = true, create_account_only_via plugin = [CPI forwarder])
 // TESTS: Fee payer funds account creation only inside the forwarder's CPIs
 
 mod fee_payer_funded_creation;
