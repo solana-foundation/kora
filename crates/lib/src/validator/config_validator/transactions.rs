@@ -77,6 +77,9 @@ impl ConfigValidator {
         errors: &mut Vec<String>,
         warnings: &mut Vec<String>,
     ) {
+        let sponsor_only_configured = config.validation.sponsor_only_programs.is_all()
+            || !config.validation.sponsor_only_programs.as_slice().is_empty();
+
         let is_wildcard = config.validation.allowed_programs.is_all();
         if is_wildcard {
             warnings.push(
@@ -85,10 +88,34 @@ impl ConfigValidator {
                  disallowed_accounts are configured to bound drainage risk."
                     .to_string(),
             );
+            if sponsor_only_configured {
+                warnings.push(
+                    "sponsor_only_programs has no effect while allowed_programs is \"All\": \
+                     the fee payer is permitted to participate in every program, so nothing is \
+                     gated. To use the participation gate, set allowed_programs to a restricted \
+                     list (the trusted programs the fee payer may participate in) and put the \
+                     unvetted programs in sponsor_only_programs instead."
+                        .to_string(),
+                );
+            }
         } else if config.validation.allowed_programs.as_slice().is_empty() {
-            warnings.push(
-                "No allowed programs configured - this will block all transactions".to_string(),
-            );
+            if sponsor_only_configured {
+                // Programs in sponsor_only_programs still run when the fee payer does not
+                // participate, so this is a usable (fee-only) configuration, not a dead one.
+                warnings.push(
+                    "allowed_programs is empty: the fee payer may not participate in any program. \
+                     Only transactions where the fee payer is purely the fee payer (never an \
+                     account in an instruction) can be sponsored, limited to the programs in \
+                     sponsor_only_programs. Add the trusted built-ins (System, Token, ATA, ...) to \
+                     allowed_programs if the fee payer needs to fund accounts or otherwise \
+                     participate."
+                        .to_string(),
+                );
+            } else {
+                warnings.push(
+                    "No allowed programs configured - this will block all transactions".to_string(),
+                );
+            }
         } else {
             if !config.validation.allowed_programs.contains(&SYSTEM_PROGRAM_ID.to_string()) {
                 warnings.push("Missing System Program in allowed programs - SOL transfers and account operations will be blocked".to_string());
@@ -142,6 +169,7 @@ impl ConfigValidator {
 
         for (field, pubkeys) in [
             ("allowed_programs", config.validation.allowed_programs.as_slice()),
+            ("sponsor_only_programs", config.validation.sponsor_only_programs.as_slice()),
             ("require_one_of_programs", config.validation.require_one_of_programs.as_slice()),
         ] {
             for pubkey_str in pubkeys {
@@ -152,9 +180,14 @@ impl ConfigValidator {
         }
 
         for program in &config.validation.require_one_of_programs {
-            if !config.validation.allowed_programs.contains(program) {
+            // A required program must be runnable, which now means it is in either program set:
+            // allowed_programs (fee payer may participate) or sponsor_only_programs (runs while the
+            // fee payer does not participate). Requiring a sponsor-only program is valid.
+            if !config.validation.allowed_programs.contains(program)
+                && !config.validation.sponsor_only_programs.contains(program)
+            {
                 errors.push(format!(
-                    "Program {program} in require_one_of_programs must also be in allowed_programs"
+                    "Program {program} in require_one_of_programs must also be in allowed_programs or sponsor_only_programs"
                 ));
             }
         }

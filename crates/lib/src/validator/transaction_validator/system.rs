@@ -3,7 +3,6 @@ use crate::{
     error::KoraError,
     transaction::{ParsedSystemInstructionData, ParsedSystemInstructionType},
 };
-use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 
 impl TransactionValidator {
@@ -35,13 +34,19 @@ impl TransactionValidator {
             unless self.fee_payer_policy.system.allow_assign,
             "Fee payer cannot be used for 'System Assign'");
 
-        // The owner allowlist/disallowed check holds for every Assign owner in a Kora-signed tx,
-        // not only when the fee payer is the reassigned account (parity with CreateAccount).
+        // Owner allowlist for Assign: enforced for every owner while the participation gate is
+        // inactive (historical behavior); scoped to assigns of a fee-payer-owned account once the
+        // gate is active. The disallowed blocklist always applies. See
+        // `validate_created_or_assigned_owner`.
         for instruction in
             system_instructions.get(&ParsedSystemInstructionType::SystemAssign).unwrap_or(&vec![])
         {
-            if let ParsedSystemInstructionData::SystemAssign { owner, .. } = instruction {
-                self.validate_owner_program("Assign", owner)?;
+            if let ParsedSystemInstructionData::SystemAssign { owner, authority } = instruction {
+                self.validate_created_or_assigned_owner(
+                    owner,
+                    *authority == self.fee_payer_pubkey,
+                    "Assign",
+                )?;
             }
         }
 
@@ -52,8 +57,13 @@ impl TransactionValidator {
             "Fee payer cannot be used for 'System Allocate'");
 
         // allow_create_account gates Kora participating as the funder (payer), the seeded base
-        // signer, or the account being created (prefund brick). The owner allowlist/blocklist
-        // holds for every CreateAccount owner in a Kora-signed tx regardless of Kora's role.
+        // signer, or the account being created (prefund brick). The owner allowlist is enforced for
+        // every owner while the participation gate is inactive (historical behavior), and scoped to
+        // fee-payer-involved creates once it is active; the disallowed blocklist always applies. The
+        // owner check uses the SAME participation definition as the create gate above (payer, base,
+        // or new_account): otherwise a foreign payer could prefund-create Kora's own account and
+        // assign it to an untrusted owner, taking ownership of the sponsored account. See
+        // `validate_created_or_assigned_owner`.
         for instruction in system_instructions
             .get(&ParsedSystemInstructionType::SystemCreateAccount)
             .unwrap_or(&vec![])
@@ -75,7 +85,11 @@ impl TransactionValidator {
                     ));
                 }
 
-                self.validate_owner_program("CreateAccount", owner)?;
+                self.validate_created_or_assigned_owner(
+                    owner,
+                    fee_payer_participates,
+                    "CreateAccount",
+                )?;
             }
         }
 
@@ -105,20 +119,6 @@ impl TransactionValidator {
             unless self.fee_payer_policy.system.nonce.allow_withdraw,
             "Fee payer cannot be used for 'System Withdraw Nonce Account'");
 
-        Ok(())
-    }
-
-    fn validate_owner_program(&self, instruction: &str, owner: &Pubkey) -> Result<(), KoraError> {
-        if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
-            return Err(KoraError::InvalidTransaction(format!(
-                "{instruction} owner program {owner} is not in the allowed programs list"
-            )));
-        }
-        if self.disallowed_accounts.contains(owner) {
-            return Err(KoraError::InvalidTransaction(format!(
-                "{instruction} owner program {owner} is in the disallowed accounts list"
-            )));
-        }
         Ok(())
     }
 }
