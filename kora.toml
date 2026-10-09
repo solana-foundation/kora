@@ -197,8 +197,11 @@ rules = []
 
 [kora.plugins]
 # Enabled transaction plugins for sign/signAndSend flows.
-# Available values: "gas_swap"
+# Available values: "gas_swap", "create_account_only_via"
 enabled = []
+
+# [kora.plugins.create_account_only_via]
+# programs = []  # Programs whose CPIs are the only place the fee payer may fund account creation (System or ATA). Each must also appear in allowed_programs.
 
 [kora.bundle]
 enabled = false

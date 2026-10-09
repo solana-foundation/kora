@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use solana_system_interface::{instruction::SystemInstruction, program::ID as SYSTEM_PROGRAM_ID};
 
 use super::IxUtils;
@@ -90,142 +90,151 @@ impl IxUtils {
         > = HashMap::new();
 
         for instruction in transaction.all_instructions.iter() {
-            if instruction.program_id != SYSTEM_PROGRAM_ID {
-                continue;
+            if let Some(data) = Self::parse_system_instruction(instruction)? {
+                parsed_instructions.entry(data.instruction_type()).or_default().push(data);
             }
-            let key = |index: usize| instruction.accounts[index].pubkey;
-
-            let data = match bincode::deserialize::<SystemInstruction>(&instruction.data) {
-                Ok(SystemInstruction::CreateAccount { lamports, owner, .. }) => {
-                    use instruction_indexes::system_create_account as ix;
-                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    ParsedSystemInstructionData::SystemCreateAccount {
-                        lamports,
-                        payer: key(ix::PAYER_INDEX),
-                        new_account: key(ix::NEW_ACCOUNT_INDEX),
-                        owner,
-                        base: None,
-                    }
-                }
-                Ok(SystemInstruction::CreateAccountWithSeed { lamports, owner, base, .. }) => {
-                    use instruction_indexes::system_create_account as ix;
-                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    ParsedSystemInstructionData::SystemCreateAccount {
-                        lamports,
-                        payer: key(ix::PAYER_INDEX),
-                        new_account: key(ix::NEW_ACCOUNT_INDEX),
-                        owner,
-                        base: Some(base),
-                    }
-                }
-                Ok(SystemInstruction::Transfer { lamports }) => {
-                    use instruction_indexes::system_transfer as ix;
-                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    ParsedSystemInstructionData::SystemTransfer {
-                        lamports,
-                        sender: key(ix::SENDER_INDEX),
-                        receiver: key(ix::RECEIVER_INDEX),
-                    }
-                }
-                Ok(SystemInstruction::TransferWithSeed { lamports, .. }) => {
-                    use instruction_indexes::system_transfer_with_seed as ix;
-                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    ParsedSystemInstructionData::SystemTransfer {
-                        lamports,
-                        sender: key(ix::SENDER_INDEX),
-                        receiver: key(ix::RECEIVER_INDEX),
-                    }
-                }
-                Ok(SystemInstruction::WithdrawNonceAccount(lamports)) => {
-                    use instruction_indexes::system_withdraw_nonce_account as ix;
-                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    ParsedSystemInstructionData::SystemWithdrawNonceAccount {
-                        lamports,
-                        nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
-                        recipient: key(ix::RECIPIENT_INDEX),
-                    }
-                }
-                Ok(SystemInstruction::Assign { owner }) => {
-                    use instruction_indexes::system_assign as ix;
-                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    ParsedSystemInstructionData::SystemAssign {
-                        authority: key(ix::AUTHORITY_INDEX),
-                        owner,
-                    }
-                }
-                Ok(SystemInstruction::AssignWithSeed { owner, .. }) => {
-                    use instruction_indexes::system_assign_with_seed as ix;
-                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    ParsedSystemInstructionData::SystemAssign {
-                        authority: key(ix::AUTHORITY_INDEX),
-                        owner,
-                    }
-                }
-                Ok(SystemInstruction::Allocate { .. }) => {
-                    use instruction_indexes::system_allocate as ix;
-                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    ParsedSystemInstructionData::SystemAllocate { account: key(ix::ACCOUNT_INDEX) }
-                }
-                Ok(SystemInstruction::AllocateWithSeed { .. }) => {
-                    use instruction_indexes::system_allocate_with_seed as ix;
-                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    ParsedSystemInstructionData::SystemAllocate { account: key(ix::ACCOUNT_INDEX) }
-                }
-                Ok(SystemInstruction::InitializeNonceAccount(nonce_authority)) => {
-                    use instruction_indexes::system_initialize_nonce_account as ix;
-                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    ParsedSystemInstructionData::SystemInitializeNonceAccount {
-                        nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
-                        nonce_authority,
-                    }
-                }
-                Ok(SystemInstruction::AdvanceNonceAccount) => {
-                    use instruction_indexes::system_advance_nonce_account as ix;
-                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    ParsedSystemInstructionData::SystemAdvanceNonceAccount {
-                        nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
-                        nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
-                    }
-                }
-                Ok(SystemInstruction::AuthorizeNonceAccount(new_authority)) => {
-                    use instruction_indexes::system_authorize_nonce_account as ix;
-                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                    ParsedSystemInstructionData::SystemAuthorizeNonceAccount {
-                        nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
-                        nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
-                        new_authority,
-                    }
-                }
-                // UpgradeNonceAccount: Not parsed - no authority parameter, cannot validate fee payer involvement
-                // Anyone can upgrade any nonce account without signing
-                Ok(SystemInstruction::UpgradeNonceAccount) => continue,
-                _ => {
-                    let Some((lamports, owner)) =
-                        Self::parse_create_account_allow_prefund(&instruction.data)
-                    else {
-                        continue;
-                    };
-                    use instruction_indexes::system_create_account_allow_prefund as ix;
-                    let min_accounts = if lamports > 0 {
-                        ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_FUNDING
-                    } else {
-                        ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
-                    };
-                    validate_number_accounts!(instruction, min_accounts);
-                    let new_account = key(ix::NEW_ACCOUNT_INDEX);
-                    let payer = if lamports > 0 { key(ix::FUNDING_INDEX) } else { new_account };
-                    ParsedSystemInstructionData::SystemCreateAccount {
-                        lamports,
-                        payer,
-                        new_account,
-                        owner,
-                        base: None,
-                    }
-                }
-            };
-            parsed_instructions.entry(data.instruction_type()).or_default().push(data);
         }
         Ok(parsed_instructions)
+    }
+
+    /// Parses one System instruction; `None` if it is not one the fee payer policy tracks.
+    pub fn parse_system_instruction(
+        instruction: &Instruction,
+    ) -> Result<Option<ParsedSystemInstructionData>, KoraError> {
+        if instruction.program_id != SYSTEM_PROGRAM_ID {
+            return Ok(None);
+        }
+        let key = |index: usize| instruction.accounts[index].pubkey;
+
+        let data = match bincode::deserialize::<SystemInstruction>(&instruction.data) {
+            Ok(SystemInstruction::CreateAccount { lamports, owner, .. }) => {
+                use instruction_indexes::system_create_account as ix;
+                validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                ParsedSystemInstructionData::SystemCreateAccount {
+                    lamports,
+                    payer: key(ix::PAYER_INDEX),
+                    new_account: key(ix::NEW_ACCOUNT_INDEX),
+                    owner,
+                    base: None,
+                }
+            }
+            Ok(SystemInstruction::CreateAccountWithSeed { lamports, owner, base, .. }) => {
+                use instruction_indexes::system_create_account as ix;
+                validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                ParsedSystemInstructionData::SystemCreateAccount {
+                    lamports,
+                    payer: key(ix::PAYER_INDEX),
+                    new_account: key(ix::NEW_ACCOUNT_INDEX),
+                    owner,
+                    base: Some(base),
+                }
+            }
+            Ok(SystemInstruction::Transfer { lamports }) => {
+                use instruction_indexes::system_transfer as ix;
+                validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                ParsedSystemInstructionData::SystemTransfer {
+                    lamports,
+                    sender: key(ix::SENDER_INDEX),
+                    receiver: key(ix::RECEIVER_INDEX),
+                }
+            }
+            Ok(SystemInstruction::TransferWithSeed { lamports, .. }) => {
+                use instruction_indexes::system_transfer_with_seed as ix;
+                validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                ParsedSystemInstructionData::SystemTransfer {
+                    lamports,
+                    sender: key(ix::SENDER_INDEX),
+                    receiver: key(ix::RECEIVER_INDEX),
+                }
+            }
+            Ok(SystemInstruction::WithdrawNonceAccount(lamports)) => {
+                use instruction_indexes::system_withdraw_nonce_account as ix;
+                validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                ParsedSystemInstructionData::SystemWithdrawNonceAccount {
+                    lamports,
+                    nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
+                    recipient: key(ix::RECIPIENT_INDEX),
+                }
+            }
+            Ok(SystemInstruction::Assign { owner }) => {
+                use instruction_indexes::system_assign as ix;
+                validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                ParsedSystemInstructionData::SystemAssign {
+                    authority: key(ix::AUTHORITY_INDEX),
+                    owner,
+                }
+            }
+            Ok(SystemInstruction::AssignWithSeed { owner, .. }) => {
+                use instruction_indexes::system_assign_with_seed as ix;
+                validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                ParsedSystemInstructionData::SystemAssign {
+                    authority: key(ix::AUTHORITY_INDEX),
+                    owner,
+                }
+            }
+            Ok(SystemInstruction::Allocate { .. }) => {
+                use instruction_indexes::system_allocate as ix;
+                validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                ParsedSystemInstructionData::SystemAllocate { account: key(ix::ACCOUNT_INDEX) }
+            }
+            Ok(SystemInstruction::AllocateWithSeed { .. }) => {
+                use instruction_indexes::system_allocate_with_seed as ix;
+                validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                ParsedSystemInstructionData::SystemAllocate { account: key(ix::ACCOUNT_INDEX) }
+            }
+            Ok(SystemInstruction::InitializeNonceAccount(nonce_authority)) => {
+                use instruction_indexes::system_initialize_nonce_account as ix;
+                validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                ParsedSystemInstructionData::SystemInitializeNonceAccount {
+                    nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
+                    nonce_authority,
+                }
+            }
+            Ok(SystemInstruction::AdvanceNonceAccount) => {
+                use instruction_indexes::system_advance_nonce_account as ix;
+                validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                ParsedSystemInstructionData::SystemAdvanceNonceAccount {
+                    nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
+                    nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
+                }
+            }
+            Ok(SystemInstruction::AuthorizeNonceAccount(new_authority)) => {
+                use instruction_indexes::system_authorize_nonce_account as ix;
+                validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                ParsedSystemInstructionData::SystemAuthorizeNonceAccount {
+                    nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
+                    nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
+                    new_authority,
+                }
+            }
+            // UpgradeNonceAccount: Not parsed - no authority parameter, cannot validate fee payer involvement
+            // Anyone can upgrade any nonce account without signing
+            Ok(SystemInstruction::UpgradeNonceAccount) => return Ok(None),
+            _ => {
+                let Some((lamports, owner)) =
+                    Self::parse_create_account_allow_prefund(&instruction.data)
+                else {
+                    return Ok(None);
+                };
+                use instruction_indexes::system_create_account_allow_prefund as ix;
+                let min_accounts = if lamports > 0 {
+                    ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_FUNDING
+                } else {
+                    ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
+                };
+                validate_number_accounts!(instruction, min_accounts);
+                let new_account = key(ix::NEW_ACCOUNT_INDEX);
+                let payer = if lamports > 0 { key(ix::FUNDING_INDEX) } else { new_account };
+                ParsedSystemInstructionData::SystemCreateAccount {
+                    lamports,
+                    payer,
+                    new_account,
+                    owner,
+                    base: None,
+                }
+            }
+        };
+        Ok(Some(data))
     }
 
     // Absent from system-interface 2.0.0; decode (tag, lamports, space, owner) by hand.

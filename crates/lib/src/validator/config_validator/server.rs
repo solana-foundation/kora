@@ -1,6 +1,6 @@
 use super::ConfigValidator;
 use crate::{
-    config::{classify_cors_origins, Config, CorsOriginsClassification},
+    config::{classify_cors_origins, Config, CorsOriginsClassification, TransactionPluginType},
     constant::{MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
     plugin::TransactionPluginRunner,
     validator::cache_validator::CacheValidator,
@@ -88,6 +88,16 @@ impl ConfigValidator {
             if !unique_plugins.insert(plugin.clone()) {
                 warnings.push(format!("Duplicate transaction plugin configured: {:?}", plugin));
             }
+        }
+
+        if !config.kora.plugins.create_account_only_via.programs.is_empty()
+            && !config.kora.plugins.enabled.contains(&TransactionPluginType::CreateAccountOnlyVia)
+        {
+            errors.push(
+                "[kora.plugins.create_account_only_via] programs is set but create_account_only_via \
+                 is not in [kora.plugins] enabled, so the rule is not enforced"
+                    .to_string(),
+            );
         }
 
         let (plugin_errors, plugin_warnings) = TransactionPluginRunner::validate_config(config);

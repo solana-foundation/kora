@@ -58,6 +58,15 @@ fn get_or_try_init<T>(
     Ok(cell.get_or_init(|| value))
 }
 
+/// Where an entry of `VersionedTransactionResolved::all_instructions` comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstructionOrigin {
+    /// Listed in the message itself.
+    TopLevel,
+    /// A CPI, at any depth, under the top-level instruction at `all_instructions[parent_index]`.
+    Inner { parent_index: usize },
+}
+
 /// A fully resolved transaction with lookup tables and inner instructions resolved
 pub struct VersionedTransactionResolved {
     pub transaction: VersionedTransaction,
@@ -67,6 +76,8 @@ pub struct VersionedTransactionResolved {
 
     // Includes all instructions, including inner instructions
     pub all_instructions: Vec<Instruction>,
+
+    pub(crate) instruction_origins: Vec<InstructionOrigin>,
 
     // Parsed instructions by type
     parsed_system_instructions:
@@ -180,8 +191,7 @@ impl VersionedTransactionResolved {
             IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys)?;
 
         let mut resolved = Self::new(transaction.clone(), all_account_keys, outer_instructions);
-        let inner_instructions = resolved.fetch_inner_instructions(rpc_client, sig_verify).await?;
-        resolved.all_instructions.extend(inner_instructions);
+        resolved.fetch_inner_instructions(rpc_client, sig_verify).await?;
 
         Ok(resolved)
     }
@@ -204,6 +214,7 @@ impl VersionedTransactionResolved {
         Self {
             transaction,
             all_account_keys,
+            instruction_origins: vec![InstructionOrigin::TopLevel; all_instructions.len()],
             all_instructions,
             parsed_system_instructions: OnceLock::new(),
             parsed_spl_instructions: OnceLock::new(),
@@ -214,11 +225,28 @@ impl VersionedTransactionResolved {
         }
     }
 
+    /// Appends a CPI surfaced by simulation under the top-level instruction at `parent_index`.
+    pub fn push_inner_instruction(
+        &mut self,
+        parent_index: usize,
+        instruction: Instruction,
+    ) -> Result<(), KoraError> {
+        if self.instruction_origins.get(parent_index) != Some(&InstructionOrigin::TopLevel) {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Inner instruction refers to top-level instruction {parent_index}, which does not exist"
+            )));
+        }
+        self.all_instructions.push(instruction);
+        self.instruction_origins.push(InstructionOrigin::Inner { parent_index });
+        Ok(())
+    }
+
+    /// Simulates the transaction and appends every CPI it surfaces to `all_instructions`.
     async fn fetch_inner_instructions(
         &mut self,
         rpc_client: &RpcClient,
         sig_verify: bool,
-    ) -> Result<Vec<Instruction>, KoraError> {
+    ) -> Result<(), KoraError> {
         let simulation_result = rpc_client
             .simulate_transaction_with_config(
                 &self.transaction,
@@ -246,33 +274,35 @@ impl VersionedTransactionResolved {
             )));
         }
 
-        if let Some(inner_instructions) = simulation_result.value.inner_instructions {
-            let mut compiled_inner_instructions: Vec<CompiledInstruction> = vec![];
-            // Clone so we can extend with CPI-only PDA accounts discovered
-            // during inner instruction reconstruction.
-            let mut extended_account_keys = self.all_account_keys.clone();
-            let mut account_keys_hashmap =
-                IxUtils::build_account_keys_hashmap(&extended_account_keys);
+        let Some(inner_instructions) = simulation_result.value.inner_instructions else {
+            return Ok(());
+        };
 
-            for ix in &inner_instructions {
-                for inner_ix in &ix.instructions {
-                    let compiled = IxUtils::reconstruct_instruction_from_ui_with_account_key_cache(
-                        inner_ix,
-                        &mut extended_account_keys,
-                        &mut account_keys_hashmap,
-                    )?;
-                    compiled_inner_instructions.push(compiled);
-                }
+        let mut compiled_inner_instructions: Vec<(usize, CompiledInstruction)> = vec![];
+        // Clone so we can extend with CPI-only PDA accounts discovered
+        // during inner instruction reconstruction.
+        let mut extended_account_keys = self.all_account_keys.clone();
+        let mut account_keys_hashmap = IxUtils::build_account_keys_hashmap(&extended_account_keys);
+
+        for ix in &inner_instructions {
+            for inner_ix in &ix.instructions {
+                let compiled = IxUtils::reconstruct_instruction_from_ui_with_account_key_cache(
+                    inner_ix,
+                    &mut extended_account_keys,
+                    &mut account_keys_hashmap,
+                )?;
+                compiled_inner_instructions.push((ix.index as usize, compiled));
             }
-
-            self.all_account_keys = extended_account_keys;
-            return IxUtils::uncompile_instructions(
-                &compiled_inner_instructions,
-                &self.all_account_keys,
-            );
         }
 
-        Ok(vec![])
+        self.all_account_keys = extended_account_keys;
+        for (parent_index, compiled) in compiled_inner_instructions {
+            let instruction =
+                IxUtils::uncompile_instructions(&[compiled], &self.all_account_keys)?.remove(0);
+            self.push_inner_instruction(parent_index, instruction)?;
+        }
+
+        Ok(())
     }
 
     pub fn get_or_parse_system_instructions(
@@ -1274,11 +1304,66 @@ mod tests {
 
         let mut resolved =
             VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
-        let inner_instructions =
-            resolved.fetch_inner_instructions(&rpc_client, true).await.unwrap();
+        resolved.fetch_inner_instructions(&rpc_client, true).await.unwrap();
 
-        assert_eq!(inner_instructions.len(), 1);
-        assert_eq!(inner_instructions[0].data, vec![10, 20, 30]);
+        assert_eq!(resolved.all_instructions.len(), 2);
+        assert_eq!(resolved.all_instructions[1].data, vec![10, 20, 30]);
+        assert_eq!(
+            resolved.instruction_origins,
+            vec![InstructionOrigin::TopLevel, InstructionOrigin::Inner { parent_index: 0 }]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_inner_instructions_rejects_parent_index_out_of_range() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        let mut mocks = HashMap::new();
+        mocks.insert(
+            RpcRequest::SimulateTransaction,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": null,
+                    "logs": [],
+                    "accounts": null,
+                    "unitsConsumed": 1000,
+                    "innerInstructions": [
+                        {
+                            "index": 1,
+                            "instructions": [
+                                {
+                                    "programIdIndex": 1,
+                                    "accounts": [0],
+                                    "data": bs58::encode(&[10, 20, 30]).into_string()
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }),
+        );
+        let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
+
+        let mut resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
+        let err = resolved.fetch_inner_instructions(&rpc_client, true).await.unwrap_err();
+        assert!(
+            err.to_string().contains("top-level instruction 1, which does not exist"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(resolved.all_instructions.len(), 1);
     }
 
     #[tokio::test]

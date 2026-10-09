@@ -658,7 +658,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[outer], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        transaction.all_instructions.push(reconstructed);
+        transaction.push_inner_instruction(0, reconstructed).unwrap();
 
         validator.validate_transaction(config, &mut transaction, &rpc_client).await
     }
@@ -3078,11 +3078,20 @@ mod tests {
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Fee payer funds the prefund create as a CPI inner instruction.
-        transaction.all_instructions.push(Instruction {
-            program_id: SYSTEM_PROGRAM_ID,
-            accounts: vec![AccountMeta::new(new_account, true), AccountMeta::new(fee_payer, true)],
-            data: bincode::serialize(&(DISCRIMINATOR, 1_000u64, 0u64, SYSTEM_PROGRAM_ID)).unwrap(),
-        });
+        transaction
+            .push_inner_instruction(
+                0,
+                Instruction {
+                    program_id: SYSTEM_PROGRAM_ID,
+                    accounts: vec![
+                        AccountMeta::new(new_account, true),
+                        AccountMeta::new(fee_payer, true),
+                    ],
+                    data: bincode::serialize(&(DISCRIMINATOR, 1_000u64, 0u64, SYSTEM_PROGRAM_ID))
+                        .unwrap(),
+                },
+            )
+            .unwrap();
 
         let err = validator
             .validate_transaction(config, &mut transaction, &rpc_client)

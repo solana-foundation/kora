@@ -7,6 +7,7 @@ use solana_transaction_status::parse_token::UiExtensionType;
 use solana_transaction_status_client_types::{
     UiInstruction, UiParsedInstruction, UiPartiallyDecodedInstruction,
 };
+use spl_associated_token_account_interface::program::ID as ATA_PROGRAM_ID;
 use spl_token_2022_interface::{
     extension::{
         group_member_pointer, group_pointer, metadata_pointer, transfer_fee, transfer_hook,
@@ -43,6 +44,8 @@ pub const PARSED_DATA_FIELD_CLOSE_ACCOUNT: &str = "closeAccount";
 pub const PARSED_DATA_FIELD_TRANSFER_CHECKED: &str = "transferChecked";
 pub const PARSED_DATA_FIELD_APPROVE: &str = "approve";
 pub const PARSED_DATA_FIELD_APPROVE_CHECKED: &str = "approveChecked";
+pub const PARSED_DATA_FIELD_CREATE: &str = "create";
+pub const PARSED_DATA_FIELD_CREATE_IDEMPOTENT: &str = "createIdempotent";
 
 pub const PARSED_DATA_FIELD_AMOUNT: &str = "amount";
 pub const PARSED_DATA_FIELD_LAMPORTS: &str = "lamports";
@@ -97,6 +100,9 @@ pub const PARSED_DATA_FIELD_MULTISIG_MINT_AUTHORITY: &str = "multisigMintAuthori
 pub const PARSED_DATA_FIELD_MULTISIG_FREEZE_AUTHORITY: &str = "multisigFreezeAuthority";
 pub const PARSED_DATA_FIELD_M: &str = "m";
 pub const PARSED_DATA_FIELD_RENT_SYSVAR: &str = "rentSysvar";
+pub const PARSED_DATA_FIELD_WALLET: &str = "wallet";
+pub const PARSED_DATA_FIELD_SYSTEM_PROGRAM: &str = "systemProgram";
+pub const PARSED_DATA_FIELD_TOKEN_PROGRAM: &str = "tokenProgram";
 
 pub const PARSED_DATA_FIELD_INITIALIZE_METADATA_POINTER: &str = "initializeMetadataPointer";
 pub const PARSED_DATA_FIELD_UPDATE_METADATA_POINTER: &str = "updateMetadataPointer";
@@ -400,6 +406,8 @@ impl IxUtils {
                     || parsed.program_id == spl_token_2022_interface::ID.to_string()
                 {
                     Self::reconstruct_spl_token_instruction(parsed, account_keys_hashmap)
+                } else if parsed.program_id == ATA_PROGRAM_ID.to_string() {
+                    Self::reconstruct_ata_instruction(parsed, account_keys_hashmap)
                 } else {
                     // Unsupported program: stub instruction keeps only the program ID, needed for security validation
                     let program_id = parsed.program_id.parse::<Pubkey>().map_err(|e| {
@@ -631,6 +639,40 @@ impl IxUtils {
         })?;
 
         Ok(CompiledInstruction { program_id_index, accounts, data })
+    }
+
+    /// Rebuilds ATA `create` and `createIdempotent`; other ATA instructions become a stub.
+    pub(super) fn reconstruct_ata_instruction(
+        parsed: &solana_transaction_status_client_types::ParsedInstruction,
+        account_keys_hashmap: &HashMap<Pubkey, u8>,
+    ) -> Result<CompiledInstruction, KoraError> {
+        let program_id_index = Self::get_account_index(account_keys_hashmap, &ATA_PROGRAM_ID)?;
+
+        let parsed_data = &parsed.parsed;
+        let discriminator = match Self::get_field_as_str(parsed_data, PARSED_DATA_FIELD_TYPE)? {
+            PARSED_DATA_FIELD_CREATE => 0u8,
+            PARSED_DATA_FIELD_CREATE_IDEMPOTENT => 1u8,
+            _ => return Ok(Self::build_default_compiled_instruction(program_id_index)),
+        };
+        let info = parsed_data
+            .get(PARSED_DATA_FIELD_INFO)
+            .ok_or_else(|| KoraError::SerializationError("Missing 'info' field".to_string()))?;
+        let index = |field: &str| -> Result<u8, KoraError> {
+            Self::get_account_index(account_keys_hashmap, &Self::get_field_as_pubkey(info, field)?)
+        };
+
+        Ok(CompiledInstruction {
+            program_id_index,
+            accounts: vec![
+                index(PARSED_DATA_FIELD_SOURCE)?,
+                index(PARSED_DATA_FIELD_ACCOUNT)?,
+                index(PARSED_DATA_FIELD_WALLET)?,
+                index(PARSED_DATA_FIELD_MINT)?,
+                index(PARSED_DATA_FIELD_SYSTEM_PROGRAM)?,
+                index(PARSED_DATA_FIELD_TOKEN_PROGRAM)?,
+            ],
+            data: vec![discriminator],
+        })
     }
 
     pub(super) fn reconstruct_spl_token_instruction(
