@@ -4,6 +4,7 @@ use crate::{
     metrics::run_metrics_server_if_required,
     rpc_server::{
         auth::{ApiKeyAuthLayer, HmacAuthLayer},
+        global_rate_limit::GlobalRateLimitLayer,
         middleware_utils::MethodValidationLayer,
         recaptcha::RecaptchaLayer,
         recaptcha_util::RecaptchaConfig,
@@ -175,6 +176,7 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         // Add metrics handler first (before other layers) so it can intercept /metrics
         .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
         .layer(RateLimitLayer::new(config.kora.rate_limit, Duration::from_secs(1)))
+        .option_layer(config.kora.global_rate_limit.map(GlobalRateLimitLayer::new))
         .option_layer(
             metrics_layers.as_ref().and_then(|layers| layers.metrics_handler_layer.clone()),
         )
