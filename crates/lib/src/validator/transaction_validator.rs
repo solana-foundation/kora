@@ -239,10 +239,8 @@ impl TransactionValidator {
                 continue;
             }
 
-            let fee_payer_participates = instruction
-                .accounts
-                .iter()
-                .any(|account| account.pubkey == self.fee_payer_pubkey);
+            let fee_payer_participates =
+                instruction.accounts.iter().any(|account| account.pubkey == self.fee_payer_pubkey);
 
             let is_sponsor_only = self.allow_all_sponsor_only_programs
                 || self.sponsor_only_programs.contains(&instruction.program_id);
@@ -889,10 +887,7 @@ mod tests {
             .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
             .await
             .unwrap_err();
-        assert!(
-            err.to_string().contains("sponsor-only"),
-            "unexpected error: {err}"
-        );
+        assert!(err.to_string().contains("sponsor-only"), "unexpected error: {err}");
     }
 
     #[tokio::test]

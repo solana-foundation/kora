@@ -143,6 +143,7 @@ impl ConfigValidator {
         for (field, pubkeys) in [
             ("allowed_programs", config.validation.allowed_programs.as_slice()),
             ("require_one_of_programs", config.validation.require_one_of_programs.as_slice()),
+            ("sponsor_only_programs", config.validation.sponsor_only_programs.as_slice()),
         ] {
             for pubkey_str in pubkeys {
                 if Pubkey::from_str(pubkey_str).is_err() {
@@ -151,10 +152,22 @@ impl ConfigValidator {
             }
         }
 
+        if config.validation.sponsor_only_programs.is_all() {
+            warnings.push(
+                "sponsor_only_programs is set to \"All\" — any program may run when the fee payer \
+                 does not participate. Keep allowed_programs tight so the fee payer cannot be \
+                 passed into unknown programs."
+                    .to_string(),
+            );
+        }
+
         for program in &config.validation.require_one_of_programs {
-            if !config.validation.allowed_programs.contains(program) {
+            let in_allowed = config.validation.allowed_programs.contains(program);
+            let in_sponsor_only = config.validation.sponsor_only_programs.contains(program);
+            if !in_allowed && !in_sponsor_only {
                 errors.push(format!(
-                    "Program {program} in require_one_of_programs must also be in allowed_programs"
+                    "Program {program} in require_one_of_programs must also be in \
+                     allowed_programs or sponsor_only_programs"
                 ));
             }
         }

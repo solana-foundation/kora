@@ -323,7 +323,7 @@ impl ValidationConfigBuilder {
                 allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
-                    sponsor_only_programs: ProgramsConfig::Allowlist(vec![]),
+                sponsor_only_programs: ProgramsConfig::Allowlist(vec![]),
                 cross_cluster_check: false,
                 cross_cluster_endpoints: vec![],
             },
