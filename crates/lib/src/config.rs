@@ -239,6 +239,12 @@ impl<'a> IntoIterator for &'a ProgramsConfig {
     }
 }
 
+impl Default for ProgramsConfig {
+    fn default() -> Self {
+        ProgramsConfig::Allowlist(vec![])
+    }
+}
+
 impl ProgramsConfig {
     pub fn is_all(&self) -> bool {
         matches!(self, ProgramsConfig::All)
@@ -321,6 +327,13 @@ pub struct ValidationConfig {
     /// Default: empty (no restriction).
     #[serde(default)]
     pub require_one_of_programs: Vec<String>,
+    /// Programs that may appear in a transaction only when the fee payer's
+    /// account does **not** participate in that instruction. Use with a tight
+    /// `allowed_programs` list to sponsor arbitrary DeFi routes without letting
+    /// unknown programs receive the fee payer. `"All"` allows any non-participating
+    /// program. Default: empty (disabled — current allowlist-only behavior).
+    #[serde(default)]
+    pub sponsor_only_programs: ProgramsConfig,
     /// When true, checks configured mint addresses against other known clusters
     /// and warns if a mint is found on a different cluster than the one connected.
     /// Disabled by default: the check contacts public RPC endpoints, which may be undesirable

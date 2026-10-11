@@ -29,6 +29,8 @@ pub struct TransactionValidator {
     max_priority_fee_lamports: Option<u64>,
     allowed_programs: HashSet<Pubkey>,
     allow_all_programs: bool,
+    sponsor_only_programs: HashSet<Pubkey>,
+    allow_all_sponsor_only_programs: bool,
     require_one_of_programs: HashSet<Pubkey>,
     max_signatures: u64,
     allowed_tokens: HashSet<Pubkey>,
@@ -46,6 +48,11 @@ impl TransactionValidator {
             ProgramsConfig::All => (true, HashSet::new()),
             ProgramsConfig::Allowlist(programs) => (false, parse_pubkey_set(programs)?),
         };
+        let (allow_all_sponsor_only_programs, sponsor_only_programs) =
+            match &config.sponsor_only_programs {
+                ProgramsConfig::All => (true, HashSet::new()),
+                ProgramsConfig::Allowlist(programs) => (false, parse_pubkey_set(programs)?),
+            };
 
         Ok(Self {
             fee_payer_pubkey,
@@ -53,6 +60,8 @@ impl TransactionValidator {
             max_priority_fee_lamports: config.max_priority_fee_lamports,
             allowed_programs,
             allow_all_programs,
+            sponsor_only_programs,
+            allow_all_sponsor_only_programs,
             require_one_of_programs: parse_pubkey_set(&config.require_one_of_programs)?,
             max_signatures: config.max_signatures,
             allowed_tokens: parse_pubkey_set(&config.allowed_tokens)?,
@@ -226,12 +235,32 @@ impl TransactionValidator {
             return Ok(());
         }
         for instruction in &transaction_resolved.all_instructions {
-            if !self.allowed_programs.contains(&instruction.program_id) {
-                return Err(KoraError::InvalidTransaction(format!(
-                    "Program {} is not in the allowed list",
-                    instruction.program_id
-                )));
+            if self.allowed_programs.contains(&instruction.program_id) {
+                continue;
             }
+
+            let fee_payer_participates = instruction
+                .accounts
+                .iter()
+                .any(|account| account.pubkey == self.fee_payer_pubkey);
+
+            let is_sponsor_only = self.allow_all_sponsor_only_programs
+                || self.sponsor_only_programs.contains(&instruction.program_id);
+
+            if is_sponsor_only {
+                if fee_payer_participates {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Program {} is sponsor-only: fee payer must not participate in its instructions",
+                        instruction.program_id
+                    )));
+                }
+                continue;
+            }
+
+            return Err(KoraError::InvalidTransaction(format!(
+                "Program {} is not in the allowed list",
+                instruction.program_id
+            )));
         }
         Ok(())
     }
@@ -790,6 +819,104 @@ mod tests {
 
         let arbitrary_program = Pubkey::new_unique();
         let instruction = Instruction::new_with_bincode(arbitrary_program, &[0u8], vec![]);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_programs_sponsor_only_allows_without_fee_payer() {
+        let fee_payer = Pubkey::new_unique();
+        let sponsor_program = Pubkey::new_unique();
+        let mut config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .build();
+        config.validation.sponsor_only_programs =
+            ProgramsConfig::Allowlist(vec![sponsor_program.to_string()]);
+        setup_both_configs(config);
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let user = Pubkey::new_unique();
+        let instruction = Instruction::new_with_bincode(
+            sponsor_program,
+            &[0u8],
+            vec![AccountMeta::new(user, true)],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_programs_sponsor_only_rejects_fee_payer_participation() {
+        let fee_payer = Pubkey::new_unique();
+        let sponsor_program = Pubkey::new_unique();
+        let mut config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .build();
+        config.validation.sponsor_only_programs =
+            ProgramsConfig::Allowlist(vec![sponsor_program.to_string()]);
+        setup_both_configs(config);
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = Instruction::new_with_bincode(
+            sponsor_program,
+            &[0u8],
+            vec![AccountMeta::new(fee_payer, false)],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let err = validator
+            .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("sponsor-only"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_programs_sponsor_only_all_allows_unknown_without_fee_payer() {
+        let fee_payer = Pubkey::new_unique();
+        let mut config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .build();
+        config.validation.sponsor_only_programs = ProgramsConfig::All;
+        setup_both_configs(config);
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let arbitrary_program = Pubkey::new_unique();
+        let user = Pubkey::new_unique();
+        let instruction = Instruction::new_with_bincode(
+            arbitrary_program,
+            &[0u8],
+            vec![AccountMeta::new(user, true)],
+        );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();

@@ -32,6 +32,7 @@ struct ValidationSection {
     max_signatures: u64,
     allowed_programs: Vec<String>,
     require_one_of_programs: Vec<String>,
+    sponsor_only_programs: Vec<String>,
     allowed_tokens: Vec<String>,
     allowed_spl_paid_tokens: SplTokenConfig,
     disallowed_accounts: Vec<String>,
@@ -57,6 +58,7 @@ impl Default for ValidationSection {
             max_signatures: 10,
             allowed_programs: vec!["program1".to_string()],
             require_one_of_programs: vec![],
+            sponsor_only_programs: vec![],
             allowed_tokens: vec!["token1".to_string()],
             allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec!["token2".to_string()]),
             disallowed_accounts: vec![],
@@ -305,12 +307,27 @@ impl ConfigBuilder {
             )
         };
 
+        let sponsor_only_list = if self.validation.sponsor_only_programs.is_empty() {
+            "[]".to_string()
+        } else {
+            format!(
+                "[{}]",
+                self.validation
+                    .sponsor_only_programs
+                    .iter()
+                    .map(|p| format!("\"{p}\""))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+
         let mut toml = format!(
             "[validation]\n\
             max_allowed_lamports = {}\n\
             max_signatures = {}\n\
             allowed_programs = [{}]\n\
             require_one_of_programs = {}\n\
+            sponsor_only_programs = {}\n\
             allowed_tokens = [{}]\n\
             allowed_spl_paid_tokens = {}\n\
             disallowed_accounts = {}\n\
@@ -319,6 +336,7 @@ impl ConfigBuilder {
             self.validation.max_signatures,
             programs_list,
             require_one_of_list,
+            sponsor_only_list,
             tokens_list,
             spl_tokens_config,
             disallowed_list,
