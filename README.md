@@ -63,6 +63,30 @@ Basic usage:
 kora rpc [OPTIONS] # --help for full list of options
 ```
 
+Point the node at a Solana RPC endpoint with `--rpc-url` (env `RPC_URL`):
+
+```bash
+kora --rpc-url https://api.mainnet-beta.solana.com rpc start
+```
+
+To survive a third-party RPC provider degrading, pass a comma-separated list with
+`--rpc-urls` (env `RPC_URLS`). Each RPC call is retried against the next endpoint
+if the current one is unreachable or answers 5xx. The first entry is the primary:
+
+```bash
+kora --rpc-urls https://primary.example/?api-key=KEY,https://api.mainnet-beta.solana.com rpc start
+```
+
+Each endpoint has a circuit breaker: after repeated failures it stops taking new
+requests for a cooldown, then exactly one request is let through as a probe while
+the rest keep using the fallback. A provider that recovers therefore rejoins on
+its own, and one that is still broken cannot make every concurrent request wait it
+out.
+
+A rate limit (HTTP 429) is not failed over — it reflects your API key rather than the
+provider — so a key that has run out of quota keeps returning errors instead of
+switching providers.
+
 **[→ Full Documentation](https://launch.solana.com/docs/kora/getting-started)** - Learn how Kora works
 
 **[→ Quick Start Guide](https://launch.solana.com/docs/kora/getting-started/quick-start)** - Get Kora running locally minutes

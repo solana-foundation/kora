@@ -5209,6 +5209,7 @@ dependencies = [
  "solana-nullable",
  "solana-program 4.0.0",
  "solana-program-pack 3.1.0",
+ "solana-rpc-client",
  "solana-sdk",
  "solana-system-interface 2.0.0",
  "solana-transaction 4.1.5",

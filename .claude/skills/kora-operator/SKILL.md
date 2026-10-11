@@ -39,8 +39,39 @@ mints exist, that the fee payer is funded). Worth running before a first deploy.
 `initialize-atas` is required before the node can receive token payments — without it the payment
 destination has no associated token accounts and transactions fail at execution, not validation.
 
-`--rpc-url` (env `RPC_URL`) overrides the config. `kora rpc start --help` covers port, logging
-format, `--no-load-signer`, and the ATA batching flags.
+`--rpc-url` (env `RPC_URL`) sets the Solana RPC endpoint. It is not part of
+`kora.toml`; the config loader does no environment interpolation, so a URL must
+reach the node as a flag or an env var.
+
+`--rpc-urls` (env `RPC_URLS`) takes a comma-separated list, in preference order.
+With more than one endpoint every RPC call is retried against the next one when
+the current endpoint is unreachable or answers 5xx, which removes the single point
+of failure a third-party provider outage otherwise creates. The first entry is the
+primary.
+
+Each endpoint runs a circuit breaker. After
+`RPC_FAILOVER_FAILURE_THRESHOLD` consecutive failures it stops taking new requests
+for `RPC_FAILOVER_COOLDOWN_SECS`, after which exactly **one** request is admitted as
+a probe while everything else keeps using the fallback. A successful probe puts
+the endpoint straight back into service, so a recovered provider rejoins without a
+restart; a failed probe restarts the cooldown. That single-probe rule is why adding
+a second endpoint is safe under load rather than a way to multiply your tail
+latency.
+
+A rate limit (HTTP 429) is deliberately **not** failed over. It is a fact about your
+API key rather than about the provider, and the transport already retries it five
+times honouring `Retry-After`. The consequence to plan for: a key that has exhausted
+its quota will keep returning errors rather than switching providers.
+
+`RPC_URLS` wins over `RPC_URL` when set to a non-empty value. Operators who inject
+the URL from a secret manager should prefer `RPC_URLS` so a provider incident does
+not need a new revision.
+
+Watch `rpc_failovers_total{endpoint_index,reason}` to see failover happening and
+`rpc_active_endpoint_index` to see which endpoint is serving.
+
+`kora rpc start --help` covers port, logging format, `--no-load-signer`, and the ATA
+batching flags.
 
 ## Decisions that matter
 

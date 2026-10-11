@@ -59,6 +59,25 @@ static KORA_PID: AtomicI32 = AtomicI32::new(0);
 static RENDERED_CONFIG: OnceLock<PathBuf> = OnceLock::new();
 static HARNESS: OnceCell<KoraHarness> = OnceCell::const_new();
 
+/// How the harness points Kora at RPC endpoints.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum RpcEndpointPolicy {
+    /// `--rpc-url <surfnet>`. What every phase but `rpc_failover` uses.
+    #[default]
+    SurfnetOnly,
+    /// `--rpc-urls <unreachable>,<surfnet>`, so the primary is dead from the first
+    /// request and every call has to fail over. Proves failover works in the
+    /// running server rather than only in a unit test.
+    UnreachablePrimary,
+}
+
+/// An endpoint nothing listens on, so connecting to it is refused outright.
+///
+/// Port 1 requires root to bind, so no unprivileged process can be listening on
+/// it. This is a hard connection failure rather than a hang, which is what the
+/// failover path classifies as a transport error.
+const UNREACHABLE_RPC_URL: &str = "http://127.0.0.1:1";
+
 /// Paths are workspace-relative.
 #[derive(Clone, Copy)]
 pub struct KoraSpec {
@@ -78,6 +97,13 @@ pub struct KoraHarness {
 
 impl KoraHarness {
     pub async fn start(spec: KoraSpec) -> Result<Self> {
+        Self::start_with_rpc_endpoints(spec, RpcEndpointPolicy::SurfnetOnly).await
+    }
+
+    pub async fn start_with_rpc_endpoints(
+        spec: KoraSpec,
+        rpc_endpoints: RpcEndpointPolicy,
+    ) -> Result<Self> {
         let (surfnet, lookup_tables) = start_surfnet_with_retry().await?;
 
         let rpc_url = surfnet.rpc_url().to_string();
@@ -96,11 +122,11 @@ impl KoraHarness {
         let signers_path = workspace_path(spec.signers);
 
         if spec.initialize_payments_atas {
-            initialize_payment_atas(&config_path, &signers_path, &rpc_url).await?;
+            initialize_payment_atas(&config_path, &signers_path, &rpc_url, rpc_endpoints).await?;
         }
 
         let port = free_port()?;
-        let mut kora = spawn_kora(&config_path, &signers_path, &rpc_url, port)?;
+        let mut kora = spawn_kora(&config_path, &signers_path, &rpc_url, rpc_endpoints, port)?;
         register_kora_teardown(&kora)?;
         wait_for_liveness(&mut kora, port).await?;
 
@@ -130,6 +156,27 @@ pub async fn started(spec: KoraSpec) -> &'static KoraHarness {
             KoraHarness::start(spec).await.expect("Failed to start Kora harness")
         })
         .await
+}
+
+/// A second harness slot for the failover phase, which points Kora at a dead
+/// primary endpoint. Only that binary reaches this, so it never contends with
+/// [`HARNESS`] above.
+static FAILOVER_HARNESS: OnceCell<KoraHarness> = OnceCell::const_new();
+
+/// A context against a node whose primary RPC endpoint is dead, so every call has
+/// to fail over to the live one.
+pub async fn failover_harness_context(spec: KoraSpec) -> TestContext {
+    let harness = FAILOVER_HARNESS
+        .get_or_init(|| async {
+            KoraHarness::start_with_rpc_endpoints(spec, RpcEndpointPolicy::UnreachablePrimary)
+                .await
+                .expect("Failed to start Kora harness with an unreachable primary RPC endpoint")
+        })
+        .await;
+
+    TestContext::with_urls(harness.server_url.clone(), harness.rpc_url.clone())
+        .await
+        .expect("Failed to create test context")
 }
 
 fn workspace_root() -> &'static Path {
@@ -249,15 +296,26 @@ fn kora_binary_path() -> Result<PathBuf> {
     Ok(path)
 }
 
-fn kora_command(config: &Path, rpc_url: &str) -> Result<Command> {
+fn kora_command(config: &Path, rpc_url: &str, rpc_endpoints: RpcEndpointPolicy) -> Result<Command> {
     let mut cmd = Command::new(kora_binary_path()?);
-    cmd.arg("--config")
-        .arg(config)
-        .arg("--rpc-url")
-        .arg(rpc_url)
-        .env("KORA_PRIVATE_KEY", read_local_key("fee-payer-local.json")?)
+    cmd.arg("--config").arg(config);
+
+    match rpc_endpoints {
+        RpcEndpointPolicy::SurfnetOnly => {
+            cmd.arg("--rpc-url").arg(rpc_url);
+        }
+        RpcEndpointPolicy::UnreachablePrimary => {
+            // The dead endpoint comes first so it is the preferred one.
+            cmd.arg("--rpc-urls").arg(format!("{UNREACHABLE_RPC_URL},{rpc_url}"));
+        }
+    }
+
+    cmd.env("KORA_PRIVATE_KEY", read_local_key("fee-payer-local.json")?)
         .env("KORA_PRIVATE_KEY_2", read_local_key("signer2-local.json")?)
-        .env_remove("KORA_REDIS_URL");
+        .env_remove("KORA_REDIS_URL")
+        // An RPC_URLS inherited from the shell outranks --rpc-url, so a phase would
+        // silently talk to a real provider instead of the seeded surfnet.
+        .env_remove("RPC_URLS");
 
     if let Ok(jupiter_key) = std::env::var("JUPITER_API_KEY") {
         cmd.env("JUPITER_API_KEY", jupiter_key);
@@ -274,12 +332,18 @@ fn read_local_key(filename: &str) -> Result<String> {
         .to_string())
 }
 
-fn spawn_kora(config: &Path, signers: &Path, rpc_url: &str, port: u16) -> Result<Child> {
+fn spawn_kora(
+    config: &Path,
+    signers: &Path,
+    rpc_url: &str,
+    rpc_endpoints: RpcEndpointPolicy,
+    port: u16,
+) -> Result<Child> {
     let verbose = std::env::var("KORA_TEST_VERBOSE").is_ok();
     let (stdout, stderr) =
         if verbose { (Stdio::inherit(), Stdio::inherit()) } else { (Stdio::null(), Stdio::null()) };
 
-    let child = kora_command(config, rpc_url)?
+    let child = kora_command(config, rpc_url, rpc_endpoints)?
         .args(["rpc", "start", "--signers-config"])
         .arg(signers)
         .args(["--port", &port.to_string()])
@@ -290,8 +354,13 @@ fn spawn_kora(config: &Path, signers: &Path, rpc_url: &str, port: u16) -> Result
     Ok(child)
 }
 
-async fn initialize_payment_atas(config: &Path, signers: &Path, rpc_url: &str) -> Result<()> {
-    let output = kora_command(config, rpc_url)?
+async fn initialize_payment_atas(
+    config: &Path,
+    signers: &Path,
+    rpc_url: &str,
+    rpc_endpoints: RpcEndpointPolicy,
+) -> Result<()> {
+    let output = kora_command(config, rpc_url, rpc_endpoints)?
         .args(["rpc", "initialize-atas", "--signers-config"])
         .arg(signers)
         .output()

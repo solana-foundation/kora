@@ -60,6 +60,10 @@ solana-program-pack = "3.1.0"
 solana-compute-budget-interface = { version = "3.0.0", features = ["borsh"] }
 solana-compute-budget = { version = "4.2.1", features = ["agave-unstable-api"] }
 solana-client = "4.2.1"
+# Needed directly for `RpcSender`/`HttpSender`, the transport seam RPC failover is
+# built on. Already in the graph through solana-client; pinned to the same version
+# so cargo unifies to a single copy.
+solana-rpc-client = "4.2.1"
 solana-nonce = "3.0.0"
 solana-packet = "4.2.0"
 bs58 = "0.5.1"
