@@ -97,6 +97,7 @@ impl ConfigMockBuilder {
                     allowed_transaction_versions: default_allowed_transaction_versions(),
                     max_price_staleness_slots: 0,
                     require_one_of_programs: vec![],
+                    sponsor_only_programs: ProgramsConfig::Allowlist(vec![]),
                     cross_cluster_check: false,
                     cross_cluster_endpoints: vec![],
                 },
@@ -179,6 +180,11 @@ impl ConfigMockBuilder {
 
     pub fn with_require_one_of_programs(mut self, programs: Vec<String>) -> Self {
         self.config.validation.require_one_of_programs = programs;
+        self
+    }
+
+    pub fn with_sponsor_only_programs(mut self, programs: ProgramsConfig) -> Self {
+        self.config.validation.sponsor_only_programs = programs;
         self
     }
 
@@ -317,6 +323,7 @@ impl ValidationConfigBuilder {
                 allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                sponsor_only_programs: ProgramsConfig::Allowlist(vec![]),
                 cross_cluster_check: false,
                 cross_cluster_endpoints: vec![],
             },
@@ -334,6 +341,11 @@ impl ValidationConfigBuilder {
 
     pub fn with_allowed_programs(mut self, programs: Vec<String>) -> Self {
         self.config.allowed_programs = ProgramsConfig::Allowlist(programs);
+        self
+    }
+
+    pub fn with_sponsor_only_programs(mut self, programs: ProgramsConfig) -> Self {
+        self.config.sponsor_only_programs = programs;
         self
     }
 

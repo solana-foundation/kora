@@ -116,13 +116,20 @@ impl BundleValidator {
 
         let allow_all_programs = config.validation.allowed_programs.is_all();
         let allowed_programs = parse_pubkey_set(config.validation.allowed_programs.as_slice())?;
+        let allow_all_sponsor_only = config.validation.sponsor_only_programs.is_all();
+        let sponsor_only_programs =
+            parse_pubkey_set(config.validation.sponsor_only_programs.as_slice())?;
         let disallowed_programs = parse_pubkey_set(&config.validation.disallowed_accounts)?;
         let signed_set: HashSet<usize> = signed_indices.iter().copied().collect();
 
         for (tx_idx, tx_result) in simulation_result.transaction_results.iter().enumerate() {
+            // Fee-payer participation for sponsor-only programs is enforced earlier by
+            // TransactionValidator::validate_programs inside BundleProcessor::process_bundle.
             Self::validate_invoked_programs(
                 allow_all_programs,
                 &allowed_programs,
+                allow_all_sponsor_only,
+                &sponsor_only_programs,
                 &disallowed_programs,
                 &tx_result.logs,
             )?;
@@ -145,6 +152,8 @@ impl BundleValidator {
     fn validate_invoked_programs(
         allow_all_programs: bool,
         allowed_programs: &HashSet<Pubkey>,
+        allow_all_sponsor_only: bool,
+        sponsor_only_programs: &HashSet<Pubkey>,
         disallowed_programs: &HashSet<Pubkey>,
         logs: &[String],
     ) -> Result<(), KoraError> {
@@ -164,12 +173,18 @@ impl BundleValidator {
                 )));
             }
 
-            if !allow_all_programs && !allowed_programs.contains(&program_id) {
-                return Err(KoraError::InvalidTransaction(format!(
-                    "Program {} is not in the allowed list",
-                    program_id
-                )));
+            if allow_all_programs || allowed_programs.contains(&program_id) {
+                continue;
             }
+
+            if allow_all_sponsor_only || sponsor_only_programs.contains(&program_id) {
+                continue;
+            }
+
+            return Err(KoraError::InvalidTransaction(format!(
+                "Program {} is not in the allowed list",
+                program_id
+            )));
         }
 
         Ok(())
