@@ -100,8 +100,9 @@ libc = "0.2"
 ctor = "0.6"
 
 [dev-dependencies]
-# Pinned to a commit rather than the 1.6.0 release: bundle execution only became
-# isolated from concurrent airdrops in solana-foundation/surfpool#817 and #824, both
-# merged after that release. Without them a bundle commit reverts any write that
-# landed while the bundle ran, which the bundle phases hit through create_funded_wallet.
-surfpool-sdk = { git = "https://github.com/solana-foundation/surfpool", rev = "72ea220c0ea812892209df4ae2db76a23ef7112f" }
+# 1.6.1 is the floor: bundle execution is isolated from concurrent airdrops only since
+# solana-foundation/surfpool#817 and #824, and simulateTransaction reports
+# loadedAccountsDataSize the way a validator counts it only since #831. Without the first,
+# a bundle commit reverts writes that landed while it ran; without the second, v1
+# transactions sized from simulation exceed the loaded-accounts cap.
+surfpool-sdk = "1.6.1"
