@@ -1,0 +1,34 @@
+{
+  "name": "@noirwire/relayer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Client for the NoirWire relayer: let your users transact without holding SOL.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "build": "tsc",
+    "test": "npm run build && node --test \"test/*.test.mjs\""
+  },
+  "peerDependencies": {
+    "@solana/web3.js": "^1.98.0"
+  },
+  "devDependencies": {
+    "@solana/web3.js": "1.99.0",
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
+  }
+}

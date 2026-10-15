@@ -24,6 +24,9 @@ Everything here lives in this one folder; all paths below are relative to it.
 kora/        Dockerfile, kora.toml, signers.toml (v2.2.0-beta.8, the default)
              Dockerfile.stable, kora.stable.toml (v2.0.5, the audited alternative)
 refill/      the refill job (plain Node, two dependencies) and its tests
+gateway/     the public relayer gateway (Fastify, Postgres) for registered apps; see gateway/README.md
+sdk/         @noirwire/relayer, the TypeScript client for the gateway; see sdk/README.md
+             kora/kora.public.toml and Dockerfile.public are the separate Kora only it may call
 scripts/     check-deploy.sh (a deployed Kora), check-upstream.sh (pinned image against upstream releases)
 .railway/    railway.ts: both Railway services as code
 deploy.md    the deployment sequence, command by command

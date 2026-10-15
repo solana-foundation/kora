@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Compares each pinned Kora image with upstream's latest release of its own channel:
-# kora/Dockerfile (the default, pre-release) and kora/Dockerfile.stable (the alternative).
+# kora/Dockerfile (the default, pre-release), kora/Dockerfile.public (the public relayer, same
+# channel) and kora/Dockerfile.stable (the alternative).
 #
 #   ./scripts/check-upstream.sh
 #
 # Uses only curl and standard tools against the public GitHub and container registry APIs.
 # No account or token of yours is needed (the registry hands out an anonymous pull token).
-# Exit code: 0 when both pins are the latest, 1 when either differs, 2 when upstream could
+# Exit code: 0 when every pin is the latest, 1 when any differs, 2 when upstream could
 # not be read. A newer release is a prompt to read docs/updating-from-upstream.md, not to bump.
 
 set -u
@@ -47,6 +48,8 @@ compare() { # label, dockerfile, latest tag
   fi
 }
 
-compare "pre-release (default)" kora/Dockerfile "$(printf '%s\n' "$releases" | awk '$2=="true"{print $1; exit}')"
+latest_prerelease="$(printf '%s\n' "$releases" | awk '$2=="true"{print $1; exit}')"
+compare "pre-release (default)" kora/Dockerfile "$latest_prerelease"
+compare "pre-release (public relayer)" kora/Dockerfile.public "$latest_prerelease"
 compare "stable (alternative)" kora/Dockerfile.stable "$(printf '%s\n' "$releases" | awk '$2=="false"{print $1; exit}')"
 exit "$status"

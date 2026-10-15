@@ -1,0 +1,7 @@
+# Kora for the public relayer: the same pinned image as Dockerfile, with kora.public.toml.
+# Only ever run behind the gateway (see kora.public.toml).
+FROM ghcr.io/solana-foundation/kora:v2.2.0-beta.8@sha256:1b929cd9b32e6a3dddb646669fbe0d30651e07377b2bface044cd84289df59bf
+WORKDIR /app
+COPY kora.public.toml signers.toml ./
+# RPC_URL, KORA_PRIVATE_KEY, KORA_API_KEY, KORA_HMAC_SECRET, JUPITER_API_KEY and RUST_LOG come from the service's variables.
+CMD kora --config /app/kora.public.toml rpc start --signers-config /app/signers.toml --port ${PORT:-8080}

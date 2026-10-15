@@ -43,6 +43,45 @@ jobs:
         run: node --check src/*.mjs test/*.mjs
       - run: npm test
 
+  gateway:
+    name: gateway lint and tests
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: noirwire/gateway
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: noirwire/gateway/package-lock.json
+      - run: npm ci
+      # Plain Node (no TypeScript, no bundler), so "lint" is a syntax check of every module.
+      - name: lint (node --check)
+        run: node --check src/*.mjs test/*.mjs
+      - run: npm test
+
+  sdk:
+    name: sdk lint, build and tests
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: noirwire/sdk
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: noirwire/sdk/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
+
   kora-image:
     name: kora image build and config validate
     if: github.event_name != 'schedule'
@@ -56,6 +95,8 @@ jobs:
         run: docker build -t relayer-default .
       - name: build stable (audited alternative) image
         run: docker build -t relayer-stable -f Dockerfile.stable .
+      - name: build public image
+        run: docker build -t relayer-public -f Dockerfile.public .
       - name: validate default config
         # kora config validate refuses the committed placeholder payment_address (it is not a
         # real key); swap in a well-formed dummy address in a throwaway copy, never the
@@ -73,6 +114,14 @@ jobs:
           sed -i 's/REPLACE_WITH_PAYMENT_WALLET_PUBKEY/11111111111111111111111111111111/' "$RUNNER_TEMP/kora-stable/kora.toml"
           docker run --rm -v "$RUNNER_TEMP/kora-stable:/config:ro" -e JUPITER_API_KEY=placeholder \
             relayer-stable kora --config /config/kora.toml config validate
+      - name: validate public config
+        # Same pinned Kora version as the default image, so its validator is the right one.
+        run: |
+          mkdir -p "$RUNNER_TEMP/kora-public"
+          cp kora.public.toml "$RUNNER_TEMP/kora-public/kora.toml"
+          sed -i 's/REPLACE_WITH_PAYMENT_WALLET_PUBKEY/11111111111111111111111111111111/' "$RUNNER_TEMP/kora-public/kora.toml"
+          docker run --rm -v "$RUNNER_TEMP/kora-public:/config:ro" -e JUPITER_API_KEY=placeholder \
+            relayer-default kora --config /config/kora.toml config validate
 
   shellcheck:
     name: shellcheck noirwire/scripts

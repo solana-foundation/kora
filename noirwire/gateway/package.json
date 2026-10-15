@@ -1,0 +1,22 @@
+{
+  "name": "relayer-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Public gateway for the open Solana fee relayer.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/main.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "@fastify/cors": "11.3.1",
+    "@noble/curves": "1.9.7",
+    "@solana/spl-token": "0.4.15",
+    "@solana/web3.js": "1.99.0",
+    "fastify": "5.12.7",
+    "pg": "8.23.1"
+  }
+}

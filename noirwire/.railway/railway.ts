@@ -19,11 +19,12 @@ const repo = process.env.RELAYER_GITHUB_REPO;
 const source = (rootDirectory: string) =>
   repo ? github(repo, { branch: process.env.RELAYER_GITHUB_BRANCH ?? "main", rootDirectory }) : undefined;
 
-// The fee relayer: a web service built from kora/Dockerfile.
-const kora = (name: string) =>
+// The fee relayer: a web service built from kora/Dockerfile (or, for the public relayer that
+// only the gateway may call, kora/Dockerfile.public).
+const kora = (name: string, dockerfilePath = "Dockerfile") =>
   service(name, {
     source: source("/noirwire/kora"),
-    build: { builder: "DOCKERFILE", dockerfilePath: "Dockerfile" },
+    build: { builder: "DOCKERFILE", dockerfilePath },
     deploy: {
       healthcheckPath: "/liveness",
       healthcheckTimeout: 60,
@@ -72,6 +73,41 @@ const refill = (name: string, minute: number) =>
     },
   });
 
+// The public gateway (see ../gateway/README.md): the only caller of the public Kora. Its
+// domain is created with `railway domain` like the private relayer's. Everything that
+// identifies a deployment or is secret is set once with `railway variable set`.
+const gateway = (name: string) =>
+  service(name, {
+    source: source("/noirwire/gateway"),
+    start: "node src/main.mjs",
+    deploy: {
+      healthcheckPath: "/v1/health",
+      healthcheckTimeout: 60,
+      restartPolicyType: "ON_FAILURE",
+      restartPolicyMaxRetries: 10,
+    },
+    env: {
+      PORT: "8080",
+      // Exactly one proxy hop (Railway's edge) is trusted. Verify that the edge appends the
+      // client address to X-Forwarded-For before relying on it: see ../gateway/README.md.
+      TRUSTED_PROXY_HOPS: "1",
+      NETWORK: preserve(),
+      CHARGE: preserve(),
+      RPC_URL: preserve(),
+      // Where the public Kora answers, normally its private network address.
+      KORA_URL: preserve(),
+      KORA_API_KEY: preserve(),
+      KORA_HMAC_SECRET: preserve(),
+      FEE_PAYER: preserve(),
+      PAYMENT_USDC_ACCOUNT: preserve(),
+      DATABASE_URL: preserve(),
+    },
+  });
+
+// The public relayer pair: its own Kora (own fee payer, own keys) and the refill job that
+// feeds that fee payer. Scheduled after the private relayer's refills.
+const PUBLIC_REFILL_MINUTE = 10;
+
 export default defineRailway(() => {
   if (REPLICAS < 1 || REPLICAS > 2) throw new Error("REPLICAS must be 1 or 2: the refill schedules are 5 minutes apart");
   const resources = [];
@@ -79,5 +115,6 @@ export default defineRailway(() => {
     const suffix = replica === 1 ? "" : `-${replica}`;
     resources.push(kora(`kora${suffix}`), refill(`refill${suffix}`, (replica - 1) * 5));
   }
+  resources.push(kora("kora-public", "Dockerfile.public"), refill("refill-public", PUBLIC_REFILL_MINUTE), gateway("gateway"));
   return project("noirwire-relayer", { resources });
 });

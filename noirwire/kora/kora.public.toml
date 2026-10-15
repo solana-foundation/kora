@@ -1,0 +1,90 @@
+# Kora configuration for the PUBLIC relayer, on v2.2.0-beta.8. Built by Dockerfile.public.
+#
+# WARNING: this Kora signs transactions for ANY program. It must only ever run behind the
+# gateway (../gateway), which is the one caller allowed to hold its API key and HMAC secret.
+# The gateway, not this file, is what keeps the fee payer from being handed to a program: Kora
+# only recognises system and token instructions, so "All" below is safe only because the
+# gateway has already refused every transaction that uses the fee payer's address or token
+# accounts anywhere except as the funder of an account creation. Never expose this service to
+# browsers or to any other client, and never reuse the wallet app's relayer for it. Give it its
+# own fee payer that holds only a small SOL float.
+#
+# Mainnet as committed. For a devnet instance (gateway CHARGE=off) change two things:
+# allowed_tokens / allowed_spl_paid_tokens to the devnet USDC mint, and [validation.price] to
+# `type = "free"`, since no payment is appended and Kora would otherwise demand one.
+[kora]
+rate_limit = 100
+# Replace with the address of the wallet that owns the payment USDC account the gateway pays.
+payment_address = "REPLACE_WITH_PAYMENT_WALLET_PUBKEY"
+# Must stay false. With true, Kora simulates with signature verification before it signs, while
+# the fee payer's own signature slot is still empty, so every request would fail. The gateway
+# verifies every other signature (ed25519 over the exact message bytes) before it calls Kora,
+# and it only ever sends the message it quoted, which is what this simulation would protect.
+force_sig_verify = false
+
+[kora.auth]
+max_timestamp_age = 60
+
+[kora.enabled_methods]
+liveness = true
+estimate_transaction_fee = true
+get_supported_tokens = false
+get_payer_signer = true
+sign_transaction = true
+sign_and_send_transaction = false
+transfer_transaction = false
+get_blockhash = false
+get_config = true
+get_version = true
+estimate_bundle_fee = false
+sign_and_send_bundle = false
+sign_bundle = false
+
+[validation]
+# The most the fee payer may spend on one transaction. Matches the gateway's default
+# MAX_FEE_PAYER_OUTFLOW_LAMPORTS plus fees: one token account creation and nothing more.
+max_allowed_lamports = 2200000
+# The gateway's MAX_SIGNATURES must not exceed this.
+max_signatures = 4
+price_source = "Jupiter"
+allow_durable_transactions = false
+allowed_programs = "All"
+allowed_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"]
+allowed_spl_paid_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"]
+disallowed_accounts = []
+# Refuse a Jupiter price older than this many slots (about 60 seconds).
+max_price_staleness_slots = 150
+
+[validation.price]
+type = "margin"
+# No margin: the gateway has already priced the transaction at the measured cost, and Kora
+# only checks that the payment covers its own estimate.
+margin = 0.0
+
+# Every flag is off except opening accounts (the gateway only lets the fee payer fund one, and
+# bounds the rent with max_allowed_lamports). A flag left out is off.
+[validation.fee_payer_policy.system]
+allow_transfer = false
+allow_assign = false
+allow_create_account = true
+allow_allocate = false
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = false
+allow_advance = false
+allow_withdraw = false
+allow_authorize = false
+
+[validation.token_2022]
+blocked_mint_extensions = ["transfer_fee_config", "non_transferable", "interest_bearing_config", "mint_close_authority", "confidential_mint_burn"]
+blocked_account_extensions = ["non_transferable_account", "confidential_transfer_account", "memo_transfer", "cpi_guard"]
+
+[metrics]
+enabled = true
+endpoint = "/metrics"
+port = 9090
+scrape_interval = 60
+
+[metrics.fee_payer_balance]
+enabled = true
+expiry_seconds = 30
