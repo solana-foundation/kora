@@ -6,7 +6,7 @@ use std::{
     collections::HashMap,
     task::{Context, Poll},
 };
-use tower::{Layer, Service};
+use tower::{Layer, Service, ServiceExt};
 
 /// Layer that intercepts /metrics requests and returns Prometheus metrics directly
 #[derive(Clone)]
@@ -49,8 +49,12 @@ where
     type Error = S::Error;
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // Tower requires poll_ready to be called before call.
+        // We delay polling inner here because we clone inner below;
+        // cloning a Buffer yields an un-polled clone without a permit.
+        // We use `oneshot` to poll the clone.
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
@@ -74,8 +78,8 @@ where
                 }
             })
         } else {
-            let mut inner = self.inner.clone();
-            Box::pin(async move { inner.call(req).await })
+            let inner = self.inner.clone();
+            Box::pin(async move { inner.oneshot(req).await })
         }
     }
 }

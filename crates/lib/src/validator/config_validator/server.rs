@@ -21,6 +21,11 @@ impl ConfigValidator {
             warnings.push("Rate limit is set to 0 - this will block all requests".to_string());
         }
 
+        if config.kora.global_rate_limit == Some(0) {
+            warnings
+                .push("Global rate limit is set to 0 - this will block all requests".to_string());
+        }
+
         if config.metrics.enabled
             && config.metrics.fee_payer_balance.enabled
             && config.metrics.fee_payer_balance.expiry_seconds == 0
