@@ -43,6 +43,7 @@ This utility will:
 ### HTTP Metrics
 - `kora_http_requests_total{method, status}` - Counter of HTTP requests by JSON-RPC method and status code
 - `kora_http_request_duration_seconds{method}` - Histogram of request durations by JSON-RPC method
+- `kora_http_rejections_total{method, reason}` - Counter of rejected HTTP requests by method and rejection reason (e.g. `auth_failure`, `rate_limit`)
 
 ## Monitoring Stack
 

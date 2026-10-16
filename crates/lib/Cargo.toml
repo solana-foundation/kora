@@ -92,12 +92,14 @@ docs = []
 unsafe-debug = []
 
 [dev-dependencies]
+bytes = { workspace = true }
 mockall = "0.15.0"
 tempfile = "3.27"
 tokio = { version = "1.50", features = ["macros", "rt-multi-thread"] }
 mockito = "1.7.2"
 serial_test = "3.4.0"
 proptest = "1.11.0"
+reqwest = { workspace = true, features = ["stream"] }
 
 [package.metadata.cargo-machete]
 ignored = ["solana-transaction"]
