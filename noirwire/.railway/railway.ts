@@ -10,7 +10,7 @@ export const partial = "relayer";
 
 // How many relayers to run. Each replica is one Kora service with its OWN fee payer key and
 // one refill service for that fee payer. All of them share the same payment wallet.
-// Replica 1 is `kora` and `refill`; replica 2 is `kora-2` and `refill-2`; and so on.
+// Replica 1 is `kora-relayer-noirwire` and `refill`; replica 2 is `kora-2` and `refill-2`.
 const REPLICAS = 1;
 
 // Set RELAYER_GITHUB_REPO=owner/repo to have Railway build from GitHub on every push.
@@ -107,7 +107,7 @@ const gateway = (name: string) =>
 export default defineRailway(() => {
   if (REPLICAS < 1 || REPLICAS > 2) throw new Error("REPLICAS must be 1 or 2: the refill schedules are 5 minutes apart");
   const resources = [];
-  const firstKora = kora("kora");
+  const firstKora = kora("kora-relayer-noirwire");
   resources.push(firstKora, refill("refill", 0));
   for (let replica = 2; replica <= REPLICAS; replica += 1) {
     resources.push(kora(`kora-${replica}`), refill(`refill-${replica}`, (replica - 1) * 5));
