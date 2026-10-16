@@ -194,9 +194,11 @@ fn token(program: TokenProgram, op: &TokenOp, policy: &FeePayerPolicy) -> Option
 fn token_2022(op: &Token2022Op, policy: &FeePayerPolicy) -> Option<&'static str> {
     let token_2022 = &policy.token_2022;
     match op {
-        Token2022Op::Reallocate { payer, owner, signers, .. } => {
-            always(payer.is_fee_payer() || signs(owner, signers), "Token2022 Reallocate")
-        }
+        Token2022Op::Reallocate { payer, owner, signers, .. } => gated(
+            payer.is_fee_payer() || signs(owner, signers),
+            token_2022.allow_reallocate,
+            "Token2022 Reallocate",
+        ),
         Token2022Op::Pause { authority, signers, .. } => {
             gated(signs(authority, signers), token_2022.allow_freeze_account, "Token2022 Pause")
         }

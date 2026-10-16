@@ -246,7 +246,7 @@ Sections, each named after the program it gates:
 [validation.fee_payer_policy.system]                  # transfer, assign, create_account, allocate
 [validation.fee_payer_policy.system.nonce]            # initialize, advance, authorize, withdraw
 [validation.fee_payer_policy.spl_token]
-[validation.fee_payer_policy.token_2022]              # spl_token's flags plus extension-authority ones
+[validation.fee_payer_policy.token_2022]              # spl_token's flags plus extension-authority and reallocate
 [validation.fee_payer_policy.alt]                     # create, extend, freeze, deactivate, close
 [validation.fee_payer_policy.bpf_loader_upgradeable]
 [validation.fee_payer_policy.loader_v4]

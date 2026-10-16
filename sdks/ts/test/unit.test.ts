@@ -172,6 +172,7 @@ describe('KoraClient Unit Tests', () => {
                             allow_initialize_mint: true,
                             allow_initialize_multisig: true,
                             allow_mint_to: true,
+                            allow_reallocate: false,
                             allow_revoke: true,
                             allow_set_authority: true,
                             allow_thaw_account: true,

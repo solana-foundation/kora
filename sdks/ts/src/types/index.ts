@@ -438,6 +438,8 @@ export interface Token2022InstructionPolicy {
     allow_initialize_multisig: boolean;
     /** Allow fee payer to mint Token2022 tokens */
     allow_mint_to: boolean;
+    /** Allow fee payer to fund or authorize Token2022 Reallocate */
+    allow_reallocate: boolean;
     /** Allow fee payer to revoke Token2022 delegates */
     allow_revoke: boolean;
     /** Allow fee payer to set authority on Token2022 accounts */
