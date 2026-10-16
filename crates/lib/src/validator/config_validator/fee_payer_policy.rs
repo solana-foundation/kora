@@ -108,6 +108,9 @@ impl ConfigValidator {
             token_2022, allow_thaw_account, "Token2022 ThawAccount instructions",
                 "Users can make the fee payer unfreeze token accounts. This can undermine freeze policies";
 
+            token_2022, allow_reallocate, "Token2022 Reallocate instructions",
+                "Users can make the fee payer fund rent for growing token accounts it does not own. This can drain SOL";
+
             alt, allow_create, "ALT CreateLookupTable instructions",
                 "Users can make the fee payer create lookup tables and fund rent. This can drain SOL and create unmanaged tables";
 

@@ -468,6 +468,9 @@ pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be the authority in Token2022 UnwrapLamports instructions
     #[serde(default)]
     pub allow_unwrap_lamports: bool,
+    /// Allow fee payer to be the payer, the owner, or a multisig signer in Token2022 Reallocate
+    /// instructions
+    pub allow_reallocate: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
@@ -1492,6 +1495,27 @@ allow_create = true
         assert!(!config.validation.fee_payer_policy.alt.allow_freeze);
         assert!(!config.validation.fee_payer_policy.alt.allow_deactivate);
         assert!(!config.validation.fee_payer_policy.alt.allow_close);
+    }
+
+    #[test]
+    fn test_fee_payer_policy_token_2022_allow_reallocate_parsing() {
+        let config = ConfigBuilder::new().build_config().unwrap();
+        assert!(!config.validation.fee_payer_policy.token_2022.allow_reallocate);
+
+        let mut toml_content = ConfigBuilder::new().build_toml();
+        toml_content.push_str(
+            r#"
+[validation.fee_payer_policy.token_2022]
+allow_reallocate = true
+"#,
+        );
+
+        let config: Config = toml::from_str(&toml_content).expect(
+            "Config with [validation.fee_payer_policy.token_2022] allow_reallocate should parse",
+        );
+
+        assert!(config.validation.fee_payer_policy.token_2022.allow_reallocate);
+        assert!(!config.validation.fee_payer_policy.token_2022.allow_transfer);
     }
 
     #[test]

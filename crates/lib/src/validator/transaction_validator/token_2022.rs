@@ -25,6 +25,7 @@ impl TransactionValidator {
             } => *is_2022
                 && (*payer == self.fee_payer_pubkey
                     || self.fee_payer_signs(owner, multisig_signers)),
+            unless self.fee_payer_policy.token_2022.allow_reallocate,
             "Token2022 Reallocate is not allowed when involving fee payer");
 
         deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenPause,

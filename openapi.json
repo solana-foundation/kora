@@ -267,6 +267,7 @@
               "allow_initialize_mint": false,
               "allow_initialize_multisig": false,
               "allow_mint_to": false,
+              "allow_reallocate": false,
               "allow_revoke": false,
               "allow_set_authority": false,
               "allow_thaw_account": false,
@@ -861,6 +862,11 @@
           "allow_mint_to": {
             "type": "boolean",
             "description": "Allow fee payer to be the mint authority in Token2022 MintTo/MintToChecked instructions",
+            "default": false
+          },
+          "allow_reallocate": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the payer, the owner, or a multisig signer in Token2022 Reallocate\ninstructions",
             "default": false
           },
           "allow_revoke": {
