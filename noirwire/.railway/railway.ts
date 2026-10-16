@@ -21,7 +21,7 @@ const source = (rootDirectory: string) =>
 
 // The fee relayer: a web service built from kora/Dockerfile (or, for the public relayer that
 // only the gateway may call, kora/Dockerfile.public).
-const kora = (name: string, dockerfilePath = "Dockerfile") =>
+const kora = (name: string, dockerfilePath = "Dockerfile", privateKey = preserve()) =>
   service(name, {
     source: source("/noirwire/kora"),
     build: { builder: "DOCKERFILE", dockerfilePath },
@@ -36,7 +36,7 @@ const kora = (name: string, dockerfilePath = "Dockerfile") =>
       // Not "info": at that level Kora logs every transaction it is sent.
       RUST_LOG: "warn",
       RPC_URL: preserve(),
-      KORA_PRIVATE_KEY: preserve(),
+      KORA_PRIVATE_KEY: privateKey,
       KORA_API_KEY: preserve(),
       KORA_HMAC_SECRET: preserve(),
       JUPITER_API_KEY: preserve(),
@@ -104,17 +104,16 @@ const gateway = (name: string) =>
     },
   });
 
-// The public relayer pair: its own Kora (own fee payer, own keys) and the refill job that
-// feeds that fee payer. Scheduled after the private relayer's refills.
-const PUBLIC_REFILL_MINUTE = 10;
-
 export default defineRailway(() => {
   if (REPLICAS < 1 || REPLICAS > 2) throw new Error("REPLICAS must be 1 or 2: the refill schedules are 5 minutes apart");
   const resources = [];
-  for (let replica = 1; replica <= REPLICAS; replica += 1) {
-    const suffix = replica === 1 ? "" : `-${replica}`;
-    resources.push(kora(`kora${suffix}`), refill(`refill${suffix}`, (replica - 1) * 5));
+  const firstKora = kora("kora");
+  resources.push(firstKora, refill("refill", 0));
+  for (let replica = 2; replica <= REPLICAS; replica += 1) {
+    resources.push(kora(`kora-${replica}`), refill(`refill-${replica}`, (replica - 1) * 5));
   }
-  resources.push(kora("kora-public", "Dockerfile.public"), refill("refill-public", PUBLIC_REFILL_MINUTE), gateway("gateway"));
+  // The public relayer's Kora signs with the first relayer's fee payer key, read by reference so
+  // the key is set in one place, and is paid to the same wallet: `refill` funds both.
+  resources.push(kora("kora-public", "Dockerfile.public", firstKora.env.KORA_PRIVATE_KEY), gateway("gateway"));
   return project("noirwire-relayer", { resources });
 });

@@ -6,8 +6,9 @@
 # only recognises system and token instructions, so "All" below is safe only because the
 # gateway has already refused every transaction that uses the fee payer's address or token
 # accounts anywhere except as the funder of an account creation. Never expose this service to
-# browsers or to any other client, and never reuse the wallet app's relayer for it. Give it its
-# own fee payer that holds only a small SOL float.
+# browsers or to any other client, and never point the wallet app at it. It signs with the same
+# fee payer key as the wallet app's Kora and is paid to the same payment wallet, so the one
+# refill job keeps that fee payer funded for both.
 #
 # Mainnet as committed. For a devnet instance (gateway CHARGE=off) change two things:
 # allowed_tokens / allowed_spl_paid_tokens to the devnet USDC mint, and [validation.price] to
@@ -15,7 +16,7 @@
 [kora]
 rate_limit = 100
 # Replace with the address of the wallet that owns the payment USDC account the gateway pays.
-payment_address = "REPLACE_WITH_PAYMENT_WALLET_PUBKEY"
+payment_address = "3QTwdXo2wUg7KsXh4T7LPsg1Rh6krMdq69igjnko5RFw"
 # Must stay false. With true, Kora simulates with signature verification before it signs, while
 # the fee payer's own signature slot is still empty, so every request would fail. The gateway
 # verifies every other signature (ed25519 over the exact message bytes) before it calls Kora,
