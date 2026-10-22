@@ -49,14 +49,14 @@ the current endpoint is unreachable or answers 5xx, which removes the single poi
 of failure a third-party provider outage otherwise creates. The first entry is the
 primary.
 
-Each endpoint runs a circuit breaker. After
-`RPC_FAILOVER_FAILURE_THRESHOLD` consecutive failures it stops taking new requests
-for `RPC_FAILOVER_COOLDOWN_SECS`, after which exactly **one** request is admitted as
-a probe while everything else keeps using the fallback. A successful probe puts
+Each endpoint runs a circuit breaker. After 3 consecutive failures it stops
+taking new requests for 30 seconds, after which exactly **one** request is admitted
+as a probe while everything else keeps using the fallback. A successful probe puts
 the endpoint straight back into service, so a recovered provider rejoins without a
 restart; a failed probe restarts the cooldown. That single-probe rule is why adding
 a second endpoint is safe under load rather than a way to multiply your tail
-latency.
+latency. Both numbers are compile-time constants in `crates/lib/src/constant.rs`,
+not environment variables.
 
 A rate limit (HTTP 429) is deliberately **not** failed over. It is a fact about your
 API key rather than about the provider, and the transport already retries it five

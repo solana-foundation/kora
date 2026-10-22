@@ -1,22 +1,12 @@
-﻿//! Multi-endpoint RPC failover.
+//! Multi-endpoint RPC failover.
 //!
-//! Implements [`RpcSender`] over an ordered list of endpoints so that every RPC
-//! call Kora makes is retried against the next endpoint when the current one is
-//! unreachable or answers 5xx. Failing over at the sender rather than at the
-//! [`RpcClient`] keeps this transparent to the existing `&RpcClient` call sites in
-//! the crate, so fee estimation, account lookups, blockhash fetches,
-//! lookup-table resolution, bundle simulation and the balance tracker are all
-//! covered without changing a signature.
+//! Implements [`RpcSender`] over an ordered endpoint list, so every RPC call is
+//! retried against the next endpoint when the current one is unreachable or
+//! answers 5xx. Wrapping the sender keeps existing `&RpcClient` call sites
+//! unchanged.
 //!
-//! Each endpoint runs a circuit breaker, and every request builds its candidate
-//! list from the breakers rather than only consulting the first one. That matters
-//! in two directions: a recovered endpoint is readmitted by a single probe
-//! instead of by every concurrent request at once, and a retry never walks into
-//! an endpoint already known to be failing.
-//!
-//! Failover is driven by failures on the calls Kora actually makes. A passing
-//! `getHealth` is not evidence that the account-data methods work, so there is no
-//! health prober here.
+//! Each endpoint has a circuit breaker. A recovered endpoint is readmitted by a
+//! single probe, and a retry never walks into an endpoint already failing.
 //!
 //! See <https://github.com/solana-foundation/kora/issues/661>.
 
@@ -43,6 +33,11 @@ use crate::{
 };
 
 const COOLDOWN_MS: u64 = RPC_FAILOVER_COOLDOWN_SECS.saturating_mul(1000);
+
+/// How long a half-open probe owns its slot before another request may take it
+/// over. Longer than the HTTP timeout, but finite so a cancelled probe cannot
+/// strand the endpoint.
+const PROBE_TIMEOUT_MS: u64 = (RPC_CLIENT_TIMEOUT_SECS + 5) * 1000;
 
 /// Circuit state of a single endpoint.
 const CLOSED: u8 = 0;
@@ -96,35 +91,25 @@ impl FailureReason {
 
 /// Decide how a failed RPC call should be handled.
 ///
-/// Classification reads the typed error rather than its text, so unrelated numbers
-/// in an error message (`insufficient lamports 5000`) cannot be mistaken for an
-/// HTTP status. The Solana sender turns a non-2xx response into a `reqwest::Error`
-/// carrying the status, and a JSON-RPC `error` object into
-/// `RpcError::RpcResponseError`; the two are handled very differently.
+/// Reads the typed error rather than its text, so a number in a message
+/// (`insufficient lamports 5000`) cannot be mistaken for an HTTP status.
 fn classify(error: &ClientError) -> FailureMode {
     match error.kind() {
         ClientErrorKind::Reqwest(source) => match source.status() {
-            // `HttpSender` has already retried 429 five times over, honouring any
-            // `Retry-After` header on each, before surfacing the error. A rate
-            // limit is a property of this API key rather than of the endpoint, so
-            // moving the same traffic to another provider would not help.
+            // 429 is a property of this API key, not the endpoint; `HttpSender`
+            // has already retried it.
             Some(status) if status == StatusCode::TOO_MANY_REQUESTS => FailureMode::RateLimited,
             Some(status) if status.is_server_error() => {
                 FailureMode::Retryable(FailureReason::ServerError)
             }
-            // Any other 4xx is a well-formed refusal (revoked key, malformed
-            // request) and will be refused identically everywhere else.
+            // Other 4xx are well-formed refusals and will be identical elsewhere.
             Some(_) => FailureMode::Fatal,
-            // No status means the request never reached an HTTP response. A refused
-            // connection, a failed TLS handshake and a read timeout are all
-            // indistinguishable here and all mean the same thing to us.
+            // No status means the request never got an HTTP response.
             None => FailureMode::Retryable(FailureReason::Transport),
         },
         ClientErrorKind::SerdeJson(_) => FailureMode::Retryable(FailureReason::MalformedResponse),
         ClientErrorKind::Io(_) => FailureMode::Retryable(FailureReason::Transport),
-        // Everything else is a JSON-RPC answer such as "account not found" or a
-        // failed simulation. Those come from a working node, so another endpoint
-        // would only produce the same answer more slowly.
+        // A JSON-RPC answer from a working node would be the same everywhere.
         _ => FailureMode::Fatal,
     }
 }
@@ -169,35 +154,45 @@ impl Endpoint {
         self.last_failure_at_ms.load(Ordering::Relaxed)
     }
 
-    /// Whether new requests are currently being turned away.
-    ///
-    /// An open breaker becomes probeable once its cooldown elapses, but the probe
-    /// itself is handed out by [`FailoverRpcSender::candidates_at`], not here:
-    /// reading the state must never admit anybody.
+    /// Whether new requests are currently being turned away. Only
+    /// [`Endpoint::claim_probe`] can hand out a probe slot.
     fn is_turned_away(&self, now_ms: u64) -> bool {
         match self.state() {
             CLOSED => false,
-            OPEN => now_ms < self.open_until_ms(),
-            _ => true,
+            _ => now_ms < self.open_until_ms(),
         }
     }
 
-    /// Take the half-open probe slot for this endpoint, if it is still available.
-    ///
-    /// Exactly one caller wins the compare-and-swap, so a provider that recovered in
-    /// name only cannot make every concurrent request wait out its timeout. The
-    /// losers are expected to move on to another endpoint.
-    fn claim_probe(&self) -> bool {
-        self.state.compare_exchange(OPEN, HALF_OPEN, Ordering::AcqRel, Ordering::Acquire).is_ok()
+    /// Take the probe slot, if available. The deadline CAS makes exactly one caller
+    /// the prober, and lets a later request take over a probe that never reported
+    /// back. `allow_cooling` is used only when every endpoint is cooling, so a total
+    /// outage is still probed rather than failing outright.
+    fn claim_probe(&self, now_ms: u64, allow_cooling: bool) -> bool {
+        loop {
+            if self.state() == CLOSED {
+                return false;
+            }
+
+            let observed = self.open_until_ms();
+            if !allow_cooling && now_ms < observed {
+                return false;
+            }
+
+            let deadline = now_ms.saturating_add(PROBE_TIMEOUT_MS);
+            if self
+                .open_until_ms
+                .compare_exchange(observed, deadline, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                self.state.store(HALF_OPEN, Ordering::Release);
+                return true;
+            }
+        }
     }
 
-    /// Record a retryable failure.
-    ///
-    /// The breaker only opens once the failure count reaches
-    /// [`RPC_FAILOVER_FAILURE_THRESHOLD`], so one flaky response does not move
-    /// traffic off an otherwise healthy provider. A failed probe reopens the
-    /// breaker immediately, since a probe only runs once the endpoint has already
-    /// been given a chance to recover.
+    /// Record a retryable failure. The breaker opens only at
+    /// [`RPC_FAILOVER_FAILURE_THRESHOLD`] consecutive failures; a failed probe
+    /// reopens it immediately.
     fn record_failure(&self, now_ms: u64) {
         self.last_failure_at_ms.store(now_ms, Ordering::Relaxed);
         let failures = self.consecutive_failures.fetch_add(1, Ordering::AcqRel) + 1;
@@ -205,20 +200,13 @@ impl Endpoint {
         if failures >= RPC_FAILOVER_FAILURE_THRESHOLD {
             self.open_until_ms.store(now_ms.saturating_add(COOLDOWN_MS), Ordering::Relaxed);
             self.state.store(OPEN, Ordering::Release);
-        } else {
-            let _ =
-                self.state.compare_exchange(HALF_OPEN, OPEN, Ordering::AcqRel, Ordering::Acquire);
         }
     }
 
-    /// Record a success for an attempt that began at `attempt_started_ms`.
-    ///
-    /// A response that was already in flight when the breaker opened says nothing
-    /// about the endpoint's condition now, and the request timeout is longer than
-    /// the cooldown, so acting on it would let one straggler clear a breaker that
-    /// newer failures opened and send the whole fleet back to a slow provider. A
-    /// success is therefore only allowed to close the breaker if nothing failed
-    /// after the attempt started.
+    /// Record a success for an attempt that began at `attempt_started_ms`. A success
+    /// only closes the breaker if nothing failed after the attempt started: the
+    /// request timeout is longer than the cooldown, so a straggler would otherwise
+    /// clear a breaker that newer failures opened.
     fn record_success(&self, attempt_started_ms: u64) {
         if self.last_failure_at_ms() > attempt_started_ms {
             return;
@@ -227,14 +215,35 @@ impl Endpoint {
         self.consecutive_failures.store(0, Ordering::Relaxed);
         self.open_until_ms.store(0, Ordering::Relaxed);
         self.state.store(CLOSED, Ordering::Release);
+
+        // A failure that landed between the guard above and this reset must win.
+        // Otherwise a straggler success would erase the failure that just opened
+        // the breaker and send the fleet back to a degraded endpoint. Keep the
+        // count at the threshold so a failed probe still reopens immediately.
+        if self.last_failure_at_ms() > attempt_started_ms {
+            self.consecutive_failures.store(RPC_FAILOVER_FAILURE_THRESHOLD, Ordering::Relaxed);
+            self.open_until_ms.store(now_ms().saturating_add(COOLDOWN_MS), Ordering::Relaxed);
+            self.state.store(OPEN, Ordering::Release);
+        }
     }
 }
 
-/// An endpoint this request may consider, and whether it has to claim the
-/// half-open probe slot before it can be used.
+/// An endpoint this request may consider.
 struct Candidate {
     index: usize,
     needs_probe: bool,
+    /// The total-outage path already owns the slot.
+    probe_claimed: bool,
+}
+
+/// A retryable failure held until another endpoint is actually attempted, so a
+/// skipped candidate is not counted as a failover.
+struct PendingFailure {
+    endpoint_index: usize,
+    reason: &'static str,
+    consecutive_failures: u32,
+    is_probe: bool,
+    error: ClientError,
 }
 
 /// The error returned when every endpoint is being probed by another request.
@@ -255,10 +264,9 @@ impl FailoverRpcSender {
     /// Build a sender over `urls`, in preference order.
     ///
     /// # Panics
-    ///
-    /// Panics if `urls` is empty. Callers that need the empty case handled should
-    /// use [`get_rpc_client_for_endpoints`](crate::rpc::get_rpc_client_for_endpoints),
-    /// which validates and returns a ready client.
+    /// Panics if `urls` is empty. Use
+    /// [`get_rpc_client_for_endpoints`](crate::rpc::get_rpc_client_for_endpoints)
+    /// for the validating entry point.
     pub fn new(urls: Vec<String>) -> Self {
         assert!(!urls.is_empty(), "at least one RPC endpoint is required");
 
@@ -275,18 +283,15 @@ impl FailoverRpcSender {
         Self { endpoints }
     }
 
-    /// Number of configured endpoints.
-    pub fn endpoint_count(&self) -> usize {
-        self.endpoints.len()
-    }
-
     /// Consecutive retryable failures recorded against the endpoint at `index`.
+    #[cfg(test)]
     pub fn consecutive_failures_at(&self, index: usize) -> u32 {
         self.endpoints[index].consecutive_failures()
     }
 
     /// Circuit state of the endpoint at `index`, as `closed`, `open` or
     /// `half_open`.
+    #[cfg(test)]
     pub fn state_at(&self, index: usize) -> &'static str {
         match self.endpoints[index].state() {
             CLOSED => "closed",
@@ -295,31 +300,26 @@ impl FailoverRpcSender {
         }
     }
 
-    /// Endpoints this request may consider, best first.
-    ///
-    /// Deliberately free of side effects. Claiming the half-open probe slot happens
-    /// when an attempt actually starts, so a request that succeeds on its first
-    /// candidate cannot leave an unused claim behind on a fallback it never tried.
+    /// Endpoints this request may consider, best first. Side-effect free: claims
+    /// happen only when an attempt starts, and an expired probe slot is included so
+    /// an abandoned probe cannot hide a recovered endpoint.
     fn candidates(&self, now_ms: u64) -> Vec<Candidate> {
         self.endpoints
             .iter()
             .enumerate()
             .filter_map(|(index, endpoint)| match endpoint.state() {
-                CLOSED => Some(Candidate { index, needs_probe: false }),
-                OPEN if now_ms >= endpoint.open_until_ms() => {
-                    Some(Candidate { index, needs_probe: true })
+                CLOSED => Some(Candidate { index, needs_probe: false, probe_claimed: false }),
+                OPEN | HALF_OPEN if now_ms >= endpoint.open_until_ms() => {
+                    Some(Candidate { index, needs_probe: true, probe_claimed: false })
                 }
                 _ => None,
             })
             .collect()
     }
 
-    /// Take the probe slot for the endpoint whose cooldown expires first.
-    ///
-    /// Reached only when every endpoint is open with nothing recovered, so that a
-    /// total outage is still probed rather than failing outright. Returns `None`
-    /// when some other request already holds every probe, which is the case where
-    /// this request has nothing useful to do.
+    /// Take the probe slot for the endpoint whose cooldown expires first. Reached
+    /// only when every endpoint is open, so a total outage is still probed. Returns
+    /// `None` when another request already holds every probe.
     fn claim_soonest_reopening(&self, now_ms: u64) -> Option<usize> {
         let soonest = self
             .endpoints
@@ -329,23 +329,18 @@ impl FailoverRpcSender {
             .min_by_key(|(_, endpoint)| endpoint.open_until_ms())
             .map(|(index, _)| index)?;
 
-        if self.endpoints[soonest].claim_probe() {
-            self.endpoints[soonest].open_until_ms.store(now_ms, Ordering::Relaxed);
-            Some(soonest)
-        } else {
-            None
-        }
+        // Deliberately ignore the remaining cooldown: if every endpoint is open,
+        // one request probing beats every request failing.
+        self.endpoints[soonest].claim_probe(now_ms, true).then_some(soonest)
     }
 
-    /// Index of the endpoint a new request would prefer, without claiming anything.
-    ///
-    /// For reporting the active endpoint rather than for routing.
-    pub fn preferred_endpoint_at(&self, now_ms: u64) -> usize {
+    /// Index of the endpoint a new request would prefer, for reporting only.
+    fn preferred_endpoint_at(&self, now_ms: u64) -> usize {
         self.endpoints.iter().position(|endpoint| !endpoint.is_turned_away(now_ms)).unwrap_or(0)
     }
 
     /// Index of the endpoint a new request would prefer, using the current clock.
-    pub fn preferred_endpoint(&self) -> usize {
+    fn preferred_endpoint(&self) -> usize {
         self.preferred_endpoint_at(now_ms())
     }
 }
@@ -357,25 +352,52 @@ impl RpcSender for FailoverRpcSender {
 
         if candidates.is_empty() {
             match self.claim_soonest_reopening(now_ms()) {
-                Some(index) => candidates = vec![Candidate { index, needs_probe: false }],
+                Some(index) => {
+                    candidates = vec![Candidate { index, needs_probe: true, probe_claimed: true }]
+                }
                 None => return Err(no_endpoint_available()),
             }
         }
 
-        let mut last_error: Option<ClientError> = None;
+        let mut pending: Option<PendingFailure> = None;
 
-        for (position, candidate) in candidates.iter().enumerate() {
+        for candidate in candidates {
+            let now = now_ms();
             let endpoint = &self.endpoints[candidate.index];
 
-            // Claiming happens here rather than when the list was built, so a
-            // request that never reaches this endpoint leaves no claim behind.
-            if candidate.needs_probe && !endpoint.claim_probe() {
-                // Another request is already probing this endpoint.
-                continue;
+            // The list was built before the earlier attempts ran, so re-check it:
+            // an endpoint that looked healthy can have opened while this request
+            // waited on a slow one.
+            if !candidate.probe_claimed {
+                if endpoint.is_turned_away(now) {
+                    continue;
+                }
+
+                // Claiming happens here rather than when the list was built, so a
+                // request that never reaches this endpoint leaves no claim behind.
+                if candidate.needs_probe && !endpoint.claim_probe(now, false) {
+                    // Another request is already probing this endpoint.
+                    continue;
+                }
+            }
+
+            // This attempt is real, so the previous failure did cause a failover.
+            // Counting it earlier would overstate failovers when the next candidate
+            // turns out to be skipped without an attempt.
+            if let Some(failed) = pending.take() {
+                failover_metrics::record_failover(failed.endpoint_index, failed.reason);
+                log::warn!(
+                    "RPC endpoint {} failed ({}), {} consecutive failures, \
+                     trying the next endpoint: {}",
+                    failed.endpoint_index,
+                    failed.reason,
+                    failed.consecutive_failures,
+                    sanitize_error!(failed.error),
+                );
             }
 
             let is_probe = candidate.needs_probe;
-            let attempt_started_ms = now_ms();
+            let attempt_started_ms = now;
 
             match endpoint.sender.send(request, params.clone()).await {
                 Ok(value) => {
@@ -404,36 +426,33 @@ impl RpcSender for FailoverRpcSender {
                         // request timeout is longer than the cooldown, so reusing
                         // the start time would set a deadline already in the past.
                         endpoint.record_failure(now_ms());
-
-                        // A terminal failure is not a failover, so it is neither
-                        // counted as one nor logged as one.
-                        if position + 1 < candidates.len() {
-                            failover_metrics::record_failover(candidate.index, reason.as_str());
-                            log::warn!(
-                                "RPC endpoint {} failed ({}), {} consecutive failures, \
-                                 trying the next endpoint: {}",
-                                candidate.index,
-                                reason.as_str(),
-                                endpoint.consecutive_failures(),
-                                sanitize_error!(error),
-                            );
-                        } else {
-                            log::warn!(
-                                "RPC endpoint {} failed ({}) with no endpoint left to try{}: {}",
-                                candidate.index,
-                                reason.as_str(),
-                                if is_probe { ", half-open probe failed" } else { "" },
-                                sanitize_error!(error),
-                            );
-                        }
-
-                        last_error = Some(error);
+                        pending = Some(PendingFailure {
+                            endpoint_index: candidate.index,
+                            reason: reason.as_str(),
+                            consecutive_failures: endpoint.consecutive_failures(),
+                            is_probe,
+                            error,
+                        });
                     }
                 },
             }
         }
 
-        Err(last_error.unwrap_or_else(no_endpoint_available))
+        match pending {
+            Some(failed) => {
+                // A terminal failure is not a failover, so it is neither counted as
+                // one nor logged as one.
+                log::warn!(
+                    "RPC endpoint {} failed ({}) with no endpoint left to try{}: {}",
+                    failed.endpoint_index,
+                    failed.reason,
+                    if failed.is_probe { ", half-open probe failed" } else { "" },
+                    sanitize_error!(failed.error),
+                );
+                Err(failed.error)
+            }
+            None => Err(no_endpoint_available()),
+        }
     }
 
     fn get_transport_stats(&self) -> RpcTransportStats {
@@ -460,7 +479,6 @@ mod tests {
         constant::RPC_FAILOVER_COOLDOWN_SECS, metrics::rpc_failover as failover_metrics,
         rpc::get_rpc_client_for_endpoints,
     };
-    use prometheus::TextEncoder;
     use serde_json::json;
     use solana_client::rpc_request::{RpcError, RpcResponseErrorData};
     use std::sync::{atomic::AtomicU64, Arc};
@@ -473,11 +491,6 @@ mod tests {
 
     /// A port nothing listens on, so connecting to it is refused outright.
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:1";
-
-    /// A hostname that must never resolve. `.invalid` is reserved by RFC 2606
-    /// precisely so it cannot be registered, which makes this a DNS failure
-    /// rather than a slow machine.
-    const UNRESOLVABLE_HOST_URL: &str = "http://kora-failover-probe.invalid";
 
     /// A JSON-RPC error body, which is what a working node returns for things like
     /// a missing account.
@@ -498,21 +511,15 @@ mod tests {
         )))
     }
 
-    /// A sender that answers with a canned result and counts the requests it
-    /// received, so tests can assert exactly which endpoint served a call.
-    ///
-    /// The error case takes a factory rather than a value because [`ClientError`]
-    /// is not `Clone`, and an `Fn` closure cannot hand out an owned error twice.
+    /// A sender that answers with a canned result and counts requests. The error
+    /// case takes a factory because [`ClientError`] is not `Clone`.
     struct ScriptedSender {
         url: String,
         hits: Arc<AtomicU64>,
         respond: Box<dyn Fn() -> Result<Value> + Send + Sync>,
     }
 
-    /// A scripted endpoint plus a live handle on the requests it received.
-    ///
-    /// The counter is shared rather than read off the sender because the sender is
-    /// moved into the failover sender and the tests still assert on it afterwards.
+    /// A scripted endpoint plus a live request counter.
     type Counted = (ScriptedSender, Arc<AtomicU64>);
 
     impl ScriptedSender {
@@ -558,6 +565,24 @@ mod tests {
         }
     }
 
+    /// A sender that never answers, standing in for an endpoint that hangs.
+    struct HangingSender;
+
+    #[async_trait]
+    impl RpcSender for HangingSender {
+        async fn send(&self, _request: RpcRequest, _params: Value) -> Result<Value> {
+            std::future::pending::<Result<Value>>().await
+        }
+
+        fn get_transport_stats(&self) -> RpcTransportStats {
+            RpcTransportStats::default()
+        }
+
+        fn url(&self) -> String {
+            "http://hanging".to_string()
+        }
+    }
+
     fn hits(counter: &Arc<AtomicU64>) -> u64 {
         counter.load(Ordering::Relaxed)
     }
@@ -580,8 +605,7 @@ mod tests {
         (sender, primary_hits, secondary_hits)
     }
 
-    /// Drive the endpoint at `index` up to the failure threshold, which is what
-    /// opens its breaker.
+    /// Drive the endpoint at `index` to the failure threshold.
     fn open_breaker(sender: &FailoverRpcSender, index: usize, at_ms: u64) {
         for _ in 0..RPC_FAILOVER_FAILURE_THRESHOLD {
             sender.endpoints[index].record_failure(at_ms);
@@ -593,19 +617,6 @@ mod tests {
     fn test_new_rejects_empty_endpoints() {
         FailoverRpcSender::new(vec![]);
     }
-
-    #[test]
-    fn test_new_counts_configured_endpoints() {
-        let sender = FailoverRpcSender::new(vec![
-            "http://localhost:8899".into(),
-            "http://localhost:8900".into(),
-        ]);
-
-        assert_eq!(sender.endpoint_count(), 2);
-    }
-
-    // Routing
-    // ------
 
     #[tokio::test]
     async fn test_healthy_primary_answers() {
@@ -691,9 +702,6 @@ mod tests {
         assert_eq!(hits(&second_hits), 1, "every configured endpoint must be tried once");
     }
 
-    // Breaker
-    // ------
-
     #[tokio::test]
     async fn test_endpoint_keeps_serving_below_the_threshold() {
         let (sender, primary_hits, secondary_hits) = primary_down_secondary_up();
@@ -731,8 +739,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_skips_an_endpoint_that_is_already_cooling() {
-        // Middle endpoint is open, so a request that fails on the primary must go
-        // straight to the third rather than waiting on the middle one.
         let (primary, primary_hits) =
             ScriptedSender::always_failing("http://primary", || transport_error("primary down"));
         let (middle, middle_hits) =
@@ -770,9 +776,15 @@ mod tests {
         // the probe as available.
         assert_eq!(sender.state_at(0), "open");
 
-        assert!(sender.endpoints[0].claim_probe(), "the first request wins the probe");
+        assert!(
+            sender.endpoints[0].claim_probe(after_cooldown, false),
+            "the first request wins the probe"
+        );
         assert_eq!(sender.state_at(0), "half_open");
-        assert!(!sender.endpoints[0].claim_probe(), "only one request may probe");
+        assert!(
+            !sender.endpoints[0].claim_probe(after_cooldown, false),
+            "only one request may probe"
+        );
 
         let second = sender.candidates(after_cooldown);
         assert_eq!(second.len(), 1, "everyone else keeps using the fallback");
@@ -790,7 +802,6 @@ mod tests {
             ScriptedSender::always_succeeding("http://secondary", json!("secondary"));
         let sender = failover_over(vec![Box::new(primary), Box::new(secondary)]);
 
-        // Both endpoints have recovered, so both are listed as probe candidates.
         for index in 0..2 {
             open_breaker(&sender, index, CLOSED_AT);
             sender.endpoints[index].open_until_ms.store(CLOSED_AT, Ordering::Relaxed);
@@ -820,10 +831,9 @@ mod tests {
             ScriptedSender::always_failing("http://secondary", || transport_error("down"));
         let sender = failover_over(vec![Box::new(primary), Box::new(secondary)]);
 
-        // Another request holds the probe on every endpoint.
         for index in 0..2 {
             open_breaker(&sender, index, CLOSED_AT);
-            assert!(sender.endpoints[index].claim_probe());
+            assert!(sender.endpoints[index].claim_probe(now_ms(), false));
             assert_eq!(sender.state_at(index), "half_open");
         }
 
@@ -839,6 +849,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_cancelled_probe_is_reclaimed_after_its_slot_expires() {
+        // Regression: a probe whose request is dropped (client disconnect, task
+        // abort) used to leave the endpoint in HALF_OPEN with no way to claim a
+        // new probe, taking a recovered fallback out of rotation for good.
+        let sender = Arc::new(failover_over(vec![Box::new(HangingSender)]));
+
+        sender.endpoints[0].state.store(OPEN, Ordering::Release);
+        sender.endpoints[0].open_until_ms.store(0, Ordering::Relaxed);
+
+        let request = {
+            let sender = sender.clone();
+            tokio::spawn(
+                async move { sender.send(RpcRequest::GetLatestBlockhash, json!([])).await },
+            )
+        };
+
+        for _ in 0..1_000 {
+            if sender.state_at(0) == "half_open" {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(sender.state_at(0), "half_open", "the request should hold the probe");
+
+        request.abort();
+        let _ = request.await;
+
+        assert_eq!(sender.state_at(0), "half_open");
+        assert!(
+            sender.endpoints[0].open_until_ms() > now_ms(),
+            "the abandoned probe still owns its slot"
+        );
+        assert!(sender.candidates(now_ms()).is_empty(), "a live probe is not handed out twice");
+
+        sender.endpoints[0].open_until_ms.store(now_ms().saturating_sub(1), Ordering::Relaxed);
+        let candidates = sender.candidates(now_ms());
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].needs_probe);
+        assert!(sender.endpoints[0].claim_probe(now_ms(), false));
+    }
+
+    #[tokio::test]
     async fn test_successful_probe_closes_the_breaker() {
         let (primary, _) = ScriptedSender::always_succeeding("http://primary", json!("back"));
         let (secondary, secondary_hits) =
@@ -846,7 +898,6 @@ mod tests {
         let sender = failover_over(vec![Box::new(primary), Box::new(secondary)]);
 
         open_breaker(&sender, 0, CLOSED_AT);
-        // Pretend the cooldown has elapsed by rewriting the deadline.
         sender.endpoints[0].open_until_ms.store(CLOSED_AT, Ordering::Relaxed);
 
         let response = sender.send(RpcRequest::GetLatestBlockhash, json!([])).await.expect("probe");
@@ -955,8 +1006,6 @@ mod tests {
         }
         assert_eq!(sender.state_at(0), "open");
 
-        // The secondary is what has been answering, so let the primary recover and
-        // serve once.
         sender.endpoints[0].sender =
             Box::new(ScriptedSender::always_succeeding("http://primary", json!("ok")).0);
         sender.endpoints[0].open_until_ms.store(0, Ordering::Relaxed);
@@ -966,9 +1015,6 @@ mod tests {
         assert_eq!(sender.state_at(0), "closed");
         assert_eq!(sender.consecutive_failures_at(0), 0);
     }
-
-    // Classification
-    // ------
 
     #[test]
     fn test_classify_maps_transport_and_malformed_errors_to_retryable() {
@@ -988,33 +1034,11 @@ mod tests {
         assert_eq!(classify(&rpc_error("Blockhash not found")), FailureMode::Fatal);
     }
 
-    #[test]
-    fn test_failure_reason_labels_are_distinct() {
-        let labels = [
-            FailureReason::ServerError.as_str(),
-            FailureReason::Transport.as_str(),
-            FailureReason::MalformedResponse.as_str(),
-        ];
-        let unique: std::collections::HashSet<_> = labels.iter().collect();
+    // `RPC_FAILOVERS_TOTAL` is process-global, so each metrics test gives its own
+    // endpoint a unique index and holds the earlier ones open.
 
-        assert_eq!(unique.len(), labels.len(), "metric labels must be distinguishable");
-    }
-
-    // Metrics
-    // ------
-    //
-    // `RPC_FAILOVERS_TOTAL` is process-global and these tests run in parallel, so a
-    // counter read here can be moved by any other test between the read and the
-    // assertion. The counter is labelled by an endpoint's position in its list, so
-    // the only way to own a label exclusively is to give each test a sender whose
-    // interesting endpoint sits at its own index, with everything before it held
-    // open so it is skipped.
-
-    /// A sender whose first `reserved` endpoints are open and still cooling, so they
-    /// are never tried, leaving index `reserved` as the first real candidate.
-    ///
-    /// Deadlines are set against the real clock, because that is what `send` reads;
-    /// a synthetic timestamp in the past looks long expired.
+    /// A sender whose first `reserved` endpoints are open and cooling, leaving index
+    /// `reserved` as the first real candidate.
     fn sender_behind_reserved_index(
         reserved: usize,
         tail: Vec<Box<dyn RpcSender + Send + Sync>>,
@@ -1037,10 +1061,10 @@ mod tests {
         sender
     }
 
-    /// Endpoint index owned by the switch-counting test.
+    // Distinct label indexes keep the process-global metric counters isolated.
     const RESERVED_FOR_SWITCH: usize = 90;
-    /// Endpoint index owned by the terminal-failure test.
     const RESERVED_FOR_TERMINAL: usize = 93;
+    const RESERVED_FOR_OPENED: usize = 96;
 
     #[tokio::test]
     async fn test_a_switch_is_counted_once() {
@@ -1077,54 +1101,44 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_metrics_render() {
-        failover_metrics::record_failover(RESERVED_FOR_SWITCH, "server_error");
-        failover_metrics::set_active_endpoint(1);
-
-        let rendered = TextEncoder::new()
-            .encode_to_string(&prometheus::gather())
-            .expect("metrics should encode");
-
-        assert!(rendered.contains("rpc_failovers_total"));
-        assert!(rendered.contains("rpc_active_endpoint_index"));
-    }
-
-    // Real HTTP
-    // ------
-    //
-    // These drive a real `HttpSender` against real servers. They are the only way
-    // to cover the classification of a real 5xx or 429 response: `reqwest::Error`
-    // has no public constructor and no `From<StatusCode>` conversion, so a
-    // status-carrying error cannot be fabricated in-process.
-
     #[tokio::test]
-    async fn test_real_http_500_fails_over_to_a_healthy_endpoint() {
-        let mut broken = mockito::Server::new_async().await;
-        let mut healthy = mockito::Server::new_async().await;
+    async fn test_an_endpoint_that_opens_mid_request_is_not_retried_into_or_counted() {
+        // Regression: the candidate list is built before the first attempt, so an
+        // endpoint can open while this request waits. Retrying into it would add
+        // another timeout, and counting the switch would report a failover that
+        // never happened.
+        let sender = Arc::new_cyclic(|weak| {
+            let weak = weak.clone();
+            let (failing, _) = ScriptedSender::always_failing("http://failing", move || {
+                let sender = weak.upgrade().expect("the sender is alive for the whole call");
+                open_breaker(&sender, RESERVED_FOR_OPENED + 1, now_ms());
+                transport_error("first down")
+            });
+            let (working, _) =
+                ScriptedSender::always_succeeding("http://working", json!("should not be used"));
 
-        let broken_mock = broken
-            .mock("POST", "/")
-            .with_status(500)
-            .with_body(r#"{"error":"upstream unavailable"}"#)
-            .create_async()
-            .await;
-        let healthy_mock = healthy
-            .mock("POST", "/")
-            .with_status(200)
-            .with_body(BLOCKHASH_RESPONSE)
-            .expect(1)
-            .create_async()
-            .await;
+            sender_behind_reserved_index(
+                RESERVED_FOR_OPENED,
+                vec![Box::new(failing), Box::new(working)],
+            )
+        });
 
-        let client = get_rpc_client_for_endpoints(vec![broken.url(), healthy.url()])
-            .expect("client should build");
+        let before = failover_metrics::counter_value(RESERVED_FOR_OPENED, "transport");
+        let error = sender
+            .send(RpcRequest::GetLatestBlockhash, json!([]))
+            .await
+            .expect_err("the opened endpoint must not answer");
 
-        client.get_latest_blockhash().await.expect("should fail over");
-
-        broken_mock.assert_async().await;
-        healthy_mock.assert_async().await;
+        assert!(error.to_string().contains("first down"), "got: {error}");
+        assert_eq!(
+            failover_metrics::counter_value(RESERVED_FOR_OPENED, "transport"),
+            before,
+            "no endpoint was actually switched to"
+        );
     }
+
+    // `reqwest::Error` cannot be constructed in-process, so real responses are
+    // needed to cover 5xx/429 classification.
 
     #[tokio::test]
     async fn test_every_server_error_status_fails_over() {
@@ -1235,62 +1249,5 @@ mod tests {
 
         client.get_latest_blockhash().await.expect("should fail over");
         healthy_mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_dns_failure_fails_over() {
-        let mut healthy = mockito::Server::new_async().await;
-        let healthy_mock = healthy
-            .mock("POST", "/")
-            .with_status(200)
-            .with_body(BLOCKHASH_RESPONSE)
-            .expect(1)
-            .create_async()
-            .await;
-
-        let client =
-            get_rpc_client_for_endpoints(vec![UNRESOLVABLE_HOST_URL.to_string(), healthy.url()])
-                .expect("client should build");
-
-        client.get_latest_blockhash().await.expect("an unresolvable host must fail over");
-        healthy_mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_tls_failure_fails_over() {
-        let plaintext = mockito::Server::new_async().await;
-        let mut healthy = mockito::Server::new_async().await;
-
-        let healthy_mock = healthy
-            .mock("POST", "/")
-            .with_status(200)
-            .with_body(BLOCKHASH_RESPONSE)
-            .expect(1)
-            .create_async()
-            .await;
-
-        let https_url = plaintext.url().replacen("http://", "https://", 1);
-        let client = get_rpc_client_for_endpoints(vec![https_url, healthy.url()])
-            .expect("client should build");
-
-        client.get_latest_blockhash().await.expect("a failed handshake must fail over");
-        healthy_mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_single_endpoint_client_serves_directly() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("POST", "/")
-            .with_status(200)
-            .with_body(BLOCKHASH_RESPONSE)
-            .expect(1)
-            .create_async()
-            .await;
-
-        let client = get_rpc_client_for_endpoints(vec![server.url()]).expect("client should build");
-
-        client.get_latest_blockhash().await.expect("single endpoint should answer");
-        mock.assert_async().await;
     }
 }

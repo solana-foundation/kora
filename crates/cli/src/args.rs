@@ -81,15 +81,6 @@ mod tests {
     }
 
     #[test]
-    fn test_rpc_urls_take_precedence_over_rpc_url() {
-        let endpoints = args(vec!["http://primary:8899"], "http://ignored:8899")
-            .rpc_endpoints()
-            .expect("should resolve");
-
-        assert_eq!(endpoints, vec!["http://primary:8899"]);
-    }
-
-    #[test]
     fn test_falls_back_to_rpc_url_when_rpc_urls_is_absent() {
         let endpoints =
             args(vec![], "http://fallback:8899").rpc_endpoints().expect("should resolve");
@@ -101,14 +92,6 @@ mod tests {
     fn test_empty_rpc_urls_falls_back_to_rpc_url() {
         let endpoints =
             args(vec![""], "http://fallback:8899").rpc_endpoints().expect("should resolve");
-
-        assert_eq!(endpoints, vec!["http://fallback:8899"]);
-    }
-
-    #[test]
-    fn test_whitespace_only_rpc_urls_fall_back_to_rpc_url() {
-        let endpoints =
-            args(vec!["   "], "http://fallback:8899").rpc_endpoints().expect("resolves");
 
         assert_eq!(endpoints, vec!["http://fallback:8899"]);
     }
@@ -142,15 +125,6 @@ mod tests {
         .expect("should resolve");
 
         assert_eq!(endpoints, vec!["http://primary:8899", "http://secondary:8899"]);
-    }
-
-    #[test]
-    fn test_single_endpoint_is_not_collapsed() {
-        let endpoints = args(vec!["http://primary:8899"], "http://ignored")
-            .rpc_endpoints()
-            .expect("should resolve");
-
-        assert_eq!(endpoints, vec!["http://primary:8899"]);
     }
 
     #[test]

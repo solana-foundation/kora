@@ -30,7 +30,9 @@ pub const RPC_FAILOVER_FAILURE_THRESHOLD: u32 = 3;
 /// How long an open breaker stays shut. Once it elapses, one request is admitted
 /// as a probe; if it succeeds the endpoint is serving again, and if it fails the
 /// cooldown restarts. Only one request probes at a time, so a provider that
-/// recovers in name only cannot make every concurrent caller wait it out.
+/// recovers in name only cannot make every concurrent caller wait it out. A probe
+/// that never completes releases its slot after the HTTP timeout plus a small
+/// grace period, so a cancelled request cannot strand the endpoint.
 pub const RPC_FAILOVER_COOLDOWN_SECS: u64 = 30;
 
 pub const JUPITER_API_URL: &str = "https://api.jup.ag";

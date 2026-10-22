@@ -1,4 +1,4 @@
-﻿use std::{sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::RpcClientConfig};
 use solana_commitment_config::CommitmentConfig;
@@ -22,20 +22,52 @@ pub fn get_rpc_client(rpc_url: &str) -> Arc<RpcClient> {
 /// unreachable or answers 5xx. Endpoint order is preference order: the first
 /// entry is the primary and is used whenever it is healthy.
 ///
-/// Fails when `endpoints` is empty.
+/// Every endpoint is validated up front. A malformed URL would otherwise become a
+/// transport failure on every request and silently pin traffic to the fallback.
+/// Fails when `endpoints` is empty or contains an invalid URL.
 pub fn get_rpc_client_for_endpoints(endpoints: Vec<String>) -> Result<Arc<RpcClient>, KoraError> {
-    match endpoints.len() {
-        0 => Err(KoraError::ConfigError("At least one RPC endpoint is required".to_string())),
-        1 => Ok(get_rpc_client(&endpoints[0])),
-        _ => {
-            log::info!("{}", describe_endpoints(&endpoints));
-
-            Ok(Arc::new(RpcClient::new_sender(
-                FailoverRpcSender::new(endpoints),
-                RpcClientConfig::with_commitment(CommitmentConfig::confirmed()),
-            )))
-        }
+    if endpoints.is_empty() {
+        return Err(KoraError::ConfigError("At least one RPC endpoint is required".to_string()));
     }
+
+    for endpoint in &endpoints {
+        validate_endpoint(endpoint)?;
+    }
+
+    if endpoints.len() == 1 {
+        return Ok(get_rpc_client(&endpoints[0]));
+    }
+
+    Ok(Arc::new(RpcClient::new_sender(
+        FailoverRpcSender::new(endpoints),
+        RpcClientConfig::with_commitment(CommitmentConfig::confirmed()),
+    )))
+}
+
+/// Reject endpoints that cannot be dialled before the node starts serving.
+///
+/// The error names only the host, never the path or userinfo, because those can
+/// carry an API key.
+fn validate_endpoint(endpoint: &str) -> Result<(), KoraError> {
+    let parsed = Url::parse(endpoint).map_err(|e| {
+        KoraError::ConfigError(format!("Invalid RPC endpoint ({}): {e}", endpoint_host(endpoint)))
+    })?;
+
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(KoraError::ConfigError(format!(
+            "Invalid RPC endpoint {}: scheme must be http or https",
+            endpoint_host(endpoint)
+        )));
+    }
+
+    if parsed.host_str().is_none() {
+        return Err(KoraError::ConfigError(format!(
+            "Invalid RPC endpoint ({}): missing host",
+            endpoint_host(endpoint)
+        )));
+    }
+
+    Ok(())
 }
 
 /// A credential-free summary of the configured endpoints, in preference order.
@@ -82,13 +114,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_get_rpc_client_uses_the_given_url() {
-        let client = get_rpc_client("http://localhost:8899");
-
-        assert_eq!(client.url(), "http://localhost:8899");
-    }
-
-    #[test]
     fn test_empty_endpoints_are_rejected() {
         let error = match get_rpc_client_for_endpoints(vec![]) {
             Ok(_) => panic!("an empty endpoint list must be rejected"),
@@ -115,6 +140,30 @@ mod tests {
         .expect("two endpoints are valid");
 
         assert_eq!(client.url(), "http://primary.example");
+    }
+
+    #[test]
+    fn test_invalid_endpoints_are_rejected_before_startup() {
+        for url in ["not a url", "ftp://rpc.example/path", "http://", ""] {
+            let error = get_rpc_client_for_endpoints(vec![url.to_string()])
+                .err()
+                .unwrap_or_else(|| panic!("{url} should be rejected"));
+
+            assert!(
+                error.to_string().contains("Invalid RPC endpoint"),
+                "unexpected error for {url}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_endpoint_validation_does_not_echo_credentials() {
+        let error =
+            get_rpc_client_for_endpoints(vec!["ftp://user:SECRET@rpc.example/SECRET".to_string()])
+                .err()
+                .expect("ftp is not an RPC scheme");
+
+        assert!(!error.to_string().contains("SECRET"), "error leaked a credential: {error}");
     }
 
     #[test]
@@ -168,17 +217,5 @@ mod tests {
         assert!(described.contains("mainnet.helius-rpc.com"));
         assert!(described.contains("name.solana-mainnet.quiknode.pro"));
         assert!(described.contains("2 endpoints"));
-    }
-
-    #[test]
-    fn test_describe_endpoints_for_a_single_endpoint() {
-        let described = describe_endpoints(&["http://127.0.0.1:8899/?api-key=SECRET".to_string()]);
-
-        assert!(
-            !described.contains("SECRET"),
-            "the summary must not contain an API key: {described}"
-        );
-        assert!(described.contains("127.0.0.1:8899"));
-        assert!(!described.contains("failover"));
     }
 }

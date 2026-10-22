@@ -41,6 +41,7 @@ pub fn set_active_endpoint(endpoint_index: usize) {
 
 /// Current value of one failover counter, or zero when it has never been
 /// incremented.
+#[cfg(test)]
 pub fn counter_value(endpoint_index: usize, reason: &str) -> u64 {
     RPC_FAILOVERS_TOTAL
         .as_ref()
