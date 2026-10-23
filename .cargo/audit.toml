@@ -15,6 +15,16 @@ ignore = [
     # the optional hyper-014 path in aws-smithy-http-client. h2 0.4.x is on the patched
     # 0.4.16; drop this once jsonrpsee moves to hyper 1.x.
     "RUSTSEC-2026-0258",
+    # rustls 0.21.x has no patched release and is pinned by jsonrpsee 0.16 (hyper-rustls
+    # 0.24 / tokio-rustls 0.24). These IDs also cover rustls 0.23.x, which is on the patched
+    # 0.23.46; drop these once jsonrpsee moves off rustls 0.21.
+    "RUSTSEC-2026-0346",
+    "RUSTSEC-2026-0349",
+    # rustls-webpki 0.101.x and webpki-roots 0.25.x have no patched release and are pinned by
+    # the same jsonrpsee 0.16 rustls 0.21 stack. These IDs also cover rustls-webpki 0.103.x
+    # and webpki-roots 1.x, which are on the patched 0.103.16 and 1.0.10.
+    "RUSTSEC-2026-0382",
+    "RUSTSEC-2026-0381",
     # ed25519-dalek 1.0.1 and curve25519-dalek 3.2.0 come from agave-precompiles, which
     # only the tests crate pulls in via surfpool-sdk; neither reaches the kora binary.
     "RUSTSEC-2022-0093",
