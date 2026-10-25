@@ -22,4 +22,17 @@ ignore = [
     # idna 0.1.5 comes from jsonrpc-core-client, reached only by the tests crate via
     # surfpool-sdk.
     "RUSTSEC-2024-0421",
+    # rustls 0.21.12 has no patched release and is pinned by jsonrpsee 0.16 (hyper-rustls
+    # 0.24 / tokio-rustls 0.24). rustls 0.23.x is on the patched 0.23.46, so these entries
+    # also mask the 0.23 line; drop them once jsonrpsee moves to hyper 1.x.
+    "RUSTSEC-2026-0346",
+    "RUSTSEC-2026-0349",
+    # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack. 0.103.x is on
+    # the patched 0.103.16.
+    "RUSTSEC-2026-0382",
+    # webpki-roots 0.25.4 is pinned by jsonrpsee 0.16; the 1.x copy is on the patched 1.0.11.
+    "RUSTSEC-2026-0381",
+    # crypto-bigint 0.5.x has no patched release and is pinned by elliptic-curve 0.13
+    # (k256/p256/p384); the fix landed in 0.7.6, which needs elliptic-curve 0.14.
+    "RUSTSEC-2026-0387",
 ]
