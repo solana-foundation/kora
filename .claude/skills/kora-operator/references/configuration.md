@@ -261,6 +261,8 @@ A couple of guards are deliberately *not* flag-gated and always apply: BPF Loade
 `Close` with a foreign recipient, and Loader v4 `SetProgramLength` with a recipient other than the
 fee payer.
 
+Some gated instructions fund rent through a System Transfer CPI from the fee payer, and simulation surfaces that CPI to the `system` section too. Token-2022 `Reallocate` with the fee payer as `payer` and ALT `ExtendLookupTable` both need `system.allow_transfer = true` on top of their own flag, and the rent counts toward `max_allowed_lamports`.
+
 **Security note**: defaulting to `false` means the policy is safe when under-specified, and each
 `true` is an explicit acceptance of that drain vector. Under `fixed`/`free` pricing the node does
 not price its own SOL outflow, so transfer flags in particular must stay `false`.

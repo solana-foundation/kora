@@ -5008,43 +5008,10 @@ mod tests {
             .is_ok());
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_fee_payer_policy_token2022_reallocate_rejected_for_fee_payer() {
-        let fee_payer = Pubkey::new_unique();
-        let token_account = Pubkey::new_unique();
-
-        let rpc_client = RpcMockBuilder::new().build();
-        setup_token2022_config_with_policy(FeePayerPolicy::default());
-
-        let config = get_config().unwrap();
-        let validator = TransactionValidator::new(config, fee_payer).unwrap();
-
-        let reallocate_ix = spl_token_2022_interface::instruction::reallocate(
-            &spl_token_2022_interface::id(),
-            &token_account,
-            &fee_payer,
-            &fee_payer,
-            &[],
-            &[spl_token_2022_interface::extension::ExtensionType::MemoTransfer],
-        )
-        .unwrap();
-
-        let message = VersionedMessage::Legacy(Message::new(&[reallocate_ix], Some(&fee_payer)));
-        let mut transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-
-        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
-        if let Err(KoraError::InvalidTransaction(msg)) = result {
-            assert!(msg.contains("Token2022 Reallocate is not allowed"));
-        } else {
-            panic!("Expected InvalidTransaction error for token2022 reallocate");
-        }
-    }
-
     enum ReallocateSlot {
         Payer,
         Owner,
+        PayerAndOwner,
         MultisigSigner,
         None,
     }
@@ -5056,6 +5023,7 @@ mod tests {
         let (payer, owner, signers) = match slot {
             ReallocateSlot::Payer => (fee_payer, &other_owner, vec![]),
             ReallocateSlot::Owner => (&other_payer, fee_payer, vec![]),
+            ReallocateSlot::PayerAndOwner => (fee_payer, fee_payer, vec![]),
             ReallocateSlot::MultisigSigner => {
                 (&other_payer, &other_owner, vec![&other_signer, fee_payer])
             }
@@ -5093,7 +5061,12 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_reallocate_rejects_each_fee_payer_slot_by_default() {
-        for slot in [ReallocateSlot::Payer, ReallocateSlot::Owner, ReallocateSlot::MultisigSigner] {
+        for slot in [
+            ReallocateSlot::Payer,
+            ReallocateSlot::Owner,
+            ReallocateSlot::PayerAndOwner,
+            ReallocateSlot::MultisigSigner,
+        ] {
             let result = validate_token2022_reallocate(FeePayerPolicy::default(), slot).await;
             assert!(
                 matches!(result, Err(KoraError::InvalidTransaction(ref msg))
@@ -5106,7 +5079,12 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_reallocate_allows_each_fee_payer_slot_when_enabled() {
-        for slot in [ReallocateSlot::Payer, ReallocateSlot::Owner, ReallocateSlot::MultisigSigner] {
+        for slot in [
+            ReallocateSlot::Payer,
+            ReallocateSlot::Owner,
+            ReallocateSlot::PayerAndOwner,
+            ReallocateSlot::MultisigSigner,
+        ] {
             let mut policy = FeePayerPolicy::default();
             policy.token_2022.allow_reallocate = true;
             let result = validate_token2022_reallocate(policy, slot).await;

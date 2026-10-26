@@ -416,6 +416,10 @@ export interface SplTokenInstructionPolicy {
     allow_thaw_account: boolean;
     /** Allow fee payer to be source in SPL token transfers */
     allow_transfer: boolean;
+    /** Allow fee payer to be the authority in SPL Token UnwrapLamports instructions */
+    allow_unwrap_lamports: boolean;
+    /** Allow fee payer to be the authority in SPL Token WithdrawExcessLamports instructions */
+    allow_withdraw_excess_lamports: boolean;
 }
 
 /**
@@ -432,13 +436,15 @@ export interface Token2022InstructionPolicy {
     allow_freeze_account: boolean;
     /** Allow fee payer to initialize Token2022 accounts */
     allow_initialize_account: boolean;
+    /** Allow fee payer to be planted as a future Token2022 extension authority or delegate during extension initialization */
+    allow_initialize_extension_authority: boolean;
     /** Allow fee payer to initialize Token2022 mints */
     allow_initialize_mint: boolean;
     /** Allow fee payer to initialize Token2022 multisig accounts */
     allow_initialize_multisig: boolean;
     /** Allow fee payer to mint Token2022 tokens */
     allow_mint_to: boolean;
-    /** Allow fee payer to fund or authorize Token2022 Reallocate */
+    /** Allow fee payer to fund or authorize Token2022 Reallocate (funding the grow also requires system.allow_transfer) */
     allow_reallocate: boolean;
     /** Allow fee payer to revoke Token2022 delegates */
     allow_revoke: boolean;
@@ -448,6 +454,12 @@ export interface Token2022InstructionPolicy {
     allow_thaw_account: boolean;
     /** Allow fee payer to be source in Token2022 transfers */
     allow_transfer: boolean;
+    /** Allow fee payer to be the authority in Token2022 UnwrapLamports instructions */
+    allow_unwrap_lamports: boolean;
+    /** Allow fee payer to be the current authority for Token2022 extension update/admin instructions */
+    allow_update_extension_authority: boolean;
+    /** Allow fee payer to be the authority in Token2022 WithdrawExcessLamports instructions */
+    allow_withdraw_excess_lamports: boolean;
 }
 
 /**

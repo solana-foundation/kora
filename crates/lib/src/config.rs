@@ -469,7 +469,9 @@ pub struct Token2022InstructionPolicy {
     #[serde(default)]
     pub allow_unwrap_lamports: bool,
     /// Allow fee payer to be the payer, the owner, or a multisig signer in Token2022 Reallocate
-    /// instructions
+    /// instructions. As payer, the rent for the grown account is a System Transfer CPI from the
+    /// fee payer, so funding it also requires system.allow_transfer.
+    #[serde(default)]
     pub allow_reallocate: bool,
 }
 

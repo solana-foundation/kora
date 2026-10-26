@@ -866,7 +866,7 @@
           },
           "allow_reallocate": {
             "type": "boolean",
-            "description": "Allow fee payer to be the payer, the owner, or a multisig signer in Token2022 Reallocate\ninstructions",
+            "description": "Allow fee payer to be the payer, the owner, or a multisig signer in Token2022 Reallocate\ninstructions. As payer, the rent for the grown account is a System Transfer CPI from the\nfee payer, so funding it also requires system.allow_transfer.",
             "default": false
           },
           "allow_revoke": {

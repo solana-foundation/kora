@@ -95,6 +95,19 @@ fn reallocate_ix(
     .expect("Failed to create reallocate ix")
 }
 
+/// Returns `(fee_in_lamports, fee_in_token)` from `estimateTransactionFee`.
+async fn estimate_fee(ctx: &TestContext, tx: String, mint: &Pubkey) -> (u64, u64) {
+    let fee_estimate: serde_json::Value = ctx
+        .rpc_call("estimateTransactionFee", rpc_params![tx, mint.to_string()])
+        .await
+        .expect("Failed to estimate transaction fee");
+    fee_estimate.assert_success();
+    (
+        fee_estimate["fee_in_lamports"].as_u64().expect("Expected fee_in_lamports"),
+        fee_estimate["fee_in_token"].as_u64().expect("Expected fee_in_token"),
+    )
+}
+
 #[tokio::test]
 async fn test_reallocate_rent_funded_by_fee_payer_is_charged_as_outflow() {
     let ctx = crate::ctx().await;
@@ -108,7 +121,7 @@ async fn test_reallocate_rent_funded_by_fee_payer_is_charged_as_outflow() {
     assert!(rent_delta > 0, "Growing the account must cost rent");
     assert!(rent_delta < MAX_ALLOWED_LAMPORTS, "Rent delta must fit max_allowed_lamports");
 
-    let build_tx = |payment: u64| {
+    let build_tx = |payment: u64, reallocate_payer: Pubkey| {
         ctx.transaction_builder()
             .with_fee_payer(fee_payer)
             .with_signer(&sender)
@@ -116,39 +129,43 @@ async fn test_reallocate_rent_funded_by_fee_payer_is_charged_as_outflow() {
             .with_spl_payment(&usdc_mint, &sender.pubkey(), &fee_payer, payment)
             .with_instruction(reallocate_ix(
                 &token_account,
-                &fee_payer,
+                &reallocate_payer,
                 &owner.pubkey(),
                 &extensions,
             ))
             .build()
     };
 
-    let estimation_tx = build_tx(1).await.expect("Failed to build estimation transaction");
-    let fee_estimate: serde_json::Value = ctx
-        .rpc_call("estimateTransactionFee", rpc_params![estimation_tx, usdc_mint.to_string()])
-        .await
-        .expect("Failed to estimate transaction fee");
-    fee_estimate.assert_success();
+    // Baseline: the same transaction, signers and payment, but the sender funds the rent, so the
+    // only difference from the Kora-funded estimate is the rent CPI from the fee payer.
+    let baseline_tx =
+        build_tx(1, sender.pubkey()).await.expect("Failed to build baseline transaction");
+    let (baseline_lamports, baseline_usdc) = estimate_fee(&ctx, baseline_tx, &usdc_mint).await;
 
-    let fee_in_lamports =
-        fee_estimate["fee_in_lamports"].as_u64().expect("Expected fee_in_lamports");
-    assert!(
-        fee_in_lamports >= rent_delta,
-        "Estimated fee {fee_in_lamports} must include the Reallocate rent delta {rent_delta}"
+    let estimation_tx =
+        build_tx(1, fee_payer).await.expect("Failed to build estimation transaction");
+    let (fee_in_lamports, required_usdc) = estimate_fee(&ctx, estimation_tx, &usdc_mint).await;
+
+    // kora-test.toml prices with margin 0.0, so the rent delta passes through exactly.
+    assert_eq!(
+        fee_in_lamports - baseline_lamports,
+        rent_delta,
+        "Estimated fee {fee_in_lamports} must exceed the baseline {baseline_lamports} by exactly the Reallocate rent delta {rent_delta}"
     );
-    let required_usdc = fee_estimate["fee_in_token"].as_u64().expect("Expected fee_in_token");
 
-    let underpaid_tx = build_tx(get_fee_for_default_transaction_in_usdc())
-        .await
-        .expect("Failed to build underpaid transaction");
+    let underpaid_tx =
+        build_tx(baseline_usdc, fee_payer).await.expect("Failed to build underpaid transaction");
     let result =
         ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![underpaid_tx]).await;
     match result {
         Err(error) => error.assert_contains_message("Insufficient token payment"),
-        Ok(_) => panic!("Expected payment covering only the base fee to be rejected"),
+        Ok(_) => {
+            panic!("Expected payment covering everything except the rent delta to be rejected")
+        }
     }
 
-    let paid_tx = build_tx(required_usdc).await.expect("Failed to build paid transaction");
+    let paid_tx =
+        build_tx(required_usdc, fee_payer).await.expect("Failed to build paid transaction");
     let response: serde_json::Value = ctx
         .rpc_call("signTransaction", rpc_params![paid_tx])
         .await

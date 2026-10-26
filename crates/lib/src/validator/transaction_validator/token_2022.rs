@@ -20,11 +20,9 @@ impl TransactionValidator {
                 payer,
                 owner,
                 multisig_signers,
-                is_2022,
                 ..
-            } => *is_2022
-                && (*payer == self.fee_payer_pubkey
-                    || self.fee_payer_signs(owner, multisig_signers)),
+            } => *payer == self.fee_payer_pubkey
+                || self.fee_payer_signs(owner, multisig_signers),
             unless self.fee_payer_policy.token_2022.allow_reallocate,
             "Token2022 Reallocate is not allowed when involving fee payer");
 

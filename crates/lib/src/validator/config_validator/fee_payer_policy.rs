@@ -109,7 +109,7 @@ impl ConfigValidator {
                 "Users can make the fee payer unfreeze token accounts. This can undermine freeze policies";
 
             token_2022, allow_reallocate, "Token2022 Reallocate instructions",
-                "Users can make the fee payer fund rent for growing token accounts it does not own. This can drain SOL";
+                "Users can make the fee payer the payer, owner, or a multisig signer of Reallocate on token accounts. As payer, the fee payer funds the rent for growing accounts it does not own through a System Transfer CPI, which also requires system.allow_transfer and counts toward max_allowed_lamports. This can drain SOL";
 
             alt, allow_create, "ALT CreateLookupTable instructions",
                 "Users can make the fee payer create lookup tables and fund rent. This can drain SOL and create unmanaged tables";
