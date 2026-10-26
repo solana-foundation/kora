@@ -92,6 +92,7 @@ pub mod instruction_indexes {
 
     pub mod system_withdraw_nonce_account {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 5;
+        pub const NONCE_ACCOUNT_INDEX: usize = 0;
         pub const NONCE_AUTHORITY_INDEX: usize = 4;
         pub const RECIPIENT_INDEX: usize = 1;
     }

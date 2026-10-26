@@ -387,7 +387,8 @@ pub struct NonceInstructionPolicy {
     pub allow_initialize: bool,
     /// Allow fee payer to be the nonce authority in AdvanceNonceAccount instructions
     pub allow_advance: bool,
-    /// Allow fee payer to be the nonce authority in WithdrawNonceAccount instructions
+    /// Allow fee payer to be the nonce authority or the nonce account in WithdrawNonceAccount
+    /// instructions
     pub allow_withdraw: bool,
     /// Allow fee payer to be the current nonce authority in AuthorizeNonceAccount instructions
     pub allow_authorize: bool,

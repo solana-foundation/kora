@@ -1161,6 +1161,26 @@ mod tests {
             outflow, 0,
             "WithdrawNonceAccount where fee payer is neither authority nor recipient should be zero"
         );
+
+        let withdraw_instruction =
+            withdraw_nonce_account(&fee_payer, &other_authority, &other_recipient, 60_000);
+        let message =
+            VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = setup_or_get_test_config();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, 60_000,
+            "WithdrawNonceAccount from the fee payer itself to a third party should count as outflow"
+        );
     }
 
     #[tokio::test]
