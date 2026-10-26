@@ -25,6 +25,10 @@ ignore = [
     # and webpki-roots 1.x, which are on the patched 0.103.16 and 1.0.10.
     "RUSTSEC-2026-0382",
     "RUSTSEC-2026-0381",
+    # crypto-bigint 0.5.x has no patched release (the fix is in 0.7.6+) and is pinned by
+    # elliptic-curve 0.13 via k256 (solana-secp256k1-recover / solana-program) and p256/p384
+    # (jsonwebtoken / solana-keychain). Drop this once those move to crypto-bigint 0.7.
+    "RUSTSEC-2026-0387",
     # ed25519-dalek 1.0.1 and curve25519-dalek 3.2.0 come from agave-precompiles, which
     # only the tests crate pulls in via surfpool-sdk; neither reaches the kora binary.
     "RUSTSEC-2022-0093",
