@@ -194,7 +194,7 @@ async fn main() -> Result<(), KoraError> {
                 wait_for_shutdown_signal().await;
                 println!("Shutting down server...");
 
-                handles.shutdown(rpc_args.port).await;
+                handles.shutdown().await;
             }
             RpcCommands::InitializeAtas {
                 rpc_args,

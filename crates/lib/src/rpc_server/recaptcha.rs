@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use http::{Request, Response};
-use jsonrpsee::server::logger::Body;
+use jsonrpsee::server::HttpBody as Body;
 
 #[derive(Clone)]
 pub struct RecaptchaLayer {

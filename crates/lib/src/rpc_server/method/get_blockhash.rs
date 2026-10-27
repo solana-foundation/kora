@@ -9,7 +9,7 @@ use crate::state::get_config;
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct GetBlockhashResponse {
     pub blockhash: String,
 }

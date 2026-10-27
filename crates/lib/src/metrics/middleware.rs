@@ -3,7 +3,7 @@ use crate::rpc_server::{
     middleware_utils::{extract_parts_and_body_bytes, get_jsonrpc_method},
 };
 use http::{Request, Response};
-use jsonrpsee::server::logger::Body;
+use jsonrpsee::server::HttpBody as Body;
 use prometheus::{CounterVec, HistogramVec, Opts};
 use std::{sync::OnceLock, time::Instant};
 use tower::Layer;

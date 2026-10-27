@@ -1,5 +1,5 @@
 use crate::{bundle::BundleError, sanitize::sanitize_message};
-use jsonrpsee::{core::Error as RpcError, types::error::CallError};
+use jsonrpsee::types::ErrorObjectOwned;
 use serde::{Deserialize, Serialize};
 use solana_client::client_error::ClientError;
 use solana_program::program_error::ProgramError;
@@ -197,17 +197,13 @@ impl KoraError {
     }
 }
 
-impl From<KoraError> for RpcError {
+impl From<KoraError> for ErrorObjectOwned {
     fn from(err: KoraError) -> Self {
         let code = err.error_code();
         let message = err.to_string();
         let data = err.to_json_error_data();
 
-        RpcError::Call(CallError::Custom(jsonrpsee::types::error::ErrorObject::owned(
-            code as i32,
-            message,
-            Some(data),
-        )))
+        ErrorObjectOwned::owned(code as i32, message, Some(data))
     }
 }
 
@@ -423,31 +419,23 @@ mod tests {
         ];
 
         for (kora_error, expected_code) in test_cases {
-            let rpc_error: RpcError = kora_error.into();
-            if let RpcError::Call(CallError::Custom(err_obj)) = rpc_error {
-                assert_eq!(err_obj.code(), expected_code);
-            } else {
-                panic!("Expected RpcError::Call(CallError::Custom), got {:?}", rpc_error);
-            }
+            let err_obj: ErrorObjectOwned = kora_error.into();
+            assert_eq!(err_obj.code(), expected_code);
         }
     }
 
     #[test]
     fn test_rpc_error_structure() {
         let error = KoraError::AccountNotFound("test_acc".to_string());
-        let rpc_error: RpcError = error.into();
+        let err_obj: ErrorObjectOwned = error.into();
 
-        if let RpcError::Call(CallError::Custom(err_obj)) = rpc_error {
-            assert_eq!(err_obj.code(), -32050);
-            assert_eq!(err_obj.message(), "Account test_acc not found");
+        assert_eq!(err_obj.code(), -32050);
+        assert_eq!(err_obj.message(), "Account test_acc not found");
 
-            let data = err_obj.data().unwrap();
-            let json_data: serde_json::Value = serde_json::from_str(data.get()).unwrap();
+        let data = err_obj.data().unwrap();
+        let json_data: serde_json::Value = serde_json::from_str(data.get()).unwrap();
 
-            assert_eq!(json_data["error_type"], "AccountNotFound");
-        } else {
-            panic!("Expected RpcError::Call(CallError::Custom)");
-        }
+        assert_eq!(json_data["error_type"], "AccountNotFound");
     }
 
     #[test]

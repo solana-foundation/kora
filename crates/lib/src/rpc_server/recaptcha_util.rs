@@ -5,7 +5,7 @@ use crate::{
     sanitize_error,
 };
 use http::Response;
-use jsonrpsee::server::logger::Body;
+use jsonrpsee::server::HttpBody as Body;
 use reqwest::Client;
 use serde::Deserialize;
 use std::time::Duration;
