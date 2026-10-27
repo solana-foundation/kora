@@ -45,7 +45,7 @@ pub struct TransferTransactionRequest {
 /// **DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.
 ///
 /// Response payload containing the constructed transfer transaction.
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct TransferTransactionResponse {
     /// Unsigned base64-encoded transaction ready for the user to sign
     pub transaction: String,

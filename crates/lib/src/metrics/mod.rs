@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 
 use crate::{config::MetricsConfig, state::get_config};
 use jsonrpsee::{
-    server::{ServerBuilder, ServerHandle},
+    server::{Server, ServerConfig, ServerHandle},
     RpcModule,
 };
 use prometheus::{Encoder, TextEncoder};
@@ -64,14 +64,15 @@ pub async fn run_metrics_server_if_required(
     let middleware = tower::ServiceBuilder::new()
         .layer(MetricsHandlerLayer::new(metrics_config.endpoint.clone()));
 
-    let server =
-        ServerBuilder::default().set_middleware(middleware).http_only().build(addr).await?;
+    let server = Server::builder()
+        .set_config(ServerConfig::builder().http_only().build())
+        .set_http_middleware(middleware)
+        .build(addr)
+        .await?;
 
     let module = RpcModule::new(());
 
-    let metrics_server_handle = server
-        .start(module)
-        .map_err(|e| anyhow::anyhow!("Failed to start metrics server: {}", e))?;
+    let metrics_server_handle = server.start(module);
 
     // Return both the metrics server handle AND the HTTP metrics middleware for the main RPC server
     // The HTTP middleware needs to be on the RPC server to collect metrics, even if metrics are served separately

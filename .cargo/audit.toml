@@ -2,19 +2,20 @@
 ignore = [
     # rsa has no patched release; reached via solana-keychain/jsonwebtoken.
     "RUSTSEC-2023-0071",
-    # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack.
+    # rustls 0.21, rustls-webpki 0.101, webpki-roots 0.25 and h2 0.3 come from reqwest 0.11
+    # and jsonrpc-core-client, reached only by the tests crate via surfpool-sdk; none reach
+    # the kora binary. The 0.23 / 0.103 / 1.x / 0.4 copies are on patched releases.
     "RUSTSEC-2026-0104",
-    # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack.
     "RUSTSEC-2026-0098",
-    # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack.
     "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0258",
+    "RUSTSEC-2026-0346",
+    "RUSTSEC-2026-0349",
+    "RUSTSEC-2026-0382",
+    "RUSTSEC-2026-0381",
     # rkyv is an inactive optional dependency of rust_decimal; Kora does not enable its
     # rkyv features.
     "RUSTSEC-2026-0235",
-    # h2 0.3.x has no patched release and is pinned by hyper 0.14 (jsonrpsee 0.16) and by
-    # the optional hyper-014 path in aws-smithy-http-client. h2 0.4.x is on the patched
-    # 0.4.16; drop this once jsonrpsee moves to hyper 1.x.
-    "RUSTSEC-2026-0258",
     # ed25519-dalek 1.0.1 and curve25519-dalek 3.2.0 come from agave-precompiles, which
     # only the tests crate pulls in via surfpool-sdk; neither reaches the kora binary.
     "RUSTSEC-2022-0093",
@@ -22,16 +23,6 @@ ignore = [
     # idna 0.1.5 comes from jsonrpc-core-client, reached only by the tests crate via
     # surfpool-sdk.
     "RUSTSEC-2024-0421",
-    # rustls 0.21.12 has no patched release and is pinned by jsonrpsee 0.16 (hyper-rustls
-    # 0.24 / tokio-rustls 0.24). rustls 0.23.x is on the patched 0.23.46, so these entries
-    # also mask the 0.23 line; drop them once jsonrpsee moves to hyper 1.x.
-    "RUSTSEC-2026-0346",
-    "RUSTSEC-2026-0349",
-    # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack. 0.103.x is on
-    # the patched 0.103.16.
-    "RUSTSEC-2026-0382",
-    # webpki-roots 0.25.4 is pinned by jsonrpsee 0.16; the 1.x copy is on the patched 1.0.11.
-    "RUSTSEC-2026-0381",
     # crypto-bigint 0.5.x has no patched release and is pinned by elliptic-curve 0.13
     # (k256/p256/p384); the fix landed in 0.7.6, which needs elliptic-curve 0.14.
     "RUSTSEC-2026-0387",

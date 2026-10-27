@@ -1,7 +1,7 @@
 use crate::rpc_server::middleware_utils::build_response_with_graceful_error;
 use futures_util::future::BoxFuture;
 use http::{Request, Response, StatusCode};
-use jsonrpsee::server::logger::Body;
+use jsonrpsee::server::HttpBody as Body;
 use std::{
     collections::HashMap,
     task::{Context, Poll},

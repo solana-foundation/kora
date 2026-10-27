@@ -6,7 +6,7 @@ use crate::{
 };
 use hmac::{Hmac, KeyInit, Mac};
 use http::{Request, Response, StatusCode};
-use jsonrpsee::server::logger::Body;
+use jsonrpsee::server::HttpBody as Body;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -288,7 +288,7 @@ mod tests {
     use crate::constant::{DEFAULT_MAX_TIMESTAMP_AGE, X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP};
     use hmac::{Hmac, Mac};
     use http::Method;
-    use jsonrpsee::server::logger::Body;
+    use jsonrpsee::server::HttpBody as Body;
     use sha2::Sha256;
     use std::{
         future::{self, Ready},

@@ -21,12 +21,20 @@ use crate::state::get_config;
 use crate::tests::config_mock::mock_state::get_config;
 use http::{header, HeaderValue, Method};
 use jsonrpsee::{
-    server::{middleware::proxy_get_request::ProxyGetRequestLayer, ServerBuilder, ServerHandle},
+    server::{
+        middleware::http::ProxyGetRequestLayer, HttpRequest, Server, ServerConfig, ServerHandle,
+    },
+    types::ErrorObjectOwned,
     RpcModule,
 };
 use std::{iter::empty, net::SocketAddr, time::Duration};
 use tokio::task::JoinHandle;
-use tower::limit::RateLimitLayer;
+use tower::{
+    buffer::BufferLayer,
+    layer::util::{Identity, Stack},
+    limit::RateLimitLayer,
+    ServiceBuilder,
+};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 pub struct ServerHandles {
@@ -34,6 +42,8 @@ pub struct ServerHandles {
     pub metrics_handle: Option<ServerHandle>,
     pub balance_tracker_handle: Option<JoinHandle<()>>,
 }
+
+const RATE_LIMIT_BUFFER_CAPACITY: usize = 1024;
 
 /// How long to wait for the RPC server to finish in-flight requests before
 /// giving up and continuing shutdown.
@@ -49,16 +59,13 @@ impl ServerHandles {
     /// Order matters: stop the balance tracker, wait for the RPC server to
     /// finish in-flight requests (so no new background broadcasts are spawned),
     /// drain the broadcasts that were spawned, then stop the metrics server.
-    ///
-    /// `port` is the RPC port, needed to wake an idle accept loop (see
-    /// [`wait_for_rpc_stop`]).
-    pub async fn shutdown(self, port: u16) {
+    pub async fn shutdown(self) {
         if let Some(handle) = self.balance_tracker_handle {
             log::info!("Stopping balance tracker background task...");
             handle.abort();
         }
 
-        wait_for_rpc_stop(self.rpc_handle, port).await;
+        wait_for_rpc_stop(self.rpc_handle).await;
 
         if !drain_background_tasks(BROADCAST_DRAIN_TIMEOUT).await {
             log::warn!(
@@ -76,25 +83,11 @@ impl ServerHandles {
     }
 }
 
-/// Stop the RPC server and wait until it finishes handling in-flight requests.
-///
-/// This whole helper only exists to work around the jsonrpsee version we are
-/// pinned to (0.16): its accept loop re-checks the stop signal only when woken
-/// by a new connection, so on a server that has been idle since startup
-/// `stopped()` would block until the next request arrives. We open a throwaway
-/// connection to wake the loop immediately, and cap the wait so shutdown can
-/// never hang.
-///
-/// Newer jsonrpsee releases reworked graceful shutdown and `stopped()` returns
-/// on its own, so this function (the TcpStream wake and the timeout) can be
-/// dropped once we upgrade.
-async fn wait_for_rpc_stop(rpc_handle: ServerHandle, port: u16) {
+async fn wait_for_rpc_stop(rpc_handle: ServerHandle) {
     if let Err(e) = rpc_handle.stop() {
         log::warn!("RPC server was already stopping: {e:?}");
         return;
     }
-
-    let _ = tokio::net::TcpStream::connect(("127.0.0.1", port)).await;
 
     if tokio::time::timeout(RPC_STOP_TIMEOUT, rpc_handle.stopped()).await.is_err() {
         log::warn!(
@@ -102,6 +95,16 @@ async fn wait_for_rpc_stop(rpc_handle: ServerHandle, port: u16) {
             RPC_STOP_TIMEOUT.as_secs()
         );
     }
+}
+
+/// jsonrpsee clones the HTTP middleware per request, so the rate limiter sits
+/// behind a buffer to keep one shared limiter per connection.
+fn rate_limit_layer(
+    rate_limit: u64,
+) -> ServiceBuilder<Stack<RateLimitLayer, Stack<BufferLayer<HttpRequest>, Identity>>> {
+    ServiceBuilder::new()
+        .layer(BufferLayer::new(RATE_LIMIT_BUFFER_CAPACITY))
+        .layer(RateLimitLayer::new(rate_limit, Duration::from_secs(1)))
 }
 
 fn build_allow_origin(origins: &[String]) -> AllowOrigin {
@@ -171,10 +174,10 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         )
     });
 
-    let middleware = tower::ServiceBuilder::new()
+    let middleware = ServiceBuilder::new()
         // Add metrics handler first (before other layers) so it can intercept /metrics
-        .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
-        .layer(RateLimitLayer::new(config.kora.rate_limit, Duration::from_secs(1)))
+        .layer(ProxyGetRequestLayer::new([("/liveness", "liveness")])?)
+        .layer(rate_limit_layer(config.kora.rate_limit))
         .option_layer(
             metrics_layers.as_ref().and_then(|layers| layers.metrics_handler_layer.clone()),
         )
@@ -191,18 +194,20 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         )
         .option_layer(recaptcha_config.map(RecaptchaLayer::new));
 
-    let server = ServerBuilder::default()
+    let server_config = ServerConfig::builder()
         .max_request_body_size(config.kora.max_request_body_size as u32)
-        .set_middleware(middleware)
-        .http_only() // Explicitly enable HTTP
+        .http_only()
+        .build();
+
+    let server = Server::builder()
+        .set_config(server_config)
+        .set_http_middleware(middleware)
         .build(addr)
         .await?;
 
     let rpc_module = build_rpc_module(rpc)?;
 
-    let rpc_handle = server
-        .start(rpc_module)
-        .map_err(|e| anyhow::anyhow!("Failed to start RPC server: {}", e))?;
+    let rpc_handle = server.start(rpc_module);
 
     Ok(ServerHandles { rpc_handle, metrics_handle, balance_tracker_handle })
 }
@@ -213,9 +218,9 @@ macro_rules! register_method_if_enabled {
         if $enabled_methods.$method {
             let _ = $module.register_async_method(
                 $method_name,
-                |_rpc_params, rpc_context| async move {
+                |_rpc_params, rpc_context, _| async move {
                     let rpc = rpc_context.as_ref();
-                    rpc.$method().await.map_err(Into::into)
+                    rpc.$method().await.map_err(ErrorObjectOwned::from)
                 },
             );
         }
@@ -225,13 +230,15 @@ macro_rules! register_method_if_enabled {
     ($module:expr, $enabled_methods:expr, $method:ident, $method_name:expr, with_params) => {
         if $enabled_methods.$method {
             #[allow(deprecated)]
-            let _ =
-                $module.register_async_method($method_name, |rpc_params, rpc_context| async move {
+            let _ = $module.register_async_method(
+                $method_name,
+                |rpc_params, rpc_context, _| async move {
                     let rpc = rpc_context.as_ref();
                     let params = rpc_params.parse()?;
                     #[allow(deprecated)]
-                    rpc.$method(params).await.map_err(Into::into)
-                });
+                    rpc.$method(params).await.map_err(ErrorObjectOwned::from)
+                },
+            );
         }
     };
 }
@@ -333,6 +340,52 @@ mod tests {
             Err(e) if e.to_string().contains("already initialized") => (),
             Err(e) => panic!("Server failed to start: {:?}", e),
         }
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_is_shared_per_connection() {
+        let server = Server::builder()
+            .set_config(ServerConfig::builder().http_only().build())
+            .set_http_middleware(ServiceBuilder::new().layer(rate_limit_layer(1)))
+            .build("127.0.0.1:0")
+            .await
+            .unwrap();
+        let url = format!("http://{}", server.local_addr().unwrap());
+        let mut module = RpcModule::new(());
+        module.register_method("ping", |_, _, _| "pong").unwrap();
+        let handle = server.start(module);
+
+        let body = r#"{"jsonrpc":"2.0","method":"ping","id":1}"#;
+        let send = |client: reqwest::Client| {
+            let url = url.clone();
+            async move {
+                let start = std::time::Instant::now();
+                let response = client
+                    .post(url)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(body)
+                    .send()
+                    .await
+                    .unwrap();
+                assert!(response.status().is_success());
+                start.elapsed()
+            }
+        };
+
+        let first_connection = reqwest::Client::new();
+        let second_connection = reqwest::Client::new();
+
+        assert!(send(first_connection.clone()).await < Duration::from_millis(500));
+        assert!(
+            send(second_connection).await < Duration::from_millis(500),
+            "a separate connection should get its own allowance"
+        );
+        assert!(
+            send(first_connection).await >= Duration::from_millis(500),
+            "a second request on the same connection should wait for the limiter"
+        );
+
+        handle.stop().unwrap();
     }
 
     #[test]

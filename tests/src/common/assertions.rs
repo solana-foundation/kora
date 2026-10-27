@@ -1,5 +1,5 @@
 use anyhow::Error as AnyhowError;
-use jsonrpsee::core::Error as RpcError;
+use jsonrpsee::core::ClientError as RpcError;
 use serde_json::Value;
 
 /// Trait for common RPC response assertions
