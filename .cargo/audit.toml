@@ -35,14 +35,13 @@ ignore = [
     # crypto-bigint 0.5.x has no patched release and is pinned by elliptic-curve 0.13
     # (k256/p256/p384); the fix landed in 0.7.6, which needs elliptic-curve 0.14.
     "RUSTSEC-2026-0387",
-    # zstd 0.13 / zstd-safe 7 / zstd-sys 2.0 are pinned by solana-account-decoder 4.2.1, and the
+    # zstd 0.13 / zstd-safe 7 are pinned by solana-account-decoder 4.2.1, and the
     # latest stable 4.3.2 still requires zstd 0.13; the patched 0.14 line arrives with Agave
     # 4.4. The only zstd input is base64+zstd account data from the operator's own RPC node,
     # decoded with a fresh stream per account (0391 needs a reused context). Kora does not
-    # enable zstd-safe's seekable feature (0398) or target wasm (0410). 0403 needs a malicious
-    # RPC node sending a legacy-format frame.
+    # enable zstd-safe's seekable feature (0398). 0403 needs a malicious RPC node sending a
+    # legacy-format frame.
     "RUSTSEC-2026-0391",
     "RUSTSEC-2026-0398",
     "RUSTSEC-2026-0403",
-    "RUSTSEC-2026-0410",
 ]
