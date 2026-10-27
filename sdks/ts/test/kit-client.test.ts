@@ -485,18 +485,57 @@ describe('createKitKoraClient', () => {
             data: new Uint8Array(4),
         };
 
-        async function planWith(overrides: { computeUnitLimit?: number; priorityFeeLamports?: bigint } = {}) {
+        type ConfigOverrides = {
+            computeUnitLimit?: number;
+            loadedAccountsDataSizeLimit?: number;
+            priorityFeeLamports?: bigint;
+        };
+
+        async function clientWith(overrides: ConfigOverrides = {}) {
             mockRpcResponse({
                 signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
-            const client = await createKitKoraClient({
+            return await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
                 ...overrides,
             });
+        }
+
+        async function sendWith(overrides: ConfigOverrides, simulate: boolean) {
+            const client = await clientWith(overrides);
+            mockFetch.mockClear();
+            mockRpcResponse({ blockhash: '4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi' });
+            if (simulate) {
+                mockSimulateResponse();
+            }
+            mockRpcResponse({
+                fee_in_lamports: 5000,
+                fee_in_token: 50000,
+                signer_pubkey: MOCK_PAYER_ADDRESS,
+                payment_address: MOCK_PAYMENT_ADDRESS,
+            });
+            mockRpcResponse({
+                signature: MOCK_SIGNATURE,
+                signed_transaction: 'base64signedtx',
+                signer_pubkey: MOCK_PAYER_ADDRESS,
+            });
+
+            await client.sendTransaction([DUMMY_IX]);
+
+            const methods = mockFetch.mock.calls.map(c => JSON.parse(c[1].body).method as string);
+            const sendCall = mockFetch.mock.calls.find(c => JSON.parse(c[1].body).method === 'signAndSendTransaction');
+            const wire = JSON.parse(sendCall![1].body).params.transaction as string;
+            const tx = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
+            const message = decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(tx.messageBytes));
+            return { config: (message as { config?: Record<string, unknown> }).config, methods };
+        }
+
+        async function planWith(overrides: ConfigOverrides = {}) {
+            const client = await clientWith(overrides);
             return (await client.planTransaction([DUMMY_IX])) as unknown as {
                 config?: Record<string, unknown>;
                 instructions: readonly { programAddress: string }[];
@@ -519,6 +558,28 @@ describe('createKitKoraClient', () => {
                 priorityFeeLamports: 10_000n,
             });
             expect(planned.instructions.some(ix => ix.programAddress === COMPUTE_BUDGET_PROGRAM)).toBe(false);
+        });
+
+        it('skips simulation when both resource limits are explicit', async () => {
+            const { config, methods } = await sendWith(
+                { computeUnitLimit: 150_000, loadedAccountsDataSizeLimit: 200_000 },
+                false,
+            );
+            expect(methods).not.toContain('simulateTransaction');
+            expect(config?.computeUnitLimit).toBe(150_000);
+            expect(config?.loadedAccountsDataSizeLimit).toBe(200_000);
+        });
+
+        it('simulates when only computeUnitLimit is explicit', async () => {
+            const { config, methods } = await sendWith({ computeUnitLimit: 150_000 }, true);
+            expect(methods).toContain('simulateTransaction');
+            expect(config?.computeUnitLimit).toBe(150_000);
+            expect(config?.loadedAccountsDataSizeLimit).toBeGreaterThanOrEqual(600_000);
+        });
+
+        it('carries priorityFeeLamports into the submitted transaction', async () => {
+            const { config } = await sendWith({ priorityFeeLamports: 10_000n }, true);
+            expect(config?.priorityFeeLamports).toBe(10_000n);
         });
     });
 });

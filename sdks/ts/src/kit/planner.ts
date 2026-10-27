@@ -26,6 +26,7 @@ export function createKoraTransactionPlanner(
                     setTransactionMessageConfig(
                         {
                             computeUnitLimit: config.computeUnitLimit,
+                            loadedAccountsDataSizeLimit: config.loadedAccountsDataSizeLimit,
                             priorityFeeLamports: config.priorityFeeLamports,
                         },
                         m,

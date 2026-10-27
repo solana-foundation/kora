@@ -698,6 +698,11 @@ export interface KoraBundleConfig {
     readonly feeToken: Address;
     readonly getRecaptchaToken?: () => Promise<string> | string;
     readonly hmacSecret?: string;
+    /**
+     * Loaded accounts data size limit in bytes, written to the v1 message config. Estimated by simulation when
+     * omitted. Simulation is skipped only when both this and `computeUnitLimit` are set.
+     */
+    readonly loadedAccountsDataSizeLimit?: number;
     /** Flat priority fee in lamports for the whole transaction, written to the v1 message config. */
     readonly priorityFeeLamports?: bigint;
     readonly rpcUrl: string;
