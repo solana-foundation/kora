@@ -784,6 +784,8 @@ pub struct PluginsConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct KoraConfig {
     pub rate_limit: u64,
+    /// Optional global pre-auth rate limit that explicitly rejects requests with HTTP 429 when exceeded
+    pub global_rate_limit: Option<u64>,
     pub cors_allow_origins: Vec<String>,
     pub max_request_body_size: usize,
     pub enabled_methods: EnabledMethods,
@@ -811,6 +813,7 @@ impl Default for KoraConfig {
     fn default() -> Self {
         Self {
             rate_limit: 100,
+            global_rate_limit: None,
             cors_allow_origins: vec![CORS_WILDCARD.to_string()],
             max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
             enabled_methods: EnabledMethods::default(),
