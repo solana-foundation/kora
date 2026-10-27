@@ -3638,6 +3638,50 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_withdraw_from_allocated_fee_payer_is_gated_and_capped() {
+        use solana_system_interface::instruction::{allocate, withdraw_nonce_account};
+
+        let fee_payer = Pubkey::new_unique();
+        let unrelated_authority = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let instructions = vec![
+            allocate(&fee_payer, 80),
+            withdraw_nonce_account(&fee_payer, &unrelated_authority, &recipient, 1_000),
+        ];
+
+        for (allow_withdraw, max_allowed_lamports, expected) in [
+            (false, u64::MAX, "System Withdraw Nonce Account"),
+            (true, 800, "exceeds maximum allowed"),
+        ] {
+            let rpc_client = RpcMockBuilder::new().build();
+            let mut policy = FeePayerPolicy::default();
+            policy.system.allow_allocate = true;
+            policy.system.nonce.allow_withdraw = allow_withdraw;
+            let config = ConfigMockBuilder::new()
+                .with_price_source(PriceSource::Mock)
+                .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+                .with_max_allowed_lamports(max_allowed_lamports)
+                .with_fee_payer_policy(policy)
+                .build();
+            update_config(config).unwrap();
+
+            let config = get_config().unwrap();
+            let validator = TransactionValidator::new(config, fee_payer).unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+            match validator.validate_transaction(config, &mut transaction, &rpc_client).await {
+                Err(KoraError::InvalidTransaction(msg)) => assert!(msg.contains(expected), "{msg}"),
+                other => {
+                    panic!("allow_withdraw={allow_withdraw}: expected rejection, got {other:?}")
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_nonce_authorize() {
         use solana_system_interface::instruction::authorize_nonce_account;
 

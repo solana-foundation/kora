@@ -40,6 +40,7 @@ pub enum ParsedSystemInstructionData {
     },
     SystemWithdrawNonceAccount {
         lamports: u64,
+        nonce_account: Pubkey,
         nonce_authority: Pubkey,
         recipient: Pubkey,
     },
@@ -141,6 +142,7 @@ impl IxUtils {
                     validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                     ParsedSystemInstructionData::SystemWithdrawNonceAccount {
                         lamports,
+                        nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
                         nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
                         recipient: key(ix::RECIPIENT_INDEX),
                     }
