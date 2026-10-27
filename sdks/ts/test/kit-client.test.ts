@@ -213,6 +213,9 @@ describe('createKitKoraClient', () => {
                 'estimateTransactionFee',
                 'signAndSendTransaction',
             ]);
+
+            const signerKeys = mockFetch.mock.calls.slice(2).map(c => JSON.parse(c[1].body).params.signer_key);
+            expect(signerKeys).toEqual([MOCK_PAYER_ADDRESS, MOCK_PAYER_ADDRESS]);
         });
 
         it('should skip payment instruction when fee is 0', async () => {

@@ -65,6 +65,7 @@ export function createKoraTransactionPlanExecutor(
                 const { sourceTokenAccount, destinationTokenAccount } = payment;
                 const { fee_in_token } = await koraClient.estimateTransactionFee({
                     fee_token: config.feeToken,
+                    signer_key: payerSigner.address,
                     transaction: estimationTx,
                 });
 
@@ -136,6 +137,7 @@ export function createKoraTransactionPlanExecutor(
             }
 
             const result = await koraClient.signAndSendTransaction({
+                signer_key: payerSigner.address,
                 transaction: finalTx,
                 user_id: config.userId,
             });
