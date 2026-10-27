@@ -44,6 +44,19 @@ This utility will:
 - `kora_http_requests_total{method, status}` - Counter of HTTP requests by JSON-RPC method and status code
 - `kora_http_request_duration_seconds{method}` - Histogram of request durations by JSON-RPC method
 
+### RPC Failover Metrics
+
+Emitted only when more than one RPC endpoint is configured via `RPC_URLS`.
+
+- `rpc_failovers_total{endpoint_index, reason}` - Requests switched away from an
+  endpoint. `reason` is `server_error`, `transport` or `malformed_response`. A
+  failure on the last endpoint is not counted, because nothing was switched to.
+- `rpc_active_endpoint_index` - Index of the endpoint currently serving. `0` is
+  the primary.
+
+Alert on `rate(rpc_failovers_total[5m]) > 0` to catch a degrading provider before
+it becomes an outage.
+
 ## Monitoring Stack
 
 ### Prometheus Configuration

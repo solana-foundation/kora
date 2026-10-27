@@ -38,6 +38,7 @@ solana-address-lookup-table-interface = { workspace = true }
 solana-loader-v3-interface = { workspace = true }
 solana-loader-v4-interface = { workspace = true }
 solana-client = { workspace = true }
+solana-rpc-client = { workspace = true }
 bs58 = { workspace = true }
 bincode = { workspace = true }
 borsh = { workspace = true }

@@ -33,6 +33,7 @@ jobs:
         test-target:
           [
             rpc,
+            rpc_failover,
             tokens,
             adversarial,
             auth,

@@ -63,6 +63,19 @@ Basic usage:
 kora rpc [OPTIONS] # --help for full list of options
 ```
 
+Point the node at a Solana RPC endpoint with `--rpc-url` (env `RPC_URL`). To survive
+a provider outage, pass a comma-separated list with `--rpc-urls` (env `RPC_URLS`):
+each call is retried against the next endpoint on transport errors or 5xx, and the
+first entry is the primary.
+
+```bash
+kora --rpc-urls https://primary.example/?api-key=KEY,https://api.mainnet-beta.solana.com rpc start
+```
+
+Each endpoint has a circuit breaker: after repeated failures one probe is let
+through after a cooldown, then the endpoint rejoins on success. A 429 is not failed
+over because it reflects the API key, not the provider.
+
 **[→ Full Documentation](https://launch.solana.com/docs/kora/getting-started)** - Learn how Kora works
 
 **[→ Quick Start Guide](https://launch.solana.com/docs/kora/getting-started/quick-start)** - Get Kora running locally minutes

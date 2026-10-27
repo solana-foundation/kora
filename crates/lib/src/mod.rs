@@ -16,6 +16,7 @@ pub mod metrics;
 pub mod oracle;
 pub mod plugin;
 pub mod rpc;
+pub mod rpc_failover;
 pub mod rpc_server;
 pub mod sanitize;
 pub mod signer;
