@@ -24,5 +24,12 @@
     "@types/node": "^24.5.2",
     "tsx": "^4.20.5",
     "typescript": "^5.8.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "body-parser": "2.4.0",
+      "qs": "6.16.1",
+      "zod": "4.6.7"
+    }
   }
 }

@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  zod: 4.6.7
+
 importers:
 
   .:
@@ -655,8 +658,8 @@ packages:
       utf-8-validate:
         optional: true
 
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
@@ -1230,7 +1233,7 @@ snapshots:
 
   '@x402/core@2.28.0':
     dependencies:
-      zod: 3.25.76
+      zod: 4.6.7
 
   '@x402/fetch@2.28.0':
     dependencies:
@@ -1302,4 +1305,4 @@ snapshots:
 
   ws@8.22.0: {}
 
-  zod@3.25.76: {}
+  zod@4.6.7: {}
