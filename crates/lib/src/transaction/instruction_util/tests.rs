@@ -3902,3 +3902,54 @@ fn test_reconstruct_token_metadata_instruction_rejected_for_spl_token_program() 
         "expected spl-token metadata CPI rejection, got {result:?}"
     );
 }
+
+fn reconstruct_parsed_ata(instruction: Instruction) -> (CompiledInstruction, CompiledInstruction) {
+    let ata_program = spl_associated_token_account_interface::program::id();
+    let message = Message::new(&[instruction], None);
+    let compiled = message.instructions[0].clone();
+    let parsed = parse_instruction::parse(
+        &ata_program,
+        &compiled,
+        &AccountKeys::new(&message.account_keys, None),
+        None,
+    )
+    .unwrap();
+
+    let mut account_keys = message.account_keys.clone();
+    let reconstructed = IxUtils::reconstruct_instruction_from_ui(
+        &UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed)),
+        &mut account_keys,
+    )
+    .unwrap();
+    (compiled, reconstructed)
+}
+
+#[test]
+fn test_reconstruct_parsed_ata_create_matches_compiled() {
+    let (compiled, reconstructed) = reconstruct_parsed_ata(
+        spl_associated_token_account_interface::instruction::create_associated_token_account(
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &spl_token_interface::id(),
+        ),
+    );
+
+    assert_eq!(reconstructed, compiled);
+    assert_eq!(reconstructed.data, vec![0]);
+}
+
+#[test]
+fn test_reconstruct_parsed_ata_create_idempotent_matches_compiled() {
+    let (compiled, reconstructed) = reconstruct_parsed_ata(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &spl_token_2022_interface::id(),
+        ),
+    );
+
+    assert_eq!(reconstructed, compiled);
+    assert_eq!(reconstructed.data, vec![1]);
+}

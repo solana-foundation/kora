@@ -201,6 +201,9 @@ allowed_spl_paid_tokens = ["<usdc-mint>"]
 
 # Blocked accounts
 disallowed_accounts = []
+
+# Programs a transaction must call (at least one)
+# require_one_of_programs = []
 ```
 
 **`price_source`**:
@@ -264,6 +267,37 @@ fee payer.
 **Security note**: defaulting to `false` means the policy is safe when under-specified, and each
 `true` is an explicit acceptance of that drain vector. Under `fixed`/`free` pricing the node does
 not price its own SOL outflow, so transfer flags in particular must stay `false`.
+
+### Sponsoring rent for one program
+
+`allow_create_account = true` lets any request make the fee payer fund any account creation.
+`require_one_of_programs` keeps the fee payer from paying fees for transactions that never call
+your program; the `create_account_only_via` plugin keeps it from funding accounts your program
+did not ask for. A relay for one program needs both:
+
+```toml
+[validation]
+allowed_programs = ["<MY_PROGRAM_ID>", "11111111111111111111111111111111", "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"]
+require_one_of_programs = ["<MY_PROGRAM_ID>"]
+
+[validation.fee_payer_policy.system]
+allow_create_account = true
+
+[kora.plugins]
+enabled = ["create_account_only_via"]
+
+[kora.plugins.create_account_only_via]
+programs = ["<MY_PROGRAM_ID>"]
+```
+
+With the plugin enabled, a System `CreateAccount`, `CreateAccountWithSeed` or `CreateAccountAllowPrefund`
+and an Associated Token Account `Create` or `CreateIdempotent` whose payer is the fee payer is
+accepted only when simulation shows it as a CPI, at any depth, under a top-level instruction of a
+listed program. A top-level one is rejected. Creations funded by someone else are not affected.
+The plugin runs on the signing methods. Each listed program must also be in `allowed_programs`;
+`kora config validate` fails when one is not, when the list is empty, or when the list is set
+without enabling the plugin, and warns while `allow_create_account = false`. The listed programs decide which
+accounts the fee payer funds, bounded per request by `max_allowed_lamports`.
 
 ---
 

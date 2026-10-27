@@ -9,9 +9,11 @@ use crate::{
     transaction::VersionedTransactionResolved,
 };
 
+mod plugin_create_account_only_via;
 mod plugin_deploy_authority;
 mod plugin_gas_swap;
 
+use plugin_create_account_only_via::CreateAccountOnlyViaPlugin;
 use plugin_deploy_authority::DeployAuthorityPlugin;
 use plugin_gas_swap::GasSwapPlugin;
 
@@ -82,6 +84,9 @@ impl TransactionPluginRunner {
                 }
                 TransactionPluginType::DeployAuthority => {
                     plugins.push(Box::new(DeployAuthorityPlugin));
+                }
+                TransactionPluginType::CreateAccountOnlyVia => {
+                    plugins.push(Box::new(CreateAccountOnlyViaPlugin));
                 }
             }
         }
