@@ -2,9 +2,6 @@
 ignore = [
     # rsa has no patched release; reached via solana-keychain/jsonwebtoken.
     "RUSTSEC-2023-0071",
-    # rkyv is an inactive optional dependency of rust_decimal; Kora does not enable its
-    # rkyv features.
-    "RUSTSEC-2026-0235",
     # ed25519-dalek 1.0.1 and curve25519-dalek 3.2.0 come from agave-precompiles, which
     # only the tests crate pulls in via surfpool-sdk; neither reaches the kora binary.
     "RUSTSEC-2022-0093",
