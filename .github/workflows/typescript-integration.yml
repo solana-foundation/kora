@@ -22,7 +22,7 @@ env:
 jobs:
   typescript-integration:
     name: Integration Tests
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sunburst"]') }}
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false

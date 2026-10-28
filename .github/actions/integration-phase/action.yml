@@ -1,5 +1,5 @@
 name: "Integration phase"
-description: "Run one prebuilt integration test binary against a prebuilt Kora binary"
+description: "Run one integration test target against a prebuilt Kora binary"
 
 inputs:
   test-target:
@@ -16,15 +16,24 @@ inputs:
 runs:
   using: composite
   steps:
+    - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+      with:
+        toolchain: nightly-2026-07-13
+
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        shared-key: "rust-dev"
+        save-if: false
+
     - name: Download build artifacts
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: ${{ inputs.artifact-name }}
-        path: target/
+        path: target/debug/
 
     - name: Make binaries executable
       shell: bash
-      run: chmod +x target/debug/kora target/test-bins/*
+      run: chmod +x target/debug/kora
 
     - name: Setup Node.js
       if: inputs.setup-node == 'true'
@@ -60,7 +69,6 @@ runs:
 
     - name: Run integration tests
       shell: bash
-      working-directory: tests
       env:
         KORA_TEST_VERBOSE: "1"
-      run: ../target/test-bins/${{ inputs.test-target }}
+      run: cargo test -p tests --test ${{ inputs.test-target }}

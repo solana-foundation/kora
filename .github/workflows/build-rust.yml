@@ -22,7 +22,7 @@ permissions:
 jobs:
   build:
     name: Build Rust Artifacts
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sunburst"]') }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
       artifact-name: ${{ inputs.artifact-name }}-${{ steps.source-hash.outputs.hash }}
@@ -53,22 +53,12 @@ jobs:
       - name: Build workspace
         run: just build
 
-      - name: Compile integration tests
-        run: cargo test --no-run --workspace --message-format=json > target/test-artifacts.json
-
-      - name: Collect integration test binaries
-        run: |
-          mkdir -p target/test-bins
-          jq -r 'select(.reason == "compiler-artifact" and .executable != null and .target.kind == ["test"] and (.manifest_path | endswith("/tests/Cargo.toml"))) | "\(.target.name) \(.executable)"' target/test-artifacts.json \
-            | while read -r name exe; do cp "$exe" "target/test-bins/$name"; done
-          strip --strip-debug target/test-bins/*
-          ls -lh target/test-bins
+      - name: Compile integration test dependencies
+        run: cargo test --no-run --workspace
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.artifact-name }}-${{ steps.source-hash.outputs.hash }}
-          path: |
-            target/debug/kora
-            target/test-bins/
+          path: target/debug/kora
           retention-days: 1
