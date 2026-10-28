@@ -70,6 +70,7 @@ jobs:
             ln -sfn "$CI_CACHE_DIR/target" target
             mkdir -p ~/.cargo && rm -rf ~/.cargo/registry && ln -sfn "$CI_CACHE_DIR/cargo-registry" ~/.cargo/registry
             echo "PNPM_STORE_DIR=$CI_CACHE_DIR/pnpm-store" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CI_CACHE_DIR/rustup" >> "$GITHUB_ENV"
           fi
 
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
@@ -82,10 +83,12 @@ jobs:
           shared-key: "rust-integration"
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      # Checksum freshness: a fresh checkout gives every file a new mtime, which
+      # would otherwise rebuild every workspace crate on a warm target/.
       - name: Build
         run: |
-          cargo build --workspace
-          cargo test --no-run --workspace --message-format=json > "$RUNNER_TEMP/test-artifacts.json"
+          cargo build --workspace -Zchecksum-freshness
+          cargo test --no-run --workspace -Zchecksum-freshness --message-format=json > "$RUNNER_TEMP/test-artifacts.json"
 
       - name: Setup Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -110,22 +113,23 @@ jobs:
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('sdks/pnpm-lock.yaml') }}
           restore-keys: ${{ runner.os }}-pnpm-store-
 
-      - name: Install TypeScript dependencies
-        working-directory: sdks/ts
-        run: pnpm install --frozen-lockfile ${PNPM_STORE_DIR:+--store-dir "$PNPM_STORE_DIR"}
-
       - name: Run integration tests
         run: |
           logs="$RUNNER_TEMP/integration"
           mkdir -p "$logs"
           jq -r 'select(.reason == "compiler-artifact" and .executable != null and .target.kind == ["test"] and (.manifest_path | endswith("/tests/Cargo.toml"))) | "\(.target.name) \(.executable)"' \
             "$RUNNER_TEMP/test-artifacts.json" > "$logs/binaries"
-          cd tests
-          for t in $TARGETS; do
-            exe=$(awk -v t="$t" '$1 == t { print $2 }' "$logs/binaries")
-            if [ -z "$exe" ]; then echo "::error::no test binary for $t"; exit 1; fi
-            ( start=$SECONDS; rc=0; "$exe" > "$logs/$t.log" 2>&1 || rc=$?; echo "$rc $((SECONDS - start))" > "$logs/$t.status" ) &
-          done
+          start_target() {
+            local exe
+            exe=$(awk -v t="$1" '$1 == t { print $2 }' "$logs/binaries")
+            if [ -z "$exe" ]; then echo "::error::no test binary for $1"; exit 1; fi
+            ( cd tests; start=$SECONDS; rc=0; "$exe" > "$logs/$1.log" 2>&1 || rc=$?; echo "$rc $((SECONDS - start))" > "$logs/$1.status" ) &
+          }
+          # The TypeScript targets shell out to jest, so install the SDK's deps
+          # while the Rust targets are already running.
+          for t in $TARGETS; do if [[ $t != typescript_* ]]; then start_target "$t"; fi; done
+          (cd sdks/ts && pnpm install --frozen-lockfile ${PNPM_STORE_DIR:+--store-dir "$PNPM_STORE_DIR"})
+          for t in $TARGETS; do if [[ $t == typescript_* ]]; then start_target "$t"; fi; done
           wait
           failed=0
           { echo "| Target | Result | Time |"; echo "| --- | --- | --- |"; } >> "$GITHUB_STEP_SUMMARY"
