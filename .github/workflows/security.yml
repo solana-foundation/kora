@@ -27,6 +27,7 @@ jobs:
         with:
           tool: cargo-audit
       - run: cargo audit
+      - run: cargo audit -f fuzz/Cargo.lock
 
   pnpm-audit:
     runs-on: ubuntu-latest
