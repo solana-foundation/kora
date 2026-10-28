@@ -41,25 +41,24 @@ jsonrpsee = { version = "0.26.1", features = [
     "http-client",
     "client",
 ] }
-solana-sdk = "4.0.1"
+solana-sdk = "4.1.0"
 solana-commitment-config = "3.1.1"
-# The 4.2.1 client stack requires wincode 0.5 and bounds message <4.5 / transaction <4.2;
-# the upper bounds here exclude the wincode-0.6 releases until upstream moves.
+# message 4.5 / transaction 4.2 are the lines solana-keychain's sdk-v4 lockfile is tested on.
 # solana-sdk is exact-pinned by solana-keychain sdk-v4.
-solana-message = { version = ">=4.4.0,<4.5", features = ["wincode"] }
-solana-transaction = { version = ">=4.1.1,<4.2", features = ["serde", "wincode"] }
-wincode = "0.5"
+solana-message = { version = ">=4.5.0,<4.6", features = ["wincode"] }
+solana-transaction = { version = ">=4.2.0,<4.3", features = ["serde", "wincode"] }
+wincode = "0.6"
 solana-system-interface = "2.0.0"
-solana-transaction-status-client-types = "4.2.1"
-solana-transaction-status = { version = "4.2.1", features = ["agave-unstable-api"] }
+solana-transaction-status-client-types = "4.3.2"
+solana-transaction-status = { version = "4.3.2", features = ["agave-unstable-api"] }
 solana-address-lookup-table-interface = "3.0.0"
 solana-loader-v3-interface = { version = "6.1.0", features = ["bincode", "serde"] }
 solana-loader-v4-interface = { version = "3.1.0", features = ["bincode", "serde"] }
-solana-program = ">=4.0.0,<4.1"
+solana-program = ">=4.1.0,<4.2"
 solana-program-pack = "3.1.0"
 solana-compute-budget-interface = { version = "3.0.0", features = ["borsh"] }
-solana-compute-budget = { version = "4.2.1", features = ["agave-unstable-api"] }
-solana-client = "4.2.1"
+solana-compute-budget = { version = "4.3.2", features = ["agave-unstable-api"] }
+solana-client = "4.3.2"
 solana-nonce = "3.0.0"
 solana-packet = "4.2.0"
 bs58 = "0.5.1"

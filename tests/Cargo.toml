@@ -105,4 +105,4 @@ ctor = "0.6"
 # loadedAccountsDataSize the way a validator counts it only since #831. Without the first,
 # a bundle commit reverts writes that landed while it ran; without the second, v1
 # transactions sized from simulation exceed the loaded-accounts cap.
-surfpool-sdk = "1.6.1"
+surfpool-sdk = "1.7.0"

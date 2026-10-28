@@ -5,6 +5,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use spl_associated_token_account_interface::address::get_associated_token_address;
+use spl_token_2022_interface::{extension::ExtensionType, state::Account as Token2022Account};
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_legacy() {
@@ -329,11 +330,19 @@ async fn test_estimate_fee_comprehensive_with_token_accounts_creation() {
 
     let fee_lamports = response["fee_in_lamports"].as_u64().unwrap();
 
-    // Expected fee breakdown:
-    // - Base fee: ~5000 lamports (for signatures)
-    // - ATA creation rent: 2_039_280 + 2_039_280 = 4_078_560 lamports (2 ATAs)
-    // - Manual token account rent: 2_157_600 lamports (1 manual account, as shown in debug logs)
-    let expected_minimum_fee = 5_000 + 4_078_560 + 2_157_600;
+    let token_2022_ata_len = ExtensionType::try_calculate_account_len::<Token2022Account>(&[
+        ExtensionType::ImmutableOwner,
+        ExtensionType::TransferFeeAmount,
+    ])
+    .expect("Failed to size Token-2022 ATA");
+    let token_2022_ata_rent = ctx
+        .client
+        .rpc_client
+        .get_minimum_balance_for_rent_exemption(token_2022_ata_len)
+        .await
+        .expect("Failed to get Token-2022 ATA rent");
+
+    let expected_minimum_fee = 5_000 + 2 * token_account_rent + token_2022_ata_rent;
 
     assert!(
         fee_lamports >= expected_minimum_fee,
