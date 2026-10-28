@@ -21,7 +21,7 @@ env:
 jobs:
   integration:
     name: Integration Tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sunburst"]') }}
     timeout-minutes: 25
     permissions:
       contents: read
