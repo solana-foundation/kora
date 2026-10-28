@@ -2,17 +2,6 @@
 ignore = [
     # rsa has no patched release; reached via solana-keychain/jsonwebtoken.
     "RUSTSEC-2023-0071",
-    # rustls 0.21, rustls-webpki 0.101, webpki-roots 0.25 and h2 0.3 come from reqwest 0.11
-    # and jsonrpc-core-client, reached only by the tests crate via surfpool-sdk; none reach
-    # the kora binary. The 0.23 / 0.103 / 1.x / 0.4 copies are on patched releases.
-    "RUSTSEC-2026-0104",
-    "RUSTSEC-2026-0098",
-    "RUSTSEC-2026-0099",
-    "RUSTSEC-2026-0258",
-    "RUSTSEC-2026-0346",
-    "RUSTSEC-2026-0349",
-    "RUSTSEC-2026-0382",
-    "RUSTSEC-2026-0381",
     # rkyv is an inactive optional dependency of rust_decimal; Kora does not enable its
     # rkyv features.
     "RUSTSEC-2026-0235",
@@ -26,9 +15,8 @@ ignore = [
     # crypto-bigint 0.5.x has no patched release and is pinned by elliptic-curve 0.13
     # (k256/p256/p384); the fix landed in 0.7.6, which needs elliptic-curve 0.14.
     "RUSTSEC-2026-0387",
-    # zstd 0.13 / zstd-safe 7 are pinned by solana-account-decoder 4.2.1, and the
-    # latest stable 4.3.2 still requires zstd 0.13; the patched 0.14 line arrives with Agave
-    # 4.4. The only zstd input is base64+zstd account data from the operator's own RPC node,
+    # zstd 0.13 / zstd-safe 7 are pinned by solana-account-decoder 4.3.2, the latest stable;
+    # the patched 0.14 line arrives with Agave 4.4. The only zstd input is base64+zstd account data from the operator's own RPC node,
     # decoded with a fresh stream per account (0391 needs a reused context). Kora does not
     # enable zstd-safe's seekable feature (0398). 0403 needs a malicious RPC node sending a
     # legacy-format frame.
