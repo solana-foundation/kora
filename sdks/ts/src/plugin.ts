@@ -211,9 +211,9 @@ export function koraPlugin(config: KoraPluginConfig) {
             async signTransaction(request: SignTransactionRequest): Promise<KitSignTransactionResponse> {
                 const result = await client.signTransaction(request);
                 return {
+                    lighthouse_assertion_added: result.lighthouse_assertion_added,
                     signed_transaction: result.signed_transaction as Base64EncodedWireTransaction,
                     signer_pubkey: address(result.signer_pubkey),
-                    lighthouse_assertion_added: result.lighthouse_assertion_added,
                 };
             },
         },

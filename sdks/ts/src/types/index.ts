@@ -310,7 +310,9 @@ export interface Token2022Config {
  * - `free`: No additional fees charged
  */
 export type PriceModel =
-    { amount: number; token: string; type: 'fixed' } | { margin: number; type: 'margin' } | { type: 'free' };
+    | { amount: number; token: string; type: 'fixed' }
+    | { margin: number; type: 'margin' }
+    | { type: 'free' };
 
 export type PriceConfig = PriceModel;
 

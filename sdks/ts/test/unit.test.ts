@@ -58,7 +58,7 @@ describe('KoraClient Unit Tests', () => {
         });
     };
 
-    const expectRpcCall = (method: string, params: any = undefined) => {
+    const expectRpcCall = (method: string, params?: any) => {
         expect(mockFetch).toHaveBeenCalledWith(mockRpcUrl, {
             body: JSON.stringify({
                 id: 1,
@@ -77,7 +77,7 @@ describe('KoraClient Unit Tests', () => {
         methodName: string,
         clientMethod: () => Promise<any>,
         expectedResult: any,
-        params: any = undefined,
+        params?: any,
     ) => {
         mockSuccessfulResponse(expectedResult);
         const result = await clientMethod();
@@ -265,9 +265,9 @@ describe('KoraClient Unit Tests', () => {
                 transaction: 'base64_encoded_transaction',
             };
             const mockResponse: SignTransactionResponse = {
+                lighthouse_assertion_added: false,
                 signed_transaction: 'base64_signed_transaction',
                 signer_pubkey: 'test_signer_pubkey',
-                lighthouse_assertion_added: false,
             };
 
             await testSuccessfulRpcMethod(
@@ -300,8 +300,8 @@ describe('KoraClient Unit Tests', () => {
 
         it('should pass the respond_after milestone through to the RPC request', async () => {
             const request: SignAndSendTransactionRequest = {
-                transaction: 'base64_encoded_transaction',
                 respond_after: 'signed',
+                transaction: 'base64_encoded_transaction',
             };
             const mockResponse: SignAndSendTransactionResponse = {
                 signature: 'transaction_signature',

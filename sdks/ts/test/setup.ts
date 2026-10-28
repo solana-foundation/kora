@@ -1,3 +1,6 @@
+import path from 'path';
+
+import { tokenProgram, associatedTokenProgram } from '@solana-program/token';
 import {
     Address,
     assertIsAddress,
@@ -9,9 +12,7 @@ import {
 } from '@solana/kit';
 import { solanaLocalRpc } from '@solana/kit-plugin-rpc';
 import { payer } from '@solana/kit-plugin-signer';
-import { tokenProgram, associatedTokenProgram } from '@solana-program/token';
 import { config } from 'dotenv';
-import path from 'path';
 
 import { KoraClient } from '../src/index.js';
 
@@ -43,9 +44,9 @@ const DEFAULTS = {
 
     KORA_RPC_URL: 'http://localhost:8080/',
 
-    SOLANA_RPC_URL: 'http://127.0.0.1:8899',
-
     KORA_SIGNER_TYPE: 'memory',
+
+    SOLANA_RPC_URL: 'http://127.0.0.1:8899',
 
     SOL_DROP_AMOUNT: 1_000_000_000,
 
@@ -119,9 +120,9 @@ export function loadEnvironmentVariables() {
         koraAddress,
         koraRpcUrl,
         koraSignerType,
+        solDropAmount,
         solanaRpcUrl,
         solanaWsUrl,
-        solDropAmount,
         testUsdcMintSecret,
         testWalletSecret,
         tokenDecimals,
@@ -163,7 +164,7 @@ async function setupTestSuite(): Promise<TestSuite> {
             : undefined;
 
     const { testWallet, usdcMint, destinationAddress } = await createKeyPairSigners();
-    const client = await createClient()
+    const client = createClient()
         .use(payer(testWallet))
         .use(
             solanaLocalRpc({
@@ -180,28 +181,28 @@ async function setupTestSuite(): Promise<TestSuite> {
 
         await client.token.instructions
             .createMint({
-                newMint: usdcMint,
                 decimals: tokenDecimals,
                 mintAuthority: testWallet.address,
+                newMint: usdcMint,
             })
             .sendTransaction();
 
         // mintToATA auto-creates the ATA
         await client.token.instructions
             .mintToATA({
-                mint: usdcMint.address,
-                owner: testWallet.address,
-                mintAuthority: testWallet,
                 amount: BigInt(tokenDropAmount * 10 ** tokenDecimals),
                 decimals: tokenDecimals,
+                mint: usdcMint.address,
+                mintAuthority: testWallet,
+                owner: testWallet.address,
             })
             .sendTransaction();
 
         for (const owner of [koraAddress, destinationAddress]) {
             await client.associatedToken.instructions
                 .createAssociatedTokenIdempotent({
-                    owner,
                     mint: usdcMint.address,
+                    owner,
                 })
                 .sendTransaction();
         }

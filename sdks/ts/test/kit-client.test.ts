@@ -1,4 +1,3 @@
-import { createKitKoraClient, kora, type KoraKitClient } from '../src/kit/index.js';
 import {
     AccountRole,
     address,
@@ -14,9 +13,10 @@ import {
     type SignatureDictionary,
     type Transaction,
     type TransactionSigner,
-    signature as kitSignature,
 } from '@solana/kit';
 import { identity, signer } from '@solana/kit-plugin-signer';
+
+import { createKitKoraClient, kora, type KoraKitClient } from '../src/kit/index.js';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch;
@@ -33,8 +33,8 @@ const MOCK_SIGNATURE = '5wBzExmp8yR5M6m4KjV8WT9T6B1NMQkaMbsFWqBoDPBMYWxDx6EuSGxN
 function mockRpcResponse(result: unknown) {
     mockFetch.mockResolvedValueOnce({
         json: jest.fn().mockResolvedValueOnce({
-            jsonrpc: '2.0',
             id: 1,
+            jsonrpc: '2.0',
             result,
         }),
     });
@@ -42,29 +42,29 @@ function mockRpcResponse(result: unknown) {
 
 function mockSimulateResponse(unitsConsumed = 50000, loadedAccountsDataSize = 600_000) {
     const body = JSON.stringify({
-        jsonrpc: '2.0',
         id: 1,
+        jsonrpc: '2.0',
         result: {
             context: { slot: 1 },
             value: { err: null, loadedAccountsDataSize, logs: [], unitsConsumed },
         },
     });
     mockFetch.mockResolvedValueOnce({
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: jest.fn().mockResolvedValueOnce(JSON.parse(body)),
         ok: true,
         status: 200,
         statusText: 'OK',
-        headers: new Headers({ 'content-type': 'application/json' }),
         text: jest.fn().mockResolvedValueOnce(body),
-        json: jest.fn().mockResolvedValueOnce(JSON.parse(body)),
     });
 }
 
 function mockRpcError(code: number, message: string) {
     mockFetch.mockResolvedValueOnce({
         json: jest.fn().mockResolvedValueOnce({
-            jsonrpc: '2.0',
-            id: 1,
             error: { code, message },
+            id: 1,
+            jsonrpc: '2.0',
         }),
     });
 }
@@ -81,15 +81,15 @@ describe('createKitKoraClient', () => {
     describe('initialization', () => {
         it('should fetch payer info on creation', async () => {
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
 
             const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
+                feeToken: MOCK_FEE_TOKEN,
+                rpcUrl: MOCK_RPC_URL,
             });
 
             expect(client.paymentAddress).toBe(MOCK_PAYMENT_ADDRESS);
@@ -107,24 +107,24 @@ describe('createKitKoraClient', () => {
             await expect(
                 createKitKoraClient({
                     endpoint: MOCK_ENDPOINT,
-                    rpcUrl: MOCK_RPC_URL,
-                    feeToken: MOCK_FEE_TOKEN,
                     feePayerWallet: MOCK_WALLET,
+                    feeToken: MOCK_FEE_TOKEN,
+                    rpcUrl: MOCK_RPC_URL,
                 }),
             ).rejects.toThrow('Kora Error -32000: Server error');
         });
 
         it('should expose kora namespace for raw RPC access', async () => {
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
 
             const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
+                feeToken: MOCK_FEE_TOKEN,
+                rpcUrl: MOCK_RPC_URL,
             });
 
             expect(client.kora).toBeDefined();
@@ -135,15 +135,15 @@ describe('createKitKoraClient', () => {
 
         it('should implement Kit plugin interfaces', async () => {
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
 
             const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
+                feeToken: MOCK_FEE_TOKEN,
+                rpcUrl: MOCK_RPC_URL,
             });
 
             // ClientWithPayer
@@ -163,15 +163,15 @@ describe('createKitKoraClient', () => {
 
         beforeEach(async () => {
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
 
             client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
+                feeToken: MOCK_FEE_TOKEN,
+                rpcUrl: MOCK_RPC_URL,
             });
 
             mockFetch.mockClear();
@@ -186,8 +186,8 @@ describe('createKitKoraClient', () => {
             mockRpcResponse({
                 fee_in_lamports: 5000,
                 fee_in_token: 50000,
-                signer_pubkey: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_pubkey: MOCK_PAYER_ADDRESS,
             });
             // Mock signAndSendTransaction
             mockRpcResponse({
@@ -197,9 +197,9 @@ describe('createKitKoraClient', () => {
             });
 
             const dummyIx = {
-                programAddress: address('11111111111111111111111111111111'),
                 accounts: [],
                 data: new Uint8Array(4),
+                programAddress: address('11111111111111111111111111111111'),
             };
 
             const result = await client.sendTransaction([dummyIx]);
@@ -226,8 +226,8 @@ describe('createKitKoraClient', () => {
             mockRpcResponse({
                 fee_in_lamports: 5000,
                 fee_in_token: 50000,
-                signer_pubkey: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_pubkey: MOCK_PAYER_ADDRESS,
             });
             mockRpcResponse({
                 signature: MOCK_SIGNATURE,
@@ -237,9 +237,9 @@ describe('createKitKoraClient', () => {
 
             await client.sendTransaction([
                 {
-                    programAddress: address('11111111111111111111111111111111'),
                     accounts: [],
                     data: new Uint8Array(4),
+                    programAddress: address('11111111111111111111111111111111'),
                 },
             ]);
 
@@ -262,8 +262,8 @@ describe('createKitKoraClient', () => {
             mockRpcResponse({
                 fee_in_lamports: 0,
                 fee_in_token: 0,
-                signer_pubkey: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_pubkey: MOCK_PAYER_ADDRESS,
             });
 
             // Mock signAndSendTransaction
@@ -274,9 +274,9 @@ describe('createKitKoraClient', () => {
             });
 
             const dummyIx = {
-                programAddress: address('11111111111111111111111111111111'),
                 accounts: [],
                 data: new Uint8Array(4),
+                programAddress: address('11111111111111111111111111111111'),
             };
 
             const result = await client.sendTransaction([dummyIx]);
@@ -290,9 +290,9 @@ describe('createKitKoraClient', () => {
             mockRpcError(-32602, 'Invalid transaction');
 
             const dummyIx = {
-                programAddress: address('11111111111111111111111111111111'),
                 accounts: [],
                 data: new Uint8Array(4),
+                programAddress: address('11111111111111111111111111111111'),
             };
 
             // Kit's executor wraps errors — the original RPC error is in the cause chain
@@ -307,15 +307,15 @@ describe('createKitKoraClient', () => {
             mockRpcResponse({
                 fee_in_lamports: 5000,
                 fee_in_token: 50000,
-                signer_pubkey: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_pubkey: MOCK_PAYER_ADDRESS,
             });
             mockRpcError(-32003, 'Transaction failed');
 
             const dummyIx = {
-                programAddress: address('11111111111111111111111111111111'),
                 accounts: [],
                 data: new Uint8Array(4),
+                programAddress: address('11111111111111111111111111111111'),
             };
 
             // Kit's executor wraps errors — the original RPC error is the cause
@@ -330,15 +330,15 @@ describe('createKitKoraClient', () => {
 
         beforeEach(async () => {
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
 
             client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
+                feeToken: MOCK_FEE_TOKEN,
+                rpcUrl: MOCK_RPC_URL,
             });
 
             mockFetch.mockClear();
@@ -346,9 +346,9 @@ describe('createKitKoraClient', () => {
 
         it('should return a transaction message without sending', async () => {
             const dummyIx = {
-                programAddress: address('11111111111111111111111111111111'),
                 accounts: [],
                 data: new Uint8Array(4),
+                programAddress: address('11111111111111111111111111111111'),
             };
 
             const result = await client.planTransaction([dummyIx]);
@@ -364,15 +364,15 @@ describe('createKitKoraClient', () => {
     describe('plugin composition', () => {
         it('should support .use() for extending the client with a Kit plugin', async () => {
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
 
             const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
+                feeToken: MOCK_FEE_TOKEN,
+                rpcUrl: MOCK_RPC_URL,
             });
 
             // Kit plugins must spread the client to preserve existing properties
@@ -391,15 +391,15 @@ describe('createKitKoraClient', () => {
 
         it('should preserve existing properties when extending via plugin spread', async () => {
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
 
             const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
+                feeToken: MOCK_FEE_TOKEN,
+                rpcUrl: MOCK_RPC_URL,
             });
 
             const extended = client.use(<T extends object>(c: T) => ({
@@ -416,16 +416,16 @@ describe('createKitKoraClient', () => {
     describe('auth passthrough', () => {
         it('should pass apiKey to underlying KoraClient', async () => {
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
 
             await createKitKoraClient({
-                endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
-                feePayerWallet: MOCK_WALLET,
                 apiKey: 'test-api-key',
+                endpoint: MOCK_ENDPOINT,
+                feePayerWallet: MOCK_WALLET,
+                feeToken: MOCK_FEE_TOKEN,
+                rpcUrl: MOCK_RPC_URL,
             });
 
             const headers = mockFetch.mock.calls[0][1].headers;
@@ -436,16 +436,16 @@ describe('createKitKoraClient', () => {
             const mockGetToken = jest.fn().mockResolvedValue('test-recaptcha-token');
 
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
 
             await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
+                feeToken: MOCK_FEE_TOKEN,
                 getRecaptchaToken: mockGetToken,
+                rpcUrl: MOCK_RPC_URL,
             });
 
             expect(mockGetToken).toHaveBeenCalledTimes(1);
@@ -457,17 +457,17 @@ describe('createKitKoraClient', () => {
     describe('Token-2022 support', () => {
         it('should accept tokenProgramId in config', async () => {
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
 
             const TOKEN_2022_PROGRAM_ADDRESS = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb' as Address;
 
             const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
+                feeToken: MOCK_FEE_TOKEN,
+                rpcUrl: MOCK_RPC_URL,
                 tokenProgramId: TOKEN_2022_PROGRAM_ADDRESS,
             });
 
@@ -480,9 +480,9 @@ describe('createKitKoraClient', () => {
         const COMPUTE_BUDGET_PROGRAM = 'ComputeBudget111111111111111111111111111111';
 
         const DUMMY_IX = {
-            programAddress: address('11111111111111111111111111111111'),
             accounts: [],
             data: new Uint8Array(4),
+            programAddress: address('11111111111111111111111111111111'),
         };
 
         type ConfigOverrides = {
@@ -493,14 +493,14 @@ describe('createKitKoraClient', () => {
 
         async function clientWith(overrides: ConfigOverrides = {}) {
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
             return await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
-                rpcUrl: MOCK_RPC_URL,
-                feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
+                feeToken: MOCK_FEE_TOKEN,
+                rpcUrl: MOCK_RPC_URL,
                 ...overrides,
             });
         }
@@ -515,8 +515,8 @@ describe('createKitKoraClient', () => {
             mockRpcResponse({
                 fee_in_lamports: 5000,
                 fee_in_token: 50000,
-                signer_pubkey: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_pubkey: MOCK_PAYER_ADDRESS,
             });
             mockRpcResponse({
                 signature: MOCK_SIGNATURE,
@@ -595,8 +595,8 @@ describe('kora() bundle plugin', () => {
 
     it('composes with identity() and exposes the same surface as the wrapper', async () => {
         mockRpcResponse({
-            signer_address: MOCK_PAYER_ADDRESS,
             payment_address: MOCK_PAYMENT_ADDRESS,
+            signer_address: MOCK_PAYER_ADDRESS,
         });
 
         const client = await createClient()
@@ -604,8 +604,8 @@ describe('kora() bundle plugin', () => {
             .use(
                 kora({
                     endpoint: MOCK_ENDPOINT,
-                    rpcUrl: MOCK_RPC_URL,
                     feeToken: MOCK_FEE_TOKEN,
+                    rpcUrl: MOCK_RPC_URL,
                 }),
             );
 
@@ -624,9 +624,11 @@ describe('kora() bundle plugin', () => {
             const countingSigner = {
                 address: addr,
                 signCount: 0,
-                async signTransactions(transactions: readonly Transaction[]): Promise<SignatureDictionary[]> {
+                signTransactions(transactions: readonly Transaction[]): Promise<SignatureDictionary[]> {
                     countingSigner.signCount += 1;
-                    return transactions.map(() => ({ [addr]: new Uint8Array(64).fill(7) as SignatureBytes }));
+                    return Promise.resolve(
+                        transactions.map(() => ({ [addr]: new Uint8Array(64).fill(7) as SignatureBytes })),
+                    );
                 },
             };
             return countingSigner;
@@ -649,16 +651,16 @@ describe('kora() bundle plugin', () => {
         }
 
         const DUMMY_IX = {
-            programAddress: address('11111111111111111111111111111111'),
             accounts: [],
             data: new Uint8Array(4),
+            programAddress: address('11111111111111111111111111111111'),
         };
 
         it('signs exactly once on a paid send, with an unsigned estimation wire', async () => {
             const countingSigner = createCountingSigner(MOCK_WALLET_ADDRESS);
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
 
             const client = await createClient()
@@ -666,8 +668,8 @@ describe('kora() bundle plugin', () => {
                 .use(
                     kora({
                         endpoint: MOCK_ENDPOINT,
-                        rpcUrl: MOCK_RPC_URL,
                         feeToken: MOCK_FEE_TOKEN,
+                        rpcUrl: MOCK_RPC_URL,
                     }),
                 );
 
@@ -677,8 +679,8 @@ describe('kora() bundle plugin', () => {
             mockRpcResponse({
                 fee_in_lamports: 5000,
                 fee_in_token: 50000,
-                signer_pubkey: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
+                signer_pubkey: MOCK_PAYER_ADDRESS,
             });
             mockRpcResponse({
                 signature: MOCK_SIGNATURE,
@@ -702,8 +704,8 @@ describe('kora() bundle plugin', () => {
         it('submits a signed transaction on an unpaid send (no payment address)', async () => {
             const countingSigner = createCountingSigner(MOCK_WALLET_ADDRESS);
             mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: null,
+                signer_address: MOCK_PAYER_ADDRESS,
             });
 
             const client = await createClient()
@@ -711,8 +713,8 @@ describe('kora() bundle plugin', () => {
                 .use(
                     kora({
                         endpoint: MOCK_ENDPOINT,
-                        rpcUrl: MOCK_RPC_URL,
                         feeToken: MOCK_FEE_TOKEN,
+                        rpcUrl: MOCK_RPC_URL,
                     }),
                 );
 
@@ -752,8 +754,8 @@ describe('kora() bundle plugin', () => {
     // extended client.
     it.skip('overrides client.payer when the caller used signer() (sets identity + payer)', async () => {
         mockRpcResponse({
-            signer_address: MOCK_PAYER_ADDRESS,
             payment_address: MOCK_PAYMENT_ADDRESS,
+            signer_address: MOCK_PAYER_ADDRESS,
         });
 
         const client = await createClient()
@@ -761,8 +763,8 @@ describe('kora() bundle plugin', () => {
             .use(
                 kora({
                     endpoint: MOCK_ENDPOINT,
-                    rpcUrl: MOCK_RPC_URL,
                     feeToken: MOCK_FEE_TOKEN,
+                    rpcUrl: MOCK_RPC_URL,
                 }),
             );
 
