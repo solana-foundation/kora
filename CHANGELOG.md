@@ -1,3 +1,29 @@
+## ts-sdk-v0.3.0-beta.4 - 2026-10-28
+
+
+### Breaking Changes
+
+- build v1 transactions (SIMD-0385) in the kit planner and executor, with the compute budget in the message config; `computeUnitPrice` is replaced by `priorityFeeLamports` (#688)
+
+- peer dependency moves to `@solana/kit` ^8.4 (#734)
+
+- `executeTransactionMessage` returns `{ signature }` instead of a bare signature (#635)
+
+
+### Features
+
+- allow an explicit loaded accounts data size limit; setting both v1 resource limits skips simulation (#688)
+
+- accept `@solana/kit-plugin-rpc` 0.22 and `@solana-program/token` 0.18 as peers
+
+
+### Bug Fixes
+
+- pin the discovered payer in kit fee estimation and submission (#747)
+
+- send unsigned wire for fee estimation in kit executor (#633)
+
+
 ## 2.2.0-beta.8 - 2026-07-29
 
 
