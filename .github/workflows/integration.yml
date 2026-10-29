@@ -45,10 +45,12 @@ jobs:
       RUST_LOG: info
       CI: true
       KORA_TEST_VERBOSE: "1"
-      # One embedded surfnet per target. external is excluded: it hits the live Jupiter API.
+      # One embedded surfnet per target, started in this order. usage_limit goes
+      # first because it waits out a 30 s rate window and sets the job's length.
+      # external is excluded: it hits the live Jupiter API.
       TARGETS: >-
-        rpc tokens adversarial auth payment_address multi_signer fee_payer_policy
-        free_signing lighthouse loader_v3_deploy usage_limit
+        usage_limit rpc tokens adversarial auth payment_address multi_signer
+        fee_payer_policy free_signing lighthouse loader_v3_deploy
         typescript_basic typescript_auth typescript_free
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,11 +121,26 @@ jobs:
           mkdir -p "$logs"
           jq -r 'select(.reason == "compiler-artifact" and .executable != null and .target.kind == ["test"] and (.manifest_path | endswith("/tests/Cargo.toml"))) | "\(.target.name) \(.executable)"' \
             "$RUNNER_TEMP/test-artifacts.json" > "$logs/binaries"
+          # All targets share this job's network namespace, and surfnet and Kora pick
+          # ports by probing and releasing an ephemeral one, so two targets starting
+          # at once can collide and hang. Starts are staggered by a second, and a
+          # target that hangs is killed after 3 min and retried once.
           start_target() {
             local exe
             exe=$(awk -v t="$1" '$1 == t { print $2 }' "$logs/binaries")
             if [ -z "$exe" ]; then echo "::error::no test binary for $1"; exit 1; fi
-            ( cd tests; start=$SECONDS; rc=0; "$exe" > "$logs/$1.log" 2>&1 || rc=$?; echo "$rc $((SECONDS - start))" > "$logs/$1.status" ) &
+            (
+              cd tests
+              start=$SECONDS
+              for attempt in 1 2; do
+                rc=0
+                timeout --signal=KILL 180 "$exe" > "$logs/$1.log" 2>&1 || rc=$?
+                [ "$rc" = 137 ] || break
+                echo "::warning::$1 hung for 3 min (attempt $attempt), killed"
+              done
+              echo "$rc $((SECONDS - start))" > "$logs/$1.status"
+            ) &
+            sleep 1
           }
           # The TypeScript targets shell out to jest, so install the SDK's deps
           # while the Rust targets are already running.
