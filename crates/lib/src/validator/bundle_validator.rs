@@ -114,15 +114,24 @@ impl BundleValidator {
             )));
         }
 
-        let allow_all_programs = config.validation.allowed_programs.is_all();
-        let allowed_programs = parse_pubkey_set(config.validation.allowed_programs.as_slice())?;
+        // A program may appear in the bundle if it is admitted by either program set:
+        // allowed_programs (the fee payer may participate) or sponsor_only_programs (runs while the
+        // fee payer does not participate), matching the single-transaction run filter. The
+        // participation safety for signed children is enforced separately by the per-transaction
+        // validator in BundleProcessor::process_bundle.
+        let allow_all_runnable = config.validation.allowed_programs.is_all()
+            || config.validation.sponsor_only_programs.is_all();
+        let mut runnable_programs =
+            parse_pubkey_set(config.validation.allowed_programs.as_slice())?;
+        runnable_programs
+            .extend(parse_pubkey_set(config.validation.sponsor_only_programs.as_slice())?);
         let disallowed_programs = parse_pubkey_set(&config.validation.disallowed_accounts)?;
         let signed_set: HashSet<usize> = signed_indices.iter().copied().collect();
 
         for (tx_idx, tx_result) in simulation_result.transaction_results.iter().enumerate() {
             Self::validate_invoked_programs(
-                allow_all_programs,
-                &allowed_programs,
+                allow_all_runnable,
+                &runnable_programs,
                 &disallowed_programs,
                 &tx_result.logs,
             )?;
@@ -143,8 +152,8 @@ impl BundleValidator {
     }
 
     fn validate_invoked_programs(
-        allow_all_programs: bool,
-        allowed_programs: &HashSet<Pubkey>,
+        allow_all_runnable: bool,
+        runnable_programs: &HashSet<Pubkey>,
         disallowed_programs: &HashSet<Pubkey>,
         logs: &[String],
     ) -> Result<(), KoraError> {
@@ -164,9 +173,9 @@ impl BundleValidator {
                 )));
             }
 
-            if !allow_all_programs && !allowed_programs.contains(&program_id) {
+            if !allow_all_runnable && !runnable_programs.contains(&program_id) {
                 return Err(KoraError::InvalidTransaction(format!(
-                    "Program {} is not in the allowed list",
+                    "Program {} is not in the allowed or sponsor-only list",
                     program_id
                 )));
             }
@@ -457,6 +466,43 @@ mod tests {
         .await;
 
         assert!(result.is_ok(), "wildcard should accept arbitrary program: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_validate_simulation_policy_accepts_sponsor_only_program() {
+        let fee_payer = Pubkey::new_unique();
+        let encoded_transactions = vec![make_test_transaction(&fee_payer)];
+        // Token is only in sponsor_only_programs, not allowed_programs. A bundle invoking it must
+        // still pass program admission (participation safety is enforced per signed tx elsewhere).
+        let config = ConfigMockBuilder::new()
+            .with_max_allowed_lamports(1_000_000)
+            .with_allowed_programs(vec!["11111111111111111111111111111111".to_string()])
+            .with_sponsor_only_programs(crate::config::ProgramsConfig::Allowlist(vec![
+                "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+            ]))
+            .build();
+        let rpc_client = RpcMockBuilder::new().with_fee_estimate(5_000).build();
+
+        let simulation_result = JitoBundleSimulationResult {
+            context: json!({ "slot": 1 }),
+            summary: Some(json!("succeeded")),
+            transaction_results: vec![make_tx_result(
+                vec!["Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [1]".to_string()],
+                Some(1_000_000),
+                Some(1_000_000),
+            )],
+        };
+
+        let result = BundleValidator::validate_simulation_policy(
+            &rpc_client,
+            &config,
+            &encoded_transactions,
+            &[0],
+            &simulation_result,
+        )
+        .await;
+
+        assert!(result.is_ok(), "sponsor-only program should be admitted in a bundle: {result:?}");
     }
 
     #[tokio::test]
