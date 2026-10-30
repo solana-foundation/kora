@@ -1,7 +1,10 @@
 name: Integration Tests
 
-# Owns the one build both suites download: artifacts are scoped to a workflow
-# run, so the suites have to be called from here to share it.
+# One job builds the workspace once and runs every integration target in
+# parallel against that build. On the sunburst-kora runners, target/ and the
+# cargo registry live in a per-runner cache dir ($CI_CACHE_DIR), so most runs
+# are incremental builds. Set the repo variable CI_RUNS_ON to '"ubuntu-latest"'
+# to fall back to GitHub-hosted runners (rust-cache is used there instead).
 on:
   push:
     branches: [main]
@@ -13,10 +16,6 @@ on:
       - "rust-toolchain.toml"
       - "justfile"
       - ".github/workflows/integration.yml"
-      - ".github/workflows/rust-integration.yml"
-      - ".github/workflows/typescript-integration.yml"
-      - ".github/workflows/build-rust.yml"
-      - ".github/actions/integration-phase/**"
       - ".github/actions/cleanup-test-env/**"
   pull_request:
     branches: [main]
@@ -28,38 +27,143 @@ on:
       - "rust-toolchain.toml"
       - "justfile"
       - ".github/workflows/integration.yml"
-      - ".github/workflows/rust-integration.yml"
-      - ".github/workflows/typescript-integration.yml"
-      - ".github/workflows/build-rust.yml"
-      - ".github/actions/integration-phase/**"
       - ".github/actions/cleanup-test-env/**"
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build Artifacts
-    uses: ./.github/workflows/build-rust.yml
-    with:
-      cache-key: "rust-dev"
-      artifact-name: "rust-binaries"
-
-  rust:
-    name: Rust
-    needs: build
+  integration:
+    name: Integration Tests
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sunburst-kora"]') }}
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
-    uses: ./.github/workflows/rust-integration.yml
-    with:
-      artifact-name: ${{ needs.build.outputs.artifact-name }}
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_LOG: info
+      CI: true
+      KORA_TEST_VERBOSE: "1"
+      # One embedded surfnet per target, started in this order. usage_limit goes
+      # first because it waits out a 30 s rate window and sets the job's length.
+      # external is excluded: it hits the live Jupiter API.
+      TARGETS: >-
+        usage_limit rpc tokens adversarial auth payment_address multi_signer
+        fee_payer_policy free_signing lighthouse loader_v3_deploy
+        typescript_basic typescript_auth typescript_free
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-  typescript:
-    name: TypeScript
-    needs: build
-    permissions:
-      contents: read
-    uses: ./.github/workflows/typescript-integration.yml
-    with:
-      artifact-name: ${{ needs.build.outputs.artifact-name }}
+      - name: Fetch Doppler secrets
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: ${{ vars.DOPPLER_PROJECT || 'kora' }}
+          doppler-config: ${{ vars.DOPPLER_CONFIG_CI || 'stg_github' }}
+          inject-env-vars: true
+
+      - name: Use the runner's persistent cache
+        run: |
+          if [ -n "${CI_CACHE_DIR:-}" ]; then
+            mkdir -p "$CI_CACHE_DIR/target" "$CI_CACHE_DIR/cargo-registry" "$CI_CACHE_DIR/pnpm-store"
+            ln -sfn "$CI_CACHE_DIR/target" target
+            mkdir -p ~/.cargo && rm -rf ~/.cargo/registry && ln -sfn "$CI_CACHE_DIR/cargo-registry" ~/.cargo/registry
+            echo "PNPM_STORE_DIR=$CI_CACHE_DIR/pnpm-store" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$CI_CACHE_DIR/rustup" >> "$GITHUB_ENV"
+          fi
+
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: nightly-2026-07-13
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
+        with:
+          shared-key: "rust-integration"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Checksum freshness: a fresh checkout gives every file a new mtime, which
+      # would otherwise rebuild every workspace crate on a warm target/.
+      - name: Build
+        run: |
+          cargo build --workspace -Zchecksum-freshness
+          cargo test --no-run --workspace -Zchecksum-freshness --message-format=json > "$RUNNER_TEMP/test-artifacts.json"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "lts/*"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@739bfe42ca9233c5e6aca07c1a25a9d34aca49b0 # v6.0.7
+        with:
+          version: 11.28.2
+          run_install: false
+
+      - name: Get pnpm store directory
+        if: runner.environment == 'github-hosted'
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        if: runner.environment == 'github-hosted'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('sdks/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
+
+      - name: Run integration tests
+        run: |
+          logs="$RUNNER_TEMP/integration"
+          mkdir -p "$logs"
+          jq -r 'select(.reason == "compiler-artifact" and .executable != null and .target.kind == ["test"] and (.manifest_path | endswith("/tests/Cargo.toml"))) | "\(.target.name) \(.executable)"' \
+            "$RUNNER_TEMP/test-artifacts.json" > "$logs/binaries"
+          # All targets share this job's network namespace, and surfnet and Kora pick
+          # ports by probing and releasing an ephemeral one, so two targets starting
+          # at once can collide and hang. Starts are staggered by a second, and a
+          # target that hangs is killed after 3 min and retried once.
+          start_target() {
+            local exe
+            exe=$(awk -v t="$1" '$1 == t { print $2 }' "$logs/binaries")
+            if [ -z "$exe" ]; then echo "::error::no test binary for $1"; exit 1; fi
+            (
+              cd tests
+              start=$SECONDS
+              for attempt in 1 2; do
+                rc=0
+                timeout --signal=KILL 180 "$exe" > "$logs/$1.attempt$attempt.log" 2>&1 || rc=$?
+                [ "$rc" = 137 ] || break
+                echo "::warning::$1 hung for 3 min (attempt $attempt), killed"
+              done
+              echo "$rc $((SECONDS - start))" > "$logs/$1.status"
+            ) &
+            sleep 1
+          }
+          # The TypeScript targets shell out to jest, so install the SDK's deps
+          # while the Rust targets are already running.
+          for t in $TARGETS; do if [[ $t != typescript_* ]]; then start_target "$t"; fi; done
+          (cd sdks/ts && pnpm install --frozen-lockfile ${PNPM_STORE_DIR:+--store-dir "$PNPM_STORE_DIR"})
+          for t in $TARGETS; do if [[ $t == typescript_* ]]; then start_target "$t"; fi; done
+          wait
+          failed=0
+          { echo "| Target | Result | Time |"; echo "| --- | --- | --- |"; } >> "$GITHUB_STEP_SUMMARY"
+          for t in $TARGETS; do
+            read -r rc secs < "$logs/$t.status"
+            result=$([ "$rc" = 0 ] && echo passed || echo FAILED)
+            echo "::group::$t: $result in ${secs}s"
+            for log in "$logs/$t".attempt*.log; do
+              if [ "$log" != "$logs/$t.attempt1.log" ]; then echo "--- attempt ${log##*.attempt} ---"; fi
+              cat "$log"
+            done
+            echo "::endgroup::"
+            echo "| $t | $([ "$rc" = 0 ] && echo ✅ || echo ❌) | ${secs}s |" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$rc" != 0 ]; then echo "::error title=$t failed::exit code $rc, see the $t log group"; failed=1; fi
+          done
+          exit $failed
+
+      - name: Cleanup test environment
+        if: always()
+        uses: ./.github/actions/cleanup-test-env
