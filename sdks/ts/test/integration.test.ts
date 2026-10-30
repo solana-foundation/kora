@@ -176,6 +176,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(config.validation_config.fee_payer_policy.token_2022.allow_mint_to).toBeDefined();
             expect(config.validation_config.fee_payer_policy.token_2022.allow_freeze_account).toBeDefined();
             expect(config.validation_config.fee_payer_policy.token_2022.allow_thaw_account).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_reallocate).toBeDefined();
             expect(config.enabled_methods).toBeDefined();
             expect(config.enabled_methods.liveness).toBeDefined();
             expect(config.enabled_methods.estimate_transaction_fee).toBeDefined();

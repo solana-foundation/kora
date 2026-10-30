@@ -246,7 +246,7 @@ Sections, each named after the program it gates:
 [validation.fee_payer_policy.system]                  # transfer, assign, create_account, allocate
 [validation.fee_payer_policy.system.nonce]            # initialize, advance, authorize, withdraw
 [validation.fee_payer_policy.spl_token]
-[validation.fee_payer_policy.token_2022]              # spl_token's flags plus extension-authority ones
+[validation.fee_payer_policy.token_2022]              # spl_token's flags plus extension-authority and reallocate
 [validation.fee_payer_policy.alt]                     # create, extend, freeze, deactivate, close
 [validation.fee_payer_policy.bpf_loader_upgradeable]
 [validation.fee_payer_policy.loader_v4]
@@ -260,6 +260,8 @@ rejects unknown keys, which makes it a reliable check on a hand-written policy.
 A couple of guards are deliberately *not* flag-gated and always apply: BPF Loader Upgradeable
 `Close` with a foreign recipient, and Loader v4 `SetProgramLength` with a recipient other than the
 fee payer.
+
+Some gated instructions fund rent through a System Transfer CPI from the fee payer, and simulation surfaces that CPI to the `system` section too. Token-2022 `Reallocate` with the fee payer as `payer` and ALT `ExtendLookupTable` both need `system.allow_transfer = true` on top of their own flag, and the rent counts toward `max_allowed_lamports`.
 
 **Security note**: defaulting to `false` means the policy is safe when under-specified, and each
 `true` is an explicit acceptance of that drain vector. Under `fixed`/`free` pricing the node does
