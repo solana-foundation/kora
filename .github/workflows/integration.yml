@@ -134,7 +134,7 @@ jobs:
               start=$SECONDS
               for attempt in 1 2; do
                 rc=0
-                timeout --signal=KILL 180 "$exe" > "$logs/$1.log" 2>&1 || rc=$?
+                timeout --signal=KILL 180 "$exe" > "$logs/$1.attempt$attempt.log" 2>&1 || rc=$?
                 [ "$rc" = 137 ] || break
                 echo "::warning::$1 hung for 3 min (attempt $attempt), killed"
               done
@@ -154,7 +154,10 @@ jobs:
             read -r rc secs < "$logs/$t.status"
             result=$([ "$rc" = 0 ] && echo passed || echo FAILED)
             echo "::group::$t: $result in ${secs}s"
-            cat "$logs/$t.log"
+            for log in "$logs/$t".attempt*.log; do
+              if [ "$log" != "$logs/$t.attempt1.log" ]; then echo "--- attempt ${log##*.attempt} ---"; fi
+              cat "$log"
+            done
             echo "::endgroup::"
             echo "| $t | $([ "$rc" = 0 ] && echo ✅ || echo ❌) | ${secs}s |" >> "$GITHUB_STEP_SUMMARY"
             if [ "$rc" != 0 ]; then echo "::error title=$t failed::exit code $rc, see the $t log group"; failed=1; fi
