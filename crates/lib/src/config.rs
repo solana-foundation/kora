@@ -566,9 +566,9 @@ pub enum TransferHookPolicy {
     /// Reject mutable TransferHook authority on all signing flows.
     #[default]
     DenyAll,
-    /// Reject mutable TransferHook authority only on delayed-signing flows
-    /// (signTransaction/signBundle). Allow it for `allowed_tokens` mints on immediate
-    /// sign-and-send flows.
+    /// Reject mutable TransferHook authority on delayed-signing flows
+    /// (signTransaction/signBundle). On immediate sign-and-send flows, allow it only for
+    /// `allowed_tokens` mints.
     DenyMutableForDelayedSigning,
     /// Allow mutable TransferHook authority for `allowed_tokens` mints on all flows.
     AllowAll,

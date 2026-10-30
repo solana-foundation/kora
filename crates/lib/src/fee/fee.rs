@@ -452,7 +452,7 @@ mod tests {
             price::{PriceConfig, PriceModel},
         },
         tests::{
-            account_mock::{AccountMockBuilder, MintAccountMockBuilder},
+            account_mock::{AccountMockBuilder, MintAccountMockBuilder, TokenAccountMockBuilder},
             common::{
                 create_mock_rpc_client_with_account, create_mock_token_account,
                 setup_or_get_test_config, setup_or_get_test_signer,
@@ -703,6 +703,142 @@ mod tests {
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("Mutable transfer-hook authority found on mint account"));
+    }
+
+    async fn estimate_free_fee_with_allow_all_hook_policy(
+        allowed_mints: &[Pubkey],
+        instructions: &[Instruction],
+        owner: &Pubkey,
+        rpc_accounts: Vec<&Account>,
+    ) -> Result<TotalFeeCalculation, KoraError> {
+        let mut config = ConfigMockBuilder::new().with_cache_enabled(false).build();
+        config.validation.price = PriceConfig { model: PriceModel::Free };
+        config.validation.token_2022.transfer_hook_policy = TransferHookPolicy::AllowAll;
+        config.validation.allowed_tokens.extend(allowed_mints.iter().map(Pubkey::to_string));
+        let _lock =
+            ConfigMockBuilder::new().with_validation(config.validation.clone()).build_and_setup();
+
+        let message = VersionedMessage::Legacy(Message::new(instructions, Some(owner)));
+        let mut resolved_tx = TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
+            .expect("failed to build resolved transaction");
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(rpc_accounts);
+
+        let config = get_config().unwrap();
+        FeeConfigUtil::estimate_kora_fee(
+            &mut resolved_tx,
+            owner,
+            config.validation.is_payment_required(),
+            &rpc_client,
+            &config,
+            TransferHookValidationFlow::DelayedSigning,
+            None,
+        )
+        .await
+    }
+
+    fn mutable_transfer_hook_mint_account() -> Account {
+        MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(spl_token_2022_interface::extension::ExtensionType::TransferHook)
+            .with_transfer_hook_authority(Some(Pubkey::new_unique()))
+            .with_transfer_hook_program_id(Some(Pubkey::new_unique()))
+            .build_token2022()
+    }
+
+    fn token2022_transfer_checked(owner: &Pubkey, mint: &Pubkey) -> Instruction {
+        spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+            mint,
+            &Pubkey::new_unique(),
+            owner,
+            &[],
+            1,
+            6,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_free_allow_all_exemption_is_per_mint() {
+        let owner = Pubkey::new_unique();
+        let listed_mint = Pubkey::new_unique();
+        let unlisted_mint = Pubkey::new_unique();
+        let unlisted_mint_account = mutable_transfer_hook_mint_account();
+
+        let result = estimate_free_fee_with_allow_all_hook_policy(
+            &[listed_mint],
+            &[
+                token2022_transfer_checked(&owner, &listed_mint),
+                token2022_transfer_checked(&owner, &unlisted_mint),
+            ],
+            &owner,
+            vec![&unlisted_mint_account],
+        )
+        .await;
+
+        let msg = result.expect_err("unlisted mutable-hook mint must be rejected").to_string();
+        assert!(msg.contains(&format!(
+            "Mutable transfer-hook authority found on mint account {unlisted_mint}"
+        )));
+    }
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_free_allow_all_resolves_legacy_transfer_mint_for_exemption() {
+        for listed in [true, false] {
+            let owner = Pubkey::new_unique();
+            let mint = Pubkey::new_unique();
+            let source = Pubkey::new_unique();
+            let source_account = TokenAccountMockBuilder::new()
+                .with_mint(&mint)
+                .with_owner(&owner)
+                .build_token2022();
+            let mint_account = mutable_transfer_hook_mint_account();
+
+            #[allow(deprecated)]
+            let transfer_ix = spl_token_2022_interface::instruction::transfer(
+                &spl_token_2022_interface::id(),
+                &source,
+                &Pubkey::new_unique(),
+                &owner,
+                &[],
+                1,
+            )
+            .unwrap();
+
+            let allowed_mints = if listed { vec![mint] } else { vec![] };
+            let result = estimate_free_fee_with_allow_all_hook_policy(
+                &allowed_mints,
+                &[transfer_ix],
+                &owner,
+                vec![&source_account, &mint_account],
+            )
+            .await;
+
+            if listed {
+                assert!(result.is_ok(), "listed legacy-transfer mint must be exempt: {result:?}");
+            } else {
+                let msg = result.expect_err("unlisted legacy-transfer mint must be rejected");
+                assert!(msg.to_string().contains("Mutable transfer-hook authority found"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_free_allow_all_allows_unlisted_mint_without_transfer_hook() {
+        let owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build_token2022();
+
+        let result = estimate_free_fee_with_allow_all_hook_policy(
+            &[],
+            &[token2022_transfer_checked(&owner, &mint)],
+            &owner,
+            vec![&mint_account],
+        )
+        .await;
+
+        assert!(result.is_ok(), "unlisted mint without a hook must pass: {result:?}");
     }
 
     #[tokio::test]
