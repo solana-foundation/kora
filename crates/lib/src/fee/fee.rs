@@ -557,17 +557,21 @@ mod tests {
         transfer_hook_policy: TransferHookPolicy,
         transfer_hook_validation_flow: TransferHookValidationFlow,
         use_transfer_fee_extension: bool,
+        mint_in_allowed_tokens: bool,
     ) -> Result<TotalFeeCalculation, KoraError> {
-        let mut config = ConfigMockBuilder::new().with_cache_enabled(false).build();
-        config.validation.price = PriceConfig { model: PriceModel::Free };
-        config.validation.token_2022.transfer_hook_policy = transfer_hook_policy;
-        let _lock =
-            ConfigMockBuilder::new().with_validation(config.validation.clone()).build_and_setup();
-
         let owner = Pubkey::new_unique();
         let source = Pubkey::new_unique();
         let destination = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
+
+        let mut config = ConfigMockBuilder::new().with_cache_enabled(false).build();
+        config.validation.price = PriceConfig { model: PriceModel::Free };
+        config.validation.token_2022.transfer_hook_policy = transfer_hook_policy;
+        if mint_in_allowed_tokens {
+            config.validation.allowed_tokens.push(mint.to_string());
+        }
+        let _lock =
+            ConfigMockBuilder::new().with_validation(config.validation.clone()).build_and_setup();
 
         let mut resolved_tx = if use_transfer_fee_extension {
             create_token2022_transfer_checked_with_fee_resolved_transaction(
@@ -612,6 +616,7 @@ mod tests {
             TransferHookPolicy::DenyMutableForDelayedSigning,
             TransferHookValidationFlow::DelayedSigning,
             false,
+            true,
         )
         .await;
 
@@ -627,6 +632,7 @@ mod tests {
             TransferHookPolicy::DenyMutableForDelayedSigning,
             TransferHookValidationFlow::ImmediateSignAndSend,
             false,
+            true,
         )
         .await;
 
@@ -642,6 +648,7 @@ mod tests {
             TransferHookPolicy::DenyAll,
             TransferHookValidationFlow::ImmediateSignAndSend,
             false,
+            true,
         )
         .await;
 
@@ -657,12 +664,45 @@ mod tests {
             TransferHookPolicy::AllowAll,
             TransferHookValidationFlow::DelayedSigning,
             false,
+            true,
         )
         .await;
 
         assert!(result.is_ok());
         let calculation = result.unwrap();
         assert_eq!(calculation.total_fee_lamports, 0);
+    }
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_free_rejects_mutable_transfer_hook_on_unlisted_mint_when_policy_is_allow_all(
+    ) {
+        let result = estimate_free_fee_with_mutable_transfer_hook(
+            TransferHookPolicy::AllowAll,
+            TransferHookValidationFlow::DelayedSigning,
+            false,
+            false,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("Mutable transfer-hook authority found on mint account"));
+    }
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_free_rejects_mutable_transfer_hook_on_unlisted_mint_for_immediate_sign_and_send(
+    ) {
+        let result = estimate_free_fee_with_mutable_transfer_hook(
+            TransferHookPolicy::DenyMutableForDelayedSigning,
+            TransferHookValidationFlow::ImmediateSignAndSend,
+            false,
+            false,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("Mutable transfer-hook authority found on mint account"));
     }
 
     #[tokio::test]
@@ -723,6 +763,7 @@ mod tests {
         let result = estimate_free_fee_with_mutable_transfer_hook(
             TransferHookPolicy::DenyMutableForDelayedSigning,
             TransferHookValidationFlow::DelayedSigning,
+            true,
             true,
         )
         .await;

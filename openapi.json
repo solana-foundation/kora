@@ -418,7 +418,7 @@
           },
           "allow_withdraw": {
             "type": "boolean",
-            "description": "Allow fee payer to be the nonce authority in WithdrawNonceAccount instructions"
+            "description": "Allow fee payer to be the nonce authority or the nonce account in WithdrawNonceAccount\ninstructions"
           }
         },
         "additionalProperties": false
@@ -931,6 +931,7 @@
       },
       "TransferHookPolicy": {
         "type": "string",
+        "description": "Which signing flows accept a mutable TransferHook authority on mints listed in\n`allowed_tokens`. Transfers of any other mint with a mutable authority are rejected under\nevery policy.",
         "enum": [
           "deny_all",
           "deny_mutable_for_delayed_signing",

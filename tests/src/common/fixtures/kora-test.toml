@@ -45,6 +45,7 @@ allowed_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
     "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
     "AtCGtK6HPgdpk2c2LcpZimbH8dtHXYmJdoKsawWNCh2m", # Test Interest Bearing mint 2022 for local testing
+    "89hS8DdcJ988zi4W7ixJX5jNy2nwr68wiDnw5f7QkrAw", # Test transfer-hook mint 2022 for local testing
 ]
 allowed_spl_paid_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
