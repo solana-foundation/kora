@@ -45,7 +45,7 @@ impl CreateAccountOnlyViaPlugin {
                 }
                 InstructionOrigin::Inner { caller_index: Some(caller_index), .. } => {
                     let caller = all_instructions[*caller_index].program_id;
-                    // The ATA Create above this System call is a creation too, judged on its own caller.
+                    // The ATA Create above this call is judged on its own caller.
                     if programs.contains(&caller)
                         || (caller == ATA_PROGRAM_ID && instruction.program_id == SYSTEM_PROGRAM_ID)
                     {
@@ -214,7 +214,7 @@ mod tests {
                 .await
         }
 
-        /// Validates `top_level` plus `inner` CPIs, each as `(parent index, caller index, instruction)`.
+        /// Validates `top_level` plus `inner` as `(parent, caller, instruction)`.
         async fn validate_with(
             &self,
             top_level: &[Instruction],

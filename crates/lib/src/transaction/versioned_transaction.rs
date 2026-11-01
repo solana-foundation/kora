@@ -63,8 +63,7 @@ fn get_or_try_init<T>(
 pub enum InstructionOrigin {
     /// Listed in the message itself.
     TopLevel,
-    /// A CPI under the top-level instruction at `all_instructions[parent_index]`, made directly by
-    /// `all_instructions[caller_index]`. `caller_index` is `None` when simulation does not show the caller.
+    /// A CPI under top-level `parent_index`, made by `caller_index` (`None` if unknown).
     Inner { parent_index: usize, caller_index: Option<usize> },
 }
 
@@ -78,7 +77,7 @@ impl CallStack {
 
     /// Records the next inner instruction and returns its direct caller, if known.
     fn enter(&mut self, stack_height: Option<u32>, index: usize) -> Option<usize> {
-        // Without a usable height the open calls can no longer be trusted, so later ones get no caller.
+        // Heights are unreliable from here, so later instructions get no caller.
         let Some(height) = stack_height.filter(|height| *height >= 2) else {
             self.0.clear();
             return None;
