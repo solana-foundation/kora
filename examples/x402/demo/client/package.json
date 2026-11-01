@@ -25,5 +25,10 @@
     "@types/node": "^24.0.13",
     "tsx": "^4.20.5",
     "typescript": "^5.8.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "zod": "4.6.7"
+    }
   }
 }

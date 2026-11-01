@@ -5,4 +5,4 @@ allowBuilds:
   '@parcel/watcher': false
   unrs-resolver: true
 
-auditConfig: { ignoreGhsas: null }
+auditConfig: { ignoreGhsas: ['GHSA-gcqx-w48m-w2h4'] }

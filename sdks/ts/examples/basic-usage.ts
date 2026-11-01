@@ -1,3 +1,4 @@
+import { findAssociatedTokenPda, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import {
     address,
     Address,
@@ -16,7 +17,6 @@ import {
     setTransactionMessageLifetimeUsingBlockhash,
     type TransactionSigner,
 } from '@solana/kit';
-import { findAssociatedTokenPda, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 
 import { KoraClient } from '../src/index.js';
 
@@ -25,7 +25,7 @@ async function loadKeypairSignerFromEnvironmentBase58(envVar: string): Promise<K
     if (!privateKey) {
         throw new Error(`Environment variable ${envVar} is not set`);
     }
-    return createKeyPairSignerFromBytes(getBase58Encoder().encode(privateKey));
+    return await createKeyPairSignerFromBytes(getBase58Encoder().encode(privateKey));
 }
 
 async function buildTransferInstruction(mint: Address, sender: KeyPairSigner, recipient: Address, amount: bigint) {

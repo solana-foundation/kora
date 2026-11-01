@@ -1,3 +1,10 @@
+import { getTransferSolInstruction } from '@solana-program/system';
+import {
+    findAssociatedTokenPda,
+    getTransferInstruction,
+    TOKEN_PROGRAM_ADDRESS,
+    tokenProgram,
+} from '@solana-program/token';
 import {
     address,
     Address,
@@ -20,16 +27,9 @@ import {
     type TransactionSigner,
 } from '@solana/kit';
 import { identity } from '@solana/kit-plugin-signer';
-import { getTransferSolInstruction } from '@solana-program/system';
-import {
-    findAssociatedTokenPda,
-    getTransferInstruction,
-    TOKEN_PROGRAM_ADDRESS,
-    tokenProgram,
-} from '@solana-program/token';
 
-import { kora } from '../src/kit/index.js';
 import { KoraClient } from '../src/index.js';
+import { kora } from '../src/kit/index.js';
 import { runAuthenticationTests } from './auth-setup.js';
 import setupTestSuite from './setup.js';
 
@@ -176,6 +176,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(config.validation_config.fee_payer_policy.token_2022.allow_mint_to).toBeDefined();
             expect(config.validation_config.fee_payer_policy.token_2022.allow_freeze_account).toBeDefined();
             expect(config.validation_config.fee_payer_policy.token_2022.allow_thaw_account).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_reallocate).toBeDefined();
             expect(config.enabled_methods).toBeDefined();
             expect(config.enabled_methods.liveness).toBeDefined();
             expect(config.enabled_methods.estimate_transaction_fee).toBeDefined();
@@ -299,18 +300,12 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
                 tokenProgram: TOKEN_PROGRAM_ADDRESS,
             });
 
-            const {
-                payment_instruction,
-                payment_amount: _payment_amount,
-                payment_token,
-                payment_address,
-                signer_address,
-                original_transaction,
-            } = await client.getPaymentInstruction({
-                fee_token: usdcMint,
-                source_wallet: testWalletAddress,
-                transaction,
-            });
+            const { payment_instruction, payment_token, payment_address, signer_address, original_transaction } =
+                await client.getPaymentInstruction({
+                    fee_token: usdcMint,
+                    source_wallet: testWalletAddress,
+                    transaction,
+                });
             expect(payment_instruction).toBeDefined();
             expect(payment_instruction.programAddress).toBe(TOKEN_PROGRAM_ADDRESS);
             expect(payment_instruction.accounts?.[0].address).toBe(expectedSenderAta);
@@ -420,13 +415,13 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
             async function buildFreeClient() {
                 const koraRpcUrl = process.env.KORA_RPC_URL || 'http://127.0.0.1:8080';
-                return createClient()
+                return await createClient()
                     .use(identity(testWallet))
                     .use(
                         kora({
                             endpoint: koraRpcUrl,
-                            rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
                             feeToken: usdcMint,
+                            rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
                         }),
                     );
             }
@@ -437,9 +432,9 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
             it('should send transaction without payment instruction when fee is 0', async () => {
                 const ix = getTransferSolInstruction({
-                    source: testWallet,
-                    destination: address(koraAddress),
                     amount: 1000,
+                    destination: address(koraAddress),
+                    source: testWallet,
                 });
 
                 const result = await freeClient.sendTransaction([ix]);
@@ -449,9 +444,9 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
             it('should strip placeholder from planned message when fee is 0', async () => {
                 const ix = getTransferSolInstruction({
-                    source: testWallet,
-                    destination: address(koraAddress),
                     amount: 1000,
+                    destination: address(koraAddress),
+                    source: testWallet,
                 });
 
                 const result = await freeClient.sendTransaction([ix]);
@@ -465,13 +460,13 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
         async function buildPaidClient() {
             const koraRpcUrl = process.env.KORA_RPC_URL || 'http://127.0.0.1:8080';
-            return createClient()
+            return await createClient()
                 .use(identity(testWallet))
                 .use(
                     kora({
                         endpoint: koraRpcUrl,
-                        rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
                         feeToken: usdcMint,
+                        rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
                         ...(AUTH_ENABLED && {
                             apiKey: process.env.KORA_API_KEY || 'test-api-key-123',
                             hmacSecret: process.env.KORA_HMAC_SECRET || 'test-hmac-secret-456',

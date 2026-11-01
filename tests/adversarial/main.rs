@@ -5,11 +5,13 @@
 //        - Program validation attacks (disallowed programs)
 //        - Invalid token states (frozen)
 //        - Fee payer exploitation
+//        - Token-2022 Reallocate rent counted as fee payer outflow
 //        - Request body size limit (DDOS protection)
 
 mod body_size_limit;
 mod fee_payer_exploitation;
 mod program_validation;
+mod token_2022_reallocate;
 mod token_states;
 
 // Make common utilities available

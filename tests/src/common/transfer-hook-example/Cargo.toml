@@ -14,7 +14,7 @@ no-entrypoint = []
 default = []
 
 [dependencies]
-solana-program = "1.18"
-spl-transfer-hook-interface = "0.6"
-spl-tlv-account-resolution = "0.6"
-spl-type-length-value = "0.4"
+solana-program = "3.0"
+solana-system-interface = { version = "2.0", features = ["bincode"] }
+spl-transfer-hook-interface = "2.1"
+spl-tlv-account-resolution = "0.11"

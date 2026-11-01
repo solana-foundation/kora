@@ -32,7 +32,7 @@ pub struct SignAndSendBundleRequest {
     pub sign_only_indices: Option<Vec<usize>>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SignAndSendBundleResponse {
     /// Array of base64-encoded signed transactions
     pub signed_transactions: Vec<String>,

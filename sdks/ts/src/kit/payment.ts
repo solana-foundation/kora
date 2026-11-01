@@ -1,4 +1,3 @@
-import { type Address, type Instruction, type TransactionSigner } from '@solana/kit';
 import {
     findAssociatedTokenPda,
     getTransferInstruction,
@@ -6,6 +5,7 @@ import {
     TOKEN_PROGRAM_ADDRESS,
     TRANSFER_DISCRIMINATOR,
 } from '@solana-program/token';
+import { type Address, type Instruction, type TransactionSigner } from '@solana/kit';
 
 /** Plugin that adds a `paymentAddress` to the client. */
 export function koraPaymentAddress(paymentAddress?: Address) {

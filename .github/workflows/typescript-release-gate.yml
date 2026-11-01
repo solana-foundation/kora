@@ -1,0 +1,35 @@
+name: TypeScript Release Gate
+
+# typescript-publish.yml builds with build-rust.yml and gates the release on
+# typescript-integration.yml, which routine integration CI no longer uses.
+# Run that same path on GitHub-hosted runners whenever a PR changes it.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-rust.yml"
+      - ".github/workflows/typescript-integration.yml"
+      - ".github/workflows/typescript-publish.yml"
+      - ".github/workflows/typescript-release-gate.yml"
+      - ".github/actions/integration-phase/**"
+      - ".github/actions/cleanup-test-env/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Artifacts
+    uses: ./.github/workflows/build-rust.yml
+    with:
+      cache-key: "rust-dev"
+      artifact-name: "rust-binaries-release-gate"
+
+  typescript:
+    name: TypeScript
+    needs: build
+    permissions:
+      contents: read
+    uses: ./.github/workflows/typescript-integration.yml
+    with:
+      artifact-name: ${{ needs.build.outputs.artifact-name }}

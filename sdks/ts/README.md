@@ -2,7 +2,6 @@
 
 A TypeScript SDK for interacting with the Kora RPC server. This SDK provides a type-safe interface to all Kora RPC methods (requires a Kora RPC server to be running).
 
-
 ## Installation
 
 ```bash
@@ -19,7 +18,7 @@ const client = new KoraClient({ rpcUrl: 'http://localhost:8080' });
 
 // Example: Get Kora to sign a transaction
 const result = await client.signTransaction({
-  transaction: 'myBase64EncodedTransaction'
+    transaction: 'myBase64EncodedTransaction',
 });
 
 // Access the signed transaction (base64 encoded)
@@ -70,4 +69,3 @@ KORA_RPC_URL=http://127.0.0.1:8080 SOLANA_RPC_URL=http://127.0.0.1:8899 pnpm tes
 
 Setup seeds the mint and wallets itself when they are absent, so this works
 against a bare validator as well as against the seeded harness.
-

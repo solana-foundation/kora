@@ -183,6 +183,7 @@ async fn test_fee_payer_policy_is_present() {
     assert!(token_2022.contains_key("allow_mint_to"));
     assert!(token_2022.contains_key("allow_freeze_account"));
     assert!(token_2022.contains_key("allow_thaw_account"));
+    assert!(token_2022.contains_key("allow_reallocate"));
     assert_eq!(token_2022["allow_transfer"], true);
     assert_eq!(token_2022["allow_burn"], true);
     assert_eq!(token_2022["allow_close_account"], true);
@@ -192,6 +193,7 @@ async fn test_fee_payer_policy_is_present() {
     assert_eq!(token_2022["allow_mint_to"], true);
     assert_eq!(token_2022["allow_freeze_account"], true);
     assert_eq!(token_2022["allow_thaw_account"], true);
+    assert_eq!(token_2022["allow_reallocate"], true);
 
     // Validate ALT policy structure
     let alt = fee_payer_policy["alt"].as_object().expect("Expected alt policy object");

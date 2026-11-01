@@ -40,7 +40,7 @@ pub struct SignTransactionRequest {
 }
 
 /// Response payload containing the signed transaction.
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SignTransactionResponse {
     /// Base64-encoded transaction signed by the Kora fee payer
     pub signed_transaction: String,

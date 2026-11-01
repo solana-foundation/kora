@@ -456,7 +456,8 @@ impl TransactionValidator {
             config,
         )
         .await?;
-        Ok(net.max(0) as u64)
+        u64::try_from(net.max(0))
+            .map_err(|_| KoraError::ValidationError("Outflow calculation overflow".to_string()))
     }
 
     pub async fn validate_token_payment(
@@ -3646,6 +3647,50 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_withdraw_from_allocated_fee_payer_is_gated_and_capped() {
+        use solana_system_interface::instruction::{allocate, withdraw_nonce_account};
+
+        let fee_payer = Pubkey::new_unique();
+        let unrelated_authority = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let instructions = vec![
+            allocate(&fee_payer, 80),
+            withdraw_nonce_account(&fee_payer, &unrelated_authority, &recipient, 1_000),
+        ];
+
+        for (allow_withdraw, max_allowed_lamports, expected) in [
+            (false, u64::MAX, "System Withdraw Nonce Account"),
+            (true, 800, "exceeds maximum allowed"),
+        ] {
+            let rpc_client = RpcMockBuilder::new().build();
+            let mut policy = FeePayerPolicy::default();
+            policy.system.allow_allocate = true;
+            policy.system.nonce.allow_withdraw = allow_withdraw;
+            let config = ConfigMockBuilder::new()
+                .with_price_source(PriceSource::Mock)
+                .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+                .with_max_allowed_lamports(max_allowed_lamports)
+                .with_fee_payer_policy(policy)
+                .build();
+            update_config(config).unwrap();
+
+            let config = get_config().unwrap();
+            let validator = TransactionValidator::new(config, fee_payer).unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+            match validator.validate_transaction(config, &mut transaction, &rpc_client).await {
+                Err(KoraError::InvalidTransaction(msg)) => assert!(msg.contains(expected), "{msg}"),
+                other => {
+                    panic!("allow_withdraw={allow_withdraw}: expected rejection, got {other:?}")
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_nonce_authorize() {
         use solana_system_interface::instruction::authorize_nonce_account;
 
@@ -5016,38 +5061,166 @@ mod tests {
             .is_ok());
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_fee_payer_policy_token2022_reallocate_rejected_for_fee_payer() {
-        let fee_payer = Pubkey::new_unique();
-        let token_account = Pubkey::new_unique();
+    enum ReallocateSlot {
+        Payer,
+        Owner,
+        PayerAndOwner,
+        MultisigSigner,
+        None,
+    }
 
+    fn token2022_reallocate_ix(fee_payer: &Pubkey, slot: &ReallocateSlot) -> Instruction {
+        let other_payer = Pubkey::new_unique();
+        let other_owner = Pubkey::new_unique();
+        let other_signer = Pubkey::new_unique();
+        let (payer, owner, signers) = match slot {
+            ReallocateSlot::Payer => (fee_payer, &other_owner, vec![]),
+            ReallocateSlot::Owner => (&other_payer, fee_payer, vec![]),
+            ReallocateSlot::PayerAndOwner => (fee_payer, fee_payer, vec![]),
+            ReallocateSlot::MultisigSigner => {
+                (&other_payer, &other_owner, vec![&other_signer, fee_payer])
+            }
+            ReallocateSlot::None => (&other_payer, &other_owner, vec![]),
+        };
+        spl_token_2022_interface::instruction::reallocate(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+            payer,
+            owner,
+            &signers,
+            &[spl_token_2022_interface::extension::ExtensionType::MemoTransfer],
+        )
+        .unwrap()
+    }
+
+    async fn validate_token2022_reallocate(
+        policy: FeePayerPolicy,
+        slot: ReallocateSlot,
+    ) -> Result<(), KoraError> {
+        let fee_payer = Pubkey::new_unique();
         let rpc_client = RpcMockBuilder::new().build();
-        setup_token2022_config_with_policy(FeePayerPolicy::default());
+        setup_token2022_config_with_policy(policy);
 
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
-
-        let reallocate_ix = spl_token_2022_interface::instruction::reallocate(
-            &spl_token_2022_interface::id(),
-            &token_account,
-            &fee_payer,
-            &fee_payer,
-            &[],
-            &[spl_token_2022_interface::extension::ExtensionType::MemoTransfer],
-        )
-        .unwrap();
-
-        let message = VersionedMessage::Legacy(Message::new(&[reallocate_ix], Some(&fee_payer)));
+        let ix = token2022_reallocate_ix(&fee_payer, &slot);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
-        if let Err(KoraError::InvalidTransaction(msg)) = result {
-            assert!(msg.contains("Token2022 Reallocate is not allowed"));
-        } else {
-            panic!("Expected InvalidTransaction error for token2022 reallocate");
+        validator.validate_transaction(config, &mut transaction, &rpc_client).await
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_reallocate_rejects_each_fee_payer_slot_by_default() {
+        for slot in [
+            ReallocateSlot::Payer,
+            ReallocateSlot::Owner,
+            ReallocateSlot::PayerAndOwner,
+            ReallocateSlot::MultisigSigner,
+        ] {
+            let result = validate_token2022_reallocate(FeePayerPolicy::default(), slot).await;
+            assert!(
+                matches!(result, Err(KoraError::InvalidTransaction(ref msg))
+                    if msg.contains("Token2022 Reallocate is not allowed when involving fee payer")),
+                "Expected Reallocate rejection with the flag off, got: {result:?}"
+            );
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_reallocate_allows_each_fee_payer_slot_when_enabled() {
+        for slot in [
+            ReallocateSlot::Payer,
+            ReallocateSlot::Owner,
+            ReallocateSlot::PayerAndOwner,
+            ReallocateSlot::MultisigSigner,
+        ] {
+            let mut policy = FeePayerPolicy::default();
+            policy.token_2022.allow_reallocate = true;
+            let result = validate_token2022_reallocate(policy, slot).await;
+            assert!(
+                result.is_ok(),
+                "allow_reallocate should allow Token2022 Reallocate: {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_reallocate_without_fee_payer_allowed_by_default() {
+        let result =
+            validate_token2022_reallocate(FeePayerPolicy::default(), ReallocateSlot::None).await;
+        assert!(result.is_ok(), "Reallocate not involving the fee payer must pass: {result:?}");
+    }
+
+    /// Token-2022 funds the rent delta of `Reallocate` with a System `Transfer` CPI from `payer`.
+    /// Simulation surfaces that CPI as an inner instruction, and this mirrors it by appending the
+    /// transfer to `all_instructions`.
+    async fn validate_token2022_reallocate_with_rent_cpi(
+        policy: FeePayerPolicy,
+        rent_lamports: u64,
+    ) -> Result<(), KoraError> {
+        let fee_payer = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![
+                spl_token_2022_interface::id().to_string(),
+                SYSTEM_PROGRAM_ID.to_string(),
+            ])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        setup_both_configs(config);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let reallocate_ix = token2022_reallocate_ix(&fee_payer, &ReallocateSlot::Payer);
+        let token_account = reallocate_ix.accounts[0].pubkey;
+        let message = VersionedMessage::Legacy(Message::new(&[reallocate_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        transaction.all_instructions.push(transfer(&fee_payer, &token_account, rent_lamports));
+
+        validator.validate_transaction(config, &mut transaction, &rpc_client).await
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_reallocate_rent_counts_toward_max_allowed_lamports() {
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_reallocate = true;
+        policy.system.allow_transfer = true;
+
+        let result = validate_token2022_reallocate_with_rent_cpi(policy.clone(), 2_000_000).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg))
+                if msg.contains("Total transfer amount 2000000 exceeds maximum allowed 1000000")),
+            "Expected Reallocate rent above max_allowed_lamports to be rejected, got: {result:?}"
+        );
+
+        let result = validate_token2022_reallocate_with_rent_cpi(policy, 500_000).await;
+        assert!(
+            result.is_ok(),
+            "Reallocate rent within max_allowed_lamports should pass: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_reallocate_rent_cpi_still_needs_system_transfer_policy() {
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_reallocate = true;
+
+        let result = validate_token2022_reallocate_with_rent_cpi(policy, 500_000).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg))
+                if msg.contains("Fee payer cannot be used for 'System Transfer'")),
+            "Expected the rent CPI to be gated by system.allow_transfer, got: {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -6880,3 +7053,6 @@ mod tests {
 // gates the fee payer exactly when the role's flag is off, and never gates a non-fee-payer.
 #[cfg(test)]
 mod fee_payer_policy_props;
+
+#[cfg(test)]
+mod fee_payer_outflow_props;

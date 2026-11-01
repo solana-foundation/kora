@@ -8,7 +8,6 @@ use solana_program::{
     program_error::ProgramError,
     pubkey::Pubkey,
     rent::Rent,
-    system_instruction,
     sysvar::Sysvar,
 };
 
@@ -133,7 +132,7 @@ fn initialize_extra_account_meta_list(
 
     msg!("Creating PDA with TLV size: {}, lamports: {}", account_size, required_lamports);
 
-    let create_account_ix = system_instruction::create_account(
+    let create_account_ix = solana_system_interface::instruction::create_account(
         payer_info.key,
         extra_account_meta_list_info.key,
         required_lamports,

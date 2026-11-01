@@ -5,14 +5,14 @@ use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use spl_token_2022_interface::{
     extension::{
         group_member_pointer, group_pointer, interest_bearing_mint, metadata_pointer, pausable,
-        scaled_ui_amount, transfer_fee,
+        scaled_ui_amount, transfer_fee, ExtensionType,
     },
     id as token_2022_id,
     instruction::{
         approve, approve_checked, burn, burn_checked, close_account, freeze_account,
         initialize_account, initialize_account2, initialize_account3, initialize_mint,
         initialize_mint2, initialize_mint_close_authority, initialize_multisig,
-        initialize_permanent_delegate, mint_to, mint_to_checked, revoke, set_authority,
+        initialize_permanent_delegate, mint_to, mint_to_checked, reallocate, revoke, set_authority,
         thaw_account, transfer_checked, unwrap_lamports, withdraw_excess_lamports, AuthorityType,
     },
 };
@@ -56,6 +56,9 @@ enum Token2022Role {
     WithdrawExcessLamportsMultisigSigner,
     UnwrapLamports,
     UnwrapLamportsMultisigSigner,
+    ReallocatePayer,
+    ReallocateOwner,
+    ReallocateMultisigSigner,
     InitializeMintCloseAuthority,
     InitializePermanentDelegate,
     InitializeTransferFeeConfigAuthority,
@@ -116,6 +119,9 @@ impl DrainRole for Token2022Role {
         Self::WithdrawExcessLamportsMultisigSigner,
         Self::UnwrapLamports,
         Self::UnwrapLamportsMultisigSigner,
+        Self::ReallocatePayer,
+        Self::ReallocateOwner,
+        Self::ReallocateMultisigSigner,
         Self::InitializeMintCloseAuthority,
         Self::InitializePermanentDelegate,
         Self::InitializeTransferFeeConfigAuthority,
@@ -183,6 +189,9 @@ impl DrainRole for Token2022Role {
             }
             Self::UnwrapLamports | Self::UnwrapLamportsMultisigSigner => {
                 &mut policy.token_2022.allow_unwrap_lamports
+            }
+            Self::ReallocatePayer | Self::ReallocateOwner | Self::ReallocateMultisigSigner => {
+                &mut policy.token_2022.allow_reallocate
             }
             Self::InitializeMintCloseAuthority
             | Self::InitializePermanentDelegate
@@ -337,6 +346,23 @@ impl DrainRole for Token2022Role {
             Self::UnwrapLamportsMultisigSigner => {
                 unwrap_lamports(&program, &account, &other, &multisig, &[actor], None).unwrap()
             }
+            Self::ReallocatePayer => {
+                reallocate(&program, &account, actor, &other, &[], &[ExtensionType::MemoTransfer])
+                    .unwrap()
+            }
+            Self::ReallocateOwner => {
+                reallocate(&program, &account, &other, actor, &[], &[ExtensionType::MemoTransfer])
+                    .unwrap()
+            }
+            Self::ReallocateMultisigSigner => reallocate(
+                &program,
+                &account,
+                &other,
+                &multisig,
+                &[actor],
+                &[ExtensionType::MemoTransfer],
+            )
+            .unwrap(),
             Self::InitializeMintCloseAuthority => {
                 initialize_mint_close_authority(&program, &mint, Some(actor)).unwrap()
             }

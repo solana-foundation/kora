@@ -239,11 +239,17 @@ impl FeeConfigUtil {
         {
             if let ParsedSystemInstructionData::SystemWithdrawNonceAccount {
                 lamports,
+                nonce_account,
                 nonce_authority,
                 recipient,
             } = instruction
             {
-                if *recipient == *fee_payer_pubkey && *nonce_authority == *fee_payer_pubkey {
+                // An Allocate leaves the fee payer holding zeroed data, which the System Program
+                // reads as an uninitialized nonce account that only the nonce account itself needs
+                // to sign for withdrawing, so the fee payer controls it regardless of the authority.
+                let fee_payer_controlled =
+                    *nonce_authority == *fee_payer_pubkey || *nonce_account == *fee_payer_pubkey;
+                if *recipient == *fee_payer_pubkey && fee_payer_controlled {
                     // Self-withdrawals only move lamports between fee-payer-controlled accounts.
                     // They should not reduce unrelated outflow elsewhere in the transaction.
                     continue;
@@ -251,10 +257,10 @@ impl FeeConfigUtil {
                     // Lamports arriving from a nonce account not controlled by the fee payer are
                     // a real inflow that reduces net outflow.
                     Self::add_inflow(&mut total, *lamports, "SystemWithdrawNonceAccount")?;
-                } else if *nonce_authority == *fee_payer_pubkey {
-                    // Fee payer authorized a withdrawal to a third party. The lamports leave a
-                    // nonce account the fee payer controls, so count them as outflow so that
-                    // max_allowed_lamports enforcement is not bypassed.
+                } else if fee_payer_controlled {
+                    // The lamports leave a nonce account the fee payer controls for a third
+                    // party, so count them as outflow so that max_allowed_lamports enforcement
+                    // is not bypassed.
                     Self::add_outflow(&mut total, *lamports, "SystemWithdrawNonceAccount")?;
                 }
             }

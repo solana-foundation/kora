@@ -1821,6 +1821,7 @@ mod tests {
                         allow_thaw_account: true,
                         allow_withdraw_excess_lamports: true,
                         allow_unwrap_lamports: true,
+                        allow_reallocate: true,
                     },
                     alt: crate::config::AltInstructionPolicy {
                         allow_create: true,
@@ -1978,6 +1979,9 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|w| w.contains("Token2022 ThawAccount") && w.contains("allow_thaw_account")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Token2022 Reallocate") && w.contains("allow_reallocate")));
 
         assert!(warnings
             .iter()

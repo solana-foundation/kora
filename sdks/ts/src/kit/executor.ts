@@ -13,12 +13,14 @@ import {
     type Instruction,
     partiallySignTransactionMessageWithSigners,
     pipe,
+    setTransactionMessageConfig,
     setTransactionMessageFeePayerSigner,
     setTransactionMessageLifetimeUsingBlockhash,
     signature,
     type TransactionMessage,
     type TransactionMessageWithFeePayer,
     type TransactionSigner,
+    type V1TransactionConfig,
 } from '@solana/kit';
 
 import { KoraClient } from '../client.js';
@@ -36,9 +38,9 @@ export function createKoraTransactionPlanExecutor(
     userSigner: TransactionSigner,
     payerSigner: TransactionSigner,
     payment: { destinationTokenAccount: Address; sourceTokenAccount: Address } | undefined,
-    resolveProvisoryComputeUnitLimit:
-        | (<T extends TransactionMessage & TransactionMessageWithFeePayer>(transactionMessage: T) => Promise<T>)
-        | undefined,
+    estimateAndSetResourceLimits: <T extends TransactionMessage & TransactionMessageWithFeePayer>(
+        transactionMessage: T,
+    ) => Promise<T>,
 ) {
     return createTransactionPlanExecutor({
         async executeTransactionMessage(_context, transactionMessage) {
@@ -52,9 +54,7 @@ export function createKoraTransactionPlanExecutor(
                 transactionMessage,
             );
 
-            const msgForEstimation = resolveProvisoryComputeUnitLimit
-                ? await resolveProvisoryComputeUnitLimit(msgWithLifetime)
-                : msgWithLifetime;
+            const msgForEstimation = await estimateAndSetResourceLimits(msgWithLifetime);
 
             let finalTx: Base64EncodedWireTransaction;
 
@@ -65,6 +65,7 @@ export function createKoraTransactionPlanExecutor(
                 const { sourceTokenAccount, destinationTokenAccount } = payment;
                 const { fee_in_token } = await koraClient.estimateTransactionFee({
                     fee_token: config.feeToken,
+                    signer_key: payerSigner.address,
                     transaction: estimationTx,
                 });
 
@@ -112,9 +113,13 @@ export function createKoraTransactionPlanExecutor(
                               config.tokenProgramId,
                           );
 
+                const messageConfig: V1TransactionConfig =
+                    'config' in msgForEstimation ? ((msgForEstimation.config as V1TransactionConfig) ?? {}) : {};
+
                 const resolvedMsg = pipe(
-                    createTransactionMessage({ version: 0 }),
+                    createTransactionMessage({ version: 1 }),
                     m => setTransactionMessageFeePayerSigner(payerSigner, m),
+                    m => setTransactionMessageConfig(messageConfig, m),
                     m =>
                         setTransactionMessageLifetimeUsingBlockhash(
                             {
@@ -136,6 +141,7 @@ export function createKoraTransactionPlanExecutor(
             }
 
             const result = await koraClient.signAndSendTransaction({
+                signer_key: payerSigner.address,
                 transaction: finalTx,
                 user_id: config.userId,
             });
@@ -145,7 +151,7 @@ export function createKoraTransactionPlanExecutor(
             }
             const signedTxBytes = getBase64Encoder().encode(result.signed_transaction);
             const decodedTx = getTransactionDecoder().decode(signedTxBytes);
-            return { signature: getSignatureFromTransaction(decodedTx), transaction: decodedTx };
+            return { signature: getSignatureFromTransaction(decodedTx) };
         },
     });
 }

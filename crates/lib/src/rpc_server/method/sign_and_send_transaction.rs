@@ -40,7 +40,7 @@ pub struct SignAndSendTransactionRequest {
     pub respond_after: RespondAfter,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SignAndSendTransactionResponse {
     pub signed_transaction: String,
     /// Public key of the signer used (for client consistency)

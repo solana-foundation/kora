@@ -60,7 +60,7 @@ clean:
 check:
     cargo fmt --all -- --check
     cargo clippy -- -D warnings
-    cd sdks/ts && pnpm format:check && pnpm type-check
+    cd sdks/ts && pnpm format:check && pnpm lint && pnpm type-check
 
 # Format with auto-fix
 [group('fmt')]
@@ -116,6 +116,11 @@ fuzz-build:
 [group('fuzz')]
 fuzz-list:
     cd fuzz && cargo fuzz list
+
+# Regenerate the committed fuzz seed corpus
+[group('fuzz')]
+fuzz-seeds:
+    cd fuzz && cargo run --example gen_seed_corpus
 
 # Build transfer hook test program
 [group('test')]

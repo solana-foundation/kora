@@ -152,6 +152,7 @@ describe('Kora Kit Plugin', () => {
                                 allow_close_account: true,
                                 allow_freeze_account: true,
                                 allow_mint_to: true,
+                                allow_reallocate: false,
                                 allow_revoke: true,
                                 allow_set_authority: true,
                                 allow_thaw_account: true,

@@ -2,19 +2,6 @@
 ignore = [
     # rsa has no patched release; reached via solana-keychain/jsonwebtoken.
     "RUSTSEC-2023-0071",
-    # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack.
-    "RUSTSEC-2026-0104",
-    # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack.
-    "RUSTSEC-2026-0098",
-    # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack.
-    "RUSTSEC-2026-0099",
-    # rkyv is an inactive optional dependency of rust_decimal; Kora does not enable its
-    # rkyv features.
-    "RUSTSEC-2026-0235",
-    # h2 0.3.x has no patched release and is pinned by hyper 0.14 (jsonrpsee 0.16) and by
-    # the optional hyper-014 path in aws-smithy-http-client. h2 0.4.x is on the patched
-    # 0.4.16; drop this once jsonrpsee moves to hyper 1.x.
-    "RUSTSEC-2026-0258",
     # ed25519-dalek 1.0.1 and curve25519-dalek 3.2.0 come from agave-precompiles, which
     # only the tests crate pulls in via surfpool-sdk; neither reaches the kora binary.
     "RUSTSEC-2022-0093",
@@ -22,4 +9,15 @@ ignore = [
     # idna 0.1.5 comes from jsonrpc-core-client, reached only by the tests crate via
     # surfpool-sdk.
     "RUSTSEC-2024-0421",
+    # crypto-bigint 0.5.x has no patched release and is pinned by elliptic-curve 0.13
+    # (k256/p256/p384); the fix landed in 0.7.6, which needs elliptic-curve 0.14.
+    "RUSTSEC-2026-0387",
+    # zstd 0.13 / zstd-safe 7 are pinned by solana-account-decoder 4.3.2, the latest stable;
+    # the patched 0.14 line arrives with Agave 4.4. The only zstd input is base64+zstd account data from the operator's own RPC node,
+    # decoded with a fresh stream per account (0391 needs a reused context). Kora does not
+    # enable zstd-safe's seekable feature (0398). 0403 needs a malicious RPC node sending a
+    # legacy-format frame.
+    "RUSTSEC-2026-0391",
+    "RUSTSEC-2026-0398",
+    "RUSTSEC-2026-0403",
 ]

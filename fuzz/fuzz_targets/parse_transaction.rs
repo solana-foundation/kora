@@ -9,7 +9,7 @@ fuzz_target!(|data: &[u8]| {
         return;
     };
 
-    let Ok(mut resolved) = VersionedTransactionResolved::from_kora_built_transaction(&transaction)
+    let Ok(resolved) = VersionedTransactionResolved::from_kora_built_transaction(&transaction)
     else {
         return;
     };

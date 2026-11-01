@@ -330,9 +330,8 @@ async fn wait_for_liveness(kora: &mut Child, port: u16) -> Result<()> {
                 return Ok(());
             }
             // Fixtures that set `liveness = false` answer 500, so a failing
-            // status still means Kora, as long as the body is its JSON-RPC error.
-            if response.json::<serde_json::Value>().await.is_ok_and(|b| b.get("jsonrpc").is_some())
-            {
+            // status still means Kora, as long as the body is its JSON-RPC error object.
+            if response.json::<serde_json::Value>().await.is_ok_and(|b| b.get("code").is_some()) {
                 return Ok(());
             }
             last_status = Some(status);
