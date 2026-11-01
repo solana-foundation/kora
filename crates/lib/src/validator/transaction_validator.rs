@@ -658,7 +658,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[outer], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        transaction.push_inner_instruction(0, reconstructed).unwrap();
+        transaction.push_inner_instruction(0, Some(0), reconstructed).unwrap();
 
         validator.validate_transaction(config, &mut transaction, &rpc_client).await
     }
@@ -3081,6 +3081,7 @@ mod tests {
         transaction
             .push_inner_instruction(
                 0,
+                Some(0),
                 Instruction {
                     program_id: SYSTEM_PROGRAM_ID,
                     accounts: vec![

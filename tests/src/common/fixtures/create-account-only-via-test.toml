@@ -33,6 +33,7 @@ allowed_programs = [
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
     "ComputeBudget111111111111111111111111111111",  # Compute Budget Program
     "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA", # Transfer-hook example (test CPI forwarder)
+    "SecondForwarder1111111111111111111111111111",  # Same program at a second address, not in the plugin's list
 ]
 require_one_of_programs = ["Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA"]
 allowed_tokens = [

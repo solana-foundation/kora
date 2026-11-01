@@ -63,8 +63,34 @@ fn get_or_try_init<T>(
 pub enum InstructionOrigin {
     /// Listed in the message itself.
     TopLevel,
-    /// A CPI, at any depth, under the top-level instruction at `all_instructions[parent_index]`.
-    Inner { parent_index: usize },
+    /// A CPI under the top-level instruction at `all_instructions[parent_index]`, made directly by
+    /// `all_instructions[caller_index]`. `caller_index` is `None` when simulation does not show the caller.
+    Inner { parent_index: usize, caller_index: Option<usize> },
+}
+
+/// The open calls of one top-level instruction, as `(stack height, all_instructions index)`.
+struct CallStack(Vec<(u32, usize)>);
+
+impl CallStack {
+    fn new(top_level_index: usize) -> Self {
+        Self(vec![(1, top_level_index)])
+    }
+
+    /// Records the next inner instruction and returns its direct caller, if known.
+    fn enter(&mut self, stack_height: Option<u32>, index: usize) -> Option<usize> {
+        // Without a usable height the open calls can no longer be trusted, so later ones get no caller.
+        let Some(height) = stack_height.filter(|height| *height >= 2) else {
+            self.0.clear();
+            return None;
+        };
+        while self.0.last().is_some_and(|(open, _)| *open >= height) {
+            self.0.pop();
+        }
+        let caller =
+            self.0.last().filter(|(open, _)| *open == height - 1).map(|(_, caller)| *caller);
+        self.0.push((height, index));
+        caller
+    }
 }
 
 /// A fully resolved transaction with lookup tables and inner instructions resolved
@@ -229,6 +255,7 @@ impl VersionedTransactionResolved {
     pub fn push_inner_instruction(
         &mut self,
         parent_index: usize,
+        caller_index: Option<usize>,
         instruction: Instruction,
     ) -> Result<(), KoraError> {
         if self.instruction_origins.get(parent_index) != Some(&InstructionOrigin::TopLevel) {
@@ -237,7 +264,7 @@ impl VersionedTransactionResolved {
             )));
         }
         self.all_instructions.push(instruction);
-        self.instruction_origins.push(InstructionOrigin::Inner { parent_index });
+        self.instruction_origins.push(InstructionOrigin::Inner { parent_index, caller_index });
         Ok(())
     }
 
@@ -278,28 +305,37 @@ impl VersionedTransactionResolved {
             return Ok(());
         };
 
-        let mut compiled_inner_instructions: Vec<(usize, CompiledInstruction)> = vec![];
+        let mut compiled_inner_instructions: Vec<CompiledInstruction> = vec![];
+        let mut inner_origins: Vec<(usize, Option<usize>)> = vec![];
         // Clone so we can extend with CPI-only PDA accounts discovered
         // during inner instruction reconstruction.
         let mut extended_account_keys = self.all_account_keys.clone();
         let mut account_keys_hashmap = IxUtils::build_account_keys_hashmap(&extended_account_keys);
+        let first_inner_index = self.all_instructions.len();
 
         for ix in &inner_instructions {
+            let parent_index = ix.index as usize;
+            let mut call_stack = CallStack::new(parent_index);
             for inner_ix in &ix.instructions {
                 let compiled = IxUtils::reconstruct_instruction_from_ui_with_account_key_cache(
                     inner_ix,
                     &mut extended_account_keys,
                     &mut account_keys_hashmap,
                 )?;
-                compiled_inner_instructions.push((ix.index as usize, compiled));
+                let index = first_inner_index + compiled_inner_instructions.len();
+                let caller_index = call_stack.enter(IxUtils::stack_height(inner_ix), index);
+                compiled_inner_instructions.push(compiled);
+                inner_origins.push((parent_index, caller_index));
             }
         }
 
         self.all_account_keys = extended_account_keys;
-        for (parent_index, compiled) in compiled_inner_instructions {
-            let instruction =
-                IxUtils::uncompile_instructions(&[compiled], &self.all_account_keys)?.remove(0);
-            self.push_inner_instruction(parent_index, instruction)?;
+        let instructions =
+            IxUtils::uncompile_instructions(&compiled_inner_instructions, &self.all_account_keys)?;
+        for ((parent_index, caller_index), instruction) in
+            inner_origins.into_iter().zip(instructions)
+        {
+            self.push_inner_instruction(parent_index, caller_index, instruction)?;
         }
 
         Ok(())
@@ -1310,7 +1346,83 @@ mod tests {
         assert_eq!(resolved.all_instructions[1].data, vec![10, 20, 30]);
         assert_eq!(
             resolved.instruction_origins,
-            vec![InstructionOrigin::TopLevel, InstructionOrigin::Inner { parent_index: 0 }]
+            vec![
+                InstructionOrigin::TopLevel,
+                InstructionOrigin::Inner { parent_index: 0, caller_index: None }
+            ]
+        );
+    }
+
+    /// Returns the caller recorded for each simulated inner instruction, given its stack height.
+    async fn inner_callers(stack_heights: &[Option<u32>]) -> Vec<Option<usize>> {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        let data = bs58::encode(&[1]).into_string();
+        let instructions: Vec<_> = stack_heights
+            .iter()
+            .map(|height| {
+                json!({ "programIdIndex": 1, "accounts": [0], "data": data, "stackHeight": height })
+            })
+            .collect();
+        let mut mocks = HashMap::new();
+        mocks.insert(
+            RpcRequest::SimulateTransaction,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": null,
+                    "logs": [],
+                    "accounts": null,
+                    "unitsConsumed": 1000,
+                    "innerInstructions": [{ "index": 0, "instructions": instructions }]
+                }
+            }),
+        );
+        let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
+
+        let mut resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
+        resolved.fetch_inner_instructions(&rpc_client, true).await.unwrap();
+
+        resolved.instruction_origins[1..]
+            .iter()
+            .map(|origin| match origin {
+                InstructionOrigin::Inner { parent_index: 0, caller_index } => *caller_index,
+                other => panic!("unexpected origin {other:?}"),
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn test_fetch_inner_instructions_records_direct_callers() {
+        // top(0) -> A(1) -> create(2), then top(0) -> B(3) -> create(4)
+        assert_eq!(
+            inner_callers(&[Some(2), Some(3), Some(2), Some(3)]).await,
+            vec![Some(0), Some(1), Some(0), Some(3)]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_inner_instructions_height_gap_has_no_caller() {
+        assert_eq!(inner_callers(&[Some(2), Some(4)]).await, vec![Some(0), None]);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_inner_instructions_missing_height_drops_later_callers() {
+        assert_eq!(
+            inner_callers(&[Some(2), None, Some(3), Some(2)]).await,
+            vec![Some(0), None, None, None]
         );
     }
 

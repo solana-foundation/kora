@@ -294,8 +294,14 @@ programs = ["<MY_PROGRAM_ID>"]
 
 With the plugin enabled, a System `CreateAccount`, `CreateAccountWithSeed` or `CreateAccountAllowPrefund`
 and an Associated Token Account `Create` or `CreateIdempotent` whose payer is the fee payer is
-accepted only when simulation shows it as a CPI, at any depth, under a top-level instruction of a
-listed program. A top-level one is rejected. Creations funded by someone else are not affected.
+accepted only when simulation shows that a listed program made the CPI directly. A top-level one is
+rejected, and so is one whose direct caller simulation does not show. The System call that the
+Associated Token Account program makes for a create is judged by the program that called the Associated
+Token Account program. Creations funded by someone else are not affected.
+
+Do not list a program that calls arbitrary programs, such as a forwarder, a router or an "execute"
+instruction. Such a program can make a creation directly on behalf of any caller, and the plugin
+accepts it because the listed program made the call.
 The plugin runs on the signing methods. Each listed program must also be in `allowed_programs`;
 `kora config validate` fails when one is not, when the list is empty, or when the list is set
 without enabling the plugin, and warns while `allow_create_account = false`. The listed programs decide which

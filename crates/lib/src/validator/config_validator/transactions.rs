@@ -140,9 +140,17 @@ impl ConfigValidator {
             }
         }
 
+        let only_via_programs = (
+            "[kora.plugins.create_account_only_via] programs",
+            config.kora.plugins.create_account_only_via.programs.as_slice(),
+        );
+        let require_one_of_programs =
+            ("require_one_of_programs", config.validation.require_one_of_programs.as_slice());
+
         for (field, pubkeys) in [
             ("allowed_programs", config.validation.allowed_programs.as_slice()),
-            ("require_one_of_programs", config.validation.require_one_of_programs.as_slice()),
+            require_one_of_programs,
+            only_via_programs,
         ] {
             for pubkey_str in pubkeys {
                 if Pubkey::from_str(pubkey_str).is_err() {
@@ -151,11 +159,13 @@ impl ConfigValidator {
             }
         }
 
-        for program in &config.validation.require_one_of_programs {
-            if !config.validation.allowed_programs.contains(program) {
-                errors.push(format!(
-                    "Program {program} in require_one_of_programs must also be in allowed_programs"
-                ));
+        for (field, programs) in [require_one_of_programs, only_via_programs] {
+            for program in programs {
+                if !config.validation.allowed_programs.contains(program) {
+                    errors.push(format!(
+                        "Program {program} in {field} must also be in allowed_programs"
+                    ));
+                }
             }
         }
     }

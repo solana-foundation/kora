@@ -11,19 +11,20 @@ use solana_system_interface::{
     instruction::{create_account, transfer},
     program::ID as SYSTEM_PROGRAM_ID,
 };
+use spl_associated_token_account_interface::instruction::create_associated_token_account;
 use std::str::FromStr;
 
 const ONLY_VIA_ERROR: &str =
     "Plugin create_account_only_via lets the fee payer fund account creation only inside a CPI";
 
-fn via_forwarder(target: Instruction) -> Instruction {
+fn forward_from(forwarder: &str, target: Instruction) -> Instruction {
     let mut accounts = vec![AccountMeta::new_readonly(target.program_id, false)];
     accounts.extend(target.accounts);
-    Instruction {
-        program_id: Pubkey::from_str(TRANSFER_HOOK_PROGRAM_ID).unwrap(),
-        accounts,
-        data: target.data,
-    }
+    Instruction { program_id: Pubkey::from_str(forwarder).unwrap(), accounts, data: target.data }
+}
+
+fn via_forwarder(target: Instruction) -> Instruction {
+    forward_from(TRANSFER_HOOK_PROGRAM_ID, target)
 }
 
 /// A forwarder call that creates nothing: it relays a 1-lamport transfer paid by the test sender.
@@ -137,4 +138,56 @@ async fn test_top_level_ata_create_funded_by_fee_payer_rejected() {
     error.assert_contains_message(
         "instruction 1 ('Associated Token Account Create') is a top-level instruction",
     );
+}
+
+#[tokio::test]
+async fn test_listed_forwarder_routing_create_through_unlisted_program_rejected() {
+    let ctx = crate::ctx().await;
+    let new_account = Keypair::new();
+
+    let tx = ctx
+        .transaction_builder()
+        .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
+        .with_instruction(via_forwarder(forward_from(
+            SECOND_FORWARDER_PROGRAM_ID,
+            fee_payer_creates(&new_account.pubkey()),
+        )))
+        .with_signer(&new_account)
+        .build()
+        .await
+        .expect("Failed to build transaction");
+
+    let error = ctx
+        .rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![tx])
+        .await
+        .expect_err("a creation made by an unlisted program under a listed one must be rejected");
+    error.assert_contains_message(ONLY_VIA_ERROR);
+    error.assert_contains_message(&format!(
+        "('System Create Account') is a CPI from program {SECOND_FORWARDER_PROGRAM_ID}"
+    ));
+}
+
+#[tokio::test]
+async fn test_ata_create_inside_listed_program_cpi_accepted() {
+    let ctx = crate::ctx().await;
+
+    let tx = ctx
+        .transaction_builder()
+        .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
+        .with_instruction(via_forwarder(create_associated_token_account(
+            &FeePayerTestHelper::get_fee_payer_pubkey(),
+            &Pubkey::new_unique(),
+            &USDCMintTestHelper::get_test_usdc_mint_pubkey(),
+            &spl_token_interface::id(),
+        )))
+        .build()
+        .await
+        .expect("Failed to build transaction");
+
+    let response: serde_json::Value = ctx
+        .rpc_call("signTransaction", rpc_params![tx])
+        .await
+        .expect("an ATA create called by the listed program must be accepted");
+    response.assert_success();
+    assert!(response["signed_transaction"].as_str().is_some());
 }

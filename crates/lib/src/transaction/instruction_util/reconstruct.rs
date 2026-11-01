@@ -355,6 +355,17 @@ impl IxUtils {
     /// instructions into "Parsed" form, but Kora's parsing logic expects "Compiled"
     /// instructions; there's no RPC option to disable this, so we reconstruct (unparse) them.
     /// Reference: https://github.com/anza-xyz/agave/blob/68032b576dc4c14b31c15974c6734ae1513980a3/transaction-status/src/parse_system.rs#L11
+    /// Returns the stack height simulation reports for `ui_instruction`.
+    pub fn stack_height(ui_instruction: &UiInstruction) -> Option<u32> {
+        match ui_instruction {
+            UiInstruction::Compiled(compiled) => compiled.stack_height,
+            UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed)) => parsed.stack_height,
+            UiInstruction::Parsed(UiParsedInstruction::PartiallyDecoded(decoded)) => {
+                decoded.stack_height
+            }
+        }
+    }
+
     pub fn reconstruct_instruction_from_ui(
         ui_instruction: &UiInstruction,
         all_account_keys: &mut Vec<Pubkey>,
