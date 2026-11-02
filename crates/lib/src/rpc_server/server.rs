@@ -31,7 +31,7 @@ use jsonrpsee::{
     types::ErrorObjectOwned,
     RpcModule,
 };
-use std::{iter::empty, net::SocketAddr, time::Duration};
+use std::{iter::empty, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
 use tower::{
     buffer::BufferLayer,
@@ -165,10 +165,11 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
 
     let rpc_client = rpc.get_rpc_client().clone();
 
-    let (metrics_handle, metrics_layers, balance_tracker_handle) =
-        run_metrics_server_if_required(port, rpc_client).await?;
-
     let allowed_methods = config.kora.enabled_methods.get_enabled_method_names();
+    let metrics_allowed_methods = Arc::new(allowed_methods.iter().cloned().collect());
+
+    let (metrics_handle, metrics_layers, balance_tracker_handle) =
+        run_metrics_server_if_required(port, rpc_client, metrics_allowed_methods).await?;
 
     let recaptcha_config = config.kora.auth.resolved_recaptcha_secret().map(|secret| {
         RecaptchaConfig::new(
@@ -197,7 +198,7 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
         .layer(ProxyGetRequestLayer::new([(LIVENESS_PATH, "liveness")])?)
         .layer(rate_limit_layer(config.kora.rate_limit))
-        .layer(MethodValidationLayer::new(allowed_methods.clone()))
+        .layer(MethodValidationLayer::new(allowed_methods))
         .option_layer(config.kora.auth.resolved_api_keys().map(ApiKeyAuthLayer::new))
         .option_layer(
             config
@@ -352,12 +353,9 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().build();
 
         // This should not panic and should start successfully
-        let result = run_rpc_server(KoraRpc::new(rpc_client), port).await;
-        match result {
-            Ok(_) => (),
-            Err(e) if e.to_string().contains("already initialized") => (),
-            Err(e) => panic!("Server failed to start: {:?}", e),
-        }
+        let handles =
+            run_rpc_server(KoraRpc::new(rpc_client), port).await.expect("Server failed to start");
+        handles.shutdown().await;
     }
 
     #[tokio::test]
@@ -692,6 +690,18 @@ mod tests {
             "http_rejections_total{{method=\"unknown\",reason=\"rate_limit\"}} should have incremented by 1"
         );
 
+        // Assert health checks still succeed even while the rate limiter is actively rejecting RPC traffic.
+        let res_liveness_during_limit = client
+            .get(format!("{}/liveness", base_url))
+            .send()
+            .await
+            .expect("Liveness request failed");
+        assert_eq!(
+            res_liveness_during_limit.status().as_u16(),
+            200,
+            "Liveness must continue to succeed during active rate limiting"
+        );
+
         // Assert monitoring remains accessible even during active load-shedding.
         let res_metrics = client
             .get(format!("{}/metrics", base_url))
@@ -760,9 +770,10 @@ mod tests {
             .await
             .expect("Request failed");
         assert_eq!(res2.status().as_u16(), 429, "Second RPC request should be rate limited");
-        assert!(
-            res2.headers().contains_key("access-control-allow-origin"),
-            "429 rejection MUST include CORS headers"
+        assert_eq!(
+            res2.headers().get("access-control-allow-origin").and_then(|h| h.to_str().ok()),
+            Some("https://example.com"),
+            "429 rejection MUST include matching CORS headers"
         );
 
         handles.shutdown().await;
@@ -801,7 +812,24 @@ mod tests {
             "method": "SOME_ARBITRARY_UNBOUNDED_STRING"
         });
 
-        let _ = client.post(&base_url).json(&payload).send().await.expect("Request failed");
+        let counter = &HttpMetrics::get().requests_total;
+        let before = counter
+            .get_metric_with_label_values(&["unknown", "405"])
+            .map(|c| c.get())
+            .unwrap_or(0.0);
+
+        let res = client.post(&base_url).json(&payload).send().await.expect("Request failed");
+        assert_eq!(res.status().as_u16(), 405);
+
+        let after = counter
+            .get_metric_with_label_values(&["unknown", "405"])
+            .map(|c| c.get())
+            .unwrap_or(0.0);
+        assert_eq!(
+            after - before,
+            1.0,
+            "requests_total for method=\"unknown\",status=\"405\" must increment by 1"
+        );
 
         let res_metrics = client
             .get(format!("{}/metrics", base_url))

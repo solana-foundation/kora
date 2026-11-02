@@ -5,7 +5,7 @@ use std::{
     time::Instant,
 };
 
-use http::{Request, Response, StatusCode};
+use http::{Method, Request, Response, StatusCode};
 use jsonrpsee::server::HttpBody as Body;
 use tower::{Layer, Service, ServiceExt};
 
@@ -36,7 +36,7 @@ impl TokenBucket {
     // requiring a dedicated background tick thread.
     pub fn consume(&mut self, amount: f64) -> bool {
         let now = Instant::now();
-        let elapsed = now.duration_since(self.last_refill).as_secs_f64();
+        let elapsed = now.saturating_duration_since(self.last_refill).as_secs_f64();
         self.tokens = (self.tokens + elapsed * self.refill_rate).min(self.capacity);
         self.last_refill = now;
 
@@ -101,44 +101,42 @@ where
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
-        // Exempt liveness endpoints so the server remains observable when under heavy load.
+        // Exempt liveness GET endpoints so the server remains observable when under heavy load.
         // Metrics bypass is handled by the outer MetricsHandlerLayer.
-        if req.uri().path() == LIVENESS_PATH {
-            let inner = self.inner.clone();
-            return Box::pin(async move { inner.oneshot(req).await });
-        }
-
-        let allowed = {
+        let is_liveness = req.method() == Method::GET && req.uri().path() == LIVENESS_PATH;
+        let allowed = is_liveness || {
             // Recover instead of panicking to prevent a single panicked thread from poisoning the global rate limiter.
-            let mut bucket = self.bucket.lock().unwrap_or_else(|e| e.into_inner());
+            let mut bucket = self.bucket.lock().unwrap_or_else(|e| {
+                log::warn!("Global rate limiter mutex was poisoned, recovering inner state");
+                e.into_inner()
+            });
             bucket.consume(1.0)
         };
 
         if allowed {
             let inner = self.inner.clone();
-            Box::pin(async move { inner.oneshot(req).await })
-        } else {
-            let record_metrics = self.record_metrics;
-            Box::pin(async move {
-                if record_metrics {
-                    HttpMetrics::get().record_global_rate_limit_rejection();
-                }
-                let mut res = build_response_with_graceful_error(
-                    None,
-                    StatusCode::TOO_MANY_REQUESTS,
-                    "Global rate limit exceeded",
-                );
-                res.extensions_mut().insert(RejectionReason::RateLimit);
-                Ok(res)
-            })
+            return Box::pin(async move { inner.oneshot(req).await });
         }
+
+        let record_metrics = self.record_metrics;
+        Box::pin(async move {
+            if record_metrics {
+                HttpMetrics::get().record_global_rate_limit_rejection();
+            }
+            let mut res = build_response_with_graceful_error(
+                None,
+                StatusCode::TOO_MANY_REQUESTS,
+                "Global rate limit exceeded",
+            );
+            res.extensions_mut().insert(RejectionReason::RateLimit);
+            Ok(res)
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use http::Method;
     use std::{
         sync::atomic::{AtomicUsize, Ordering},
         time::Duration,
@@ -198,8 +196,37 @@ mod tests {
         let res2 = service.ready().await.unwrap().call(req2).await.unwrap();
         assert_eq!(res2.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(res2.extensions().get::<RejectionReason>(), Some(&RejectionReason::RateLimit));
-
-        // Ensure inner service was NOT called
         assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_global_rate_limit_liveness_bypass_only_for_get() {
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let mock_service = MockService { call_count: call_count.clone() };
+
+        let layer = GlobalRateLimitLayer::new(1, false);
+        let mut service = ServiceBuilder::new().layer(layer).service(mock_service);
+
+        // First POST to LIVENESS_PATH consumes the only token in the bucket.
+        let post1 =
+            Request::builder().method(Method::POST).uri(LIVENESS_PATH).body(Body::empty()).unwrap();
+        let res1 = service.ready().await.unwrap().call(post1).await.unwrap();
+        assert_eq!(res1.status(), StatusCode::OK);
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+
+        // Second POST to LIVENESS_PATH must be rate-limited (429) because the bucket is now empty.
+        let post2 =
+            Request::builder().method(Method::POST).uri(LIVENESS_PATH).body(Body::empty()).unwrap();
+        let res2 = service.ready().await.unwrap().call(post2).await.unwrap();
+        assert_eq!(res2.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(res2.extensions().get::<RejectionReason>(), Some(&RejectionReason::RateLimit));
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+
+        // GET to LIVENESS_PATH must always pass even when the bucket is empty.
+        let get_req =
+            Request::builder().method(Method::GET).uri(LIVENESS_PATH).body(Body::empty()).unwrap();
+        let res3 = service.ready().await.unwrap().call(get_req).await.unwrap();
+        assert_eq!(res3.status(), StatusCode::OK);
+        assert_eq!(call_count.load(Ordering::SeqCst), 2);
     }
 }

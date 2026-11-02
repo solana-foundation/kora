@@ -83,8 +83,8 @@ impl HttpMetrics {
     }
 
     pub fn record_global_rate_limit_rejection(&self) {
-        let status = http::StatusCode::TOO_MANY_REQUESTS.as_u16().to_string();
-        self.requests_total.with_label_values(&[UNKNOWN_METHOD, &status]).inc();
+        let status = http::StatusCode::TOO_MANY_REQUESTS.as_str();
+        self.requests_total.with_label_values(&[UNKNOWN_METHOD, status]).inc();
         self.http_rejections_total
             .with_label_values(&[UNKNOWN_METHOD, RejectionReason::RateLimit.as_str()])
             .inc();
@@ -173,8 +173,8 @@ where
 
             match &result {
                 Ok(response) => {
-                    let status = response.status().as_u16().to_string();
-                    metrics.requests_total.with_label_values(&[&method, &status]).inc();
+                    let status = response.status();
+                    metrics.requests_total.with_label_values(&[&method, status.as_str()]).inc();
                     metrics
                         .request_duration_seconds
                         .with_label_values(&[&method])
@@ -187,10 +187,7 @@ where
                     }
                 }
                 Err(_) => {
-                    metrics
-                        .requests_total
-                        .with_label_values(&[&method, &ERROR_STATUS.to_string()])
-                        .inc();
+                    metrics.requests_total.with_label_values(&[&method, ERROR_STATUS]).inc();
                 }
             }
 

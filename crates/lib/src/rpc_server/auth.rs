@@ -13,7 +13,6 @@ use subtle::ConstantTimeEq;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RejectionReason {
     AuthFailure,
-    // Reserved for (IdentityRateLimitLayer).
     RateLimit,
 }
 

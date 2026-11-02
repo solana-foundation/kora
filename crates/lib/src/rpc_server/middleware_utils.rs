@@ -60,7 +60,7 @@ pub fn build_response_with_graceful_error(
     })
 }
 
-/// Method validation layer - applies first in middleware stack to fail fast
+/// Method validation layer - validates allowed methods before auth layers to fail fast
 #[derive(Clone)]
 pub struct MethodValidationLayer {
     allowed_methods: HashSet<String>,
