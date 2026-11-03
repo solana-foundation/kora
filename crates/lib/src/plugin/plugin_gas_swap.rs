@@ -100,6 +100,16 @@ impl GasSwapPlugin {
             )));
         }
 
+        let token_instruction_count: usize = spl_instructions.values().map(Vec::len).sum();
+        if token_instruction_count != 1 {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Plugin gas_swap requires the SplTokenTransfer to be the only token instruction, \
+                 found {} token instructions in {}",
+                token_instruction_count,
+                context.method_name()
+            )));
+        }
+
         Ok(())
     }
 }
@@ -220,6 +230,70 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
+    }
+
+    async fn run_gas_swap_with_token_instruction(token_ix: Instruction) -> Result<(), KoraError> {
+        let (config, rpc_client) = build_runner();
+        let fee_payer = Pubkey::new_unique();
+        let sol_ix = transfer(&fee_payer, &Pubkey::new_unique(), 20_000);
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
+            Message::new(&[token_ix, sol_ix], Some(&fee_payer)),
+        ));
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        TransactionPluginRunner::from_config(&config)
+            .run(
+                &resolved,
+                &config,
+                rpc_client.as_ref(),
+                &fee_payer,
+                PluginExecutionContext::SignTransaction,
+            )
+            .await
+    }
+
+    fn token_transfer(owner: &Pubkey) -> Instruction {
+        spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            owner,
+            &[],
+            1_500,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn gas_swap_rejects_batch_hiding_set_authority() {
+        let owner = Pubkey::new_unique();
+        let set_authority_ix = spl_token_interface::instruction::set_authority(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            Some(&Pubkey::new_unique()),
+            spl_token_interface::instruction::AuthorityType::AccountOwner,
+            &owner,
+            &[],
+        )
+        .unwrap();
+        let batch_ix = spl_token_interface::instruction::batch(
+            &spl_token_interface::id(),
+            &[token_transfer(&owner), set_authority_ix],
+        )
+        .unwrap();
+
+        let err = run_gas_swap_with_token_instruction(batch_ix).await.unwrap_err();
+        assert!(err.to_string().contains("only token instruction"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn gas_swap_accepts_batch_with_single_transfer() {
+        let batch_ix = spl_token_interface::instruction::batch(
+            &spl_token_interface::id(),
+            &[token_transfer(&Pubkey::new_unique())],
+        )
+        .unwrap();
+
+        assert!(run_gas_swap_with_token_instruction(batch_ix).await.is_ok());
     }
 
     #[tokio::test]
