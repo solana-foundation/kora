@@ -118,6 +118,8 @@ impl BundleValidator {
         let allowed_programs = parse_pubkey_set(config.validation.allowed_programs.as_slice())?;
         let disallowed_programs = parse_pubkey_set(&config.validation.disallowed_accounts)?;
         let signed_set: HashSet<usize> = signed_indices.iter().copied().collect();
+        let max_allowed_lamports = config.validation.max_allowed_lamports;
+        let mut total_transfer_outflow = 0u64;
 
         for (tx_idx, tx_result) in simulation_result.transaction_results.iter().enumerate() {
             Self::validate_invoked_programs(
@@ -128,14 +130,25 @@ impl BundleValidator {
             )?;
 
             if signed_set.contains(&tx_idx) {
-                Self::validate_fee_payer_lamport_outflow(
+                let transfer_outflow = Self::fee_payer_transfer_outflow(
                     rpc_client,
                     &encoded_transactions[tx_idx],
                     tx_idx,
                     tx_result,
-                    config.validation.max_allowed_lamports,
                 )
                 .await?;
+                total_transfer_outflow =
+                    total_transfer_outflow.checked_add(transfer_outflow).ok_or_else(|| {
+                        KoraError::ValidationError(
+                            "Bundle outflow calculation overflow".to_string(),
+                        )
+                    })?;
+                if total_transfer_outflow > max_allowed_lamports {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Total transfer amount {} exceeds maximum allowed {}",
+                        total_transfer_outflow, max_allowed_lamports
+                    )));
+                }
             }
         }
 
@@ -175,13 +188,12 @@ impl BundleValidator {
         Ok(())
     }
 
-    async fn validate_fee_payer_lamport_outflow(
+    async fn fee_payer_transfer_outflow(
         rpc_client: &RpcClient,
         encoded_transaction: &str,
         signed_idx: usize,
         tx_result: &JitoBundleSimulationTransactionResult,
-        max_allowed_lamports: u64,
-    ) -> Result<(), KoraError> {
+    ) -> Result<u64, KoraError> {
         let error = |problem: &str| {
             KoraError::InvalidTransaction(format!(
                 "Bundle simulation {problem} for signed transaction index {signed_idx}"
@@ -209,7 +221,7 @@ impl BundleValidator {
         let observed_lamport_outflow = pre_lamports.saturating_sub(post_lamports);
 
         if observed_lamport_outflow == 0 {
-            return Ok(());
+            return Ok(0);
         }
 
         let transaction = TransactionUtil::decode_b64_transaction(encoded_transaction)?;
@@ -217,16 +229,7 @@ impl BundleValidator {
             TransactionFeeUtil::get_estimate_fee(rpc_client, &transaction.message).await?;
 
         // Match existing policy semantics by excluding the network signature fee from transfer outflow.
-        let transfer_outflow = observed_lamport_outflow.saturating_sub(estimated_network_fee);
-
-        if transfer_outflow > max_allowed_lamports {
-            return Err(KoraError::InvalidTransaction(format!(
-                "Total transfer amount {} exceeds maximum allowed {}",
-                transfer_outflow, max_allowed_lamports
-            )));
-        }
-
-        Ok(())
+        Ok(observed_lamport_outflow.saturating_sub(estimated_network_fee))
     }
 
     fn extract_invoked_programs(logs: &[String]) -> Result<HashSet<Pubkey>, KoraError> {
@@ -528,6 +531,43 @@ mod tests {
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Total transfer amount"));
         assert!(err.contains("exceeds maximum allowed"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_simulation_policy_rejects_aggregate_outflow_above_limit() {
+        let fee_payer = Pubkey::new_unique();
+        let encoded_transactions =
+            vec![make_test_transaction(&fee_payer), make_test_transaction(&fee_payer)];
+        let config = ConfigMockBuilder::new()
+            .with_max_allowed_lamports(1_000_000)
+            .with_allowed_programs(vec!["11111111111111111111111111111111".to_string()])
+            .build();
+        let rpc_client = RpcMockBuilder::new().with_fee_estimate(5_000).build();
+
+        let within_limit_result = || {
+            make_tx_result(
+                vec!["Program 11111111111111111111111111111111 invoke [1]".to_string()],
+                Some(2_000_000),
+                Some(1_395_000),
+            )
+        };
+        let simulation_result = JitoBundleSimulationResult {
+            context: json!({ "slot": 1 }),
+            summary: Some(json!("succeeded")),
+            transaction_results: vec![within_limit_result(), within_limit_result()],
+        };
+
+        let result = BundleValidator::validate_simulation_policy(
+            &rpc_client,
+            &config,
+            &encoded_transactions,
+            &[0, 1],
+            &simulation_result,
+        )
+        .await;
+
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("exceeds maximum allowed 1000000"), "Unexpected error: {err}");
     }
 
     #[tokio::test]

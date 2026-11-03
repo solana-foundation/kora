@@ -424,7 +424,7 @@ impl TransactionValidator {
         self.disallowed_accounts.contains(account)
     }
 
-    async fn calculate_total_outflow(
+    pub(crate) async fn calculate_total_outflow(
         &self,
         config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,

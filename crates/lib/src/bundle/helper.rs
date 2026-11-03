@@ -111,6 +111,7 @@ impl BundleProcessor {
         let mut total_cost_lamports = 0u64;
         let mut all_bundle_instructions: Vec<Instruction> = Vec::new();
         let mut txs_missing_payment_count = 0u64;
+        let mut total_transfer_outflow = 0u64;
 
         let mut alt_cache: HashMap<Pubkey, Vec<Pubkey>> = HashMap::new();
 
@@ -138,6 +139,18 @@ impl BundleProcessor {
             }
 
             validator.validate_transaction(config, &mut resolved_tx, rpc_client).await?;
+            let outflow =
+                validator.calculate_total_outflow(config, &mut resolved_tx, rpc_client).await?;
+            total_transfer_outflow =
+                total_transfer_outflow.checked_add(outflow).ok_or_else(|| {
+                    KoraError::ValidationError("Bundle outflow calculation overflow".to_string())
+                })?;
+            if total_transfer_outflow > config.validation.max_allowed_lamports {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Total bundle transfer amount {} exceeds maximum allowed {}",
+                    total_transfer_outflow, config.validation.max_allowed_lamports
+                )));
+            }
             validator.validate_token2022_transfer_hook_signing_policies(
                 config,
                 &mut resolved_tx,

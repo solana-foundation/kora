@@ -308,6 +308,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_sign_bundle_rejects_aggregate_outflow_above_limit() {
+        let mut validation = ValidationConfigBuilder::new()
+            .with_allowed_programs(vec!["11111111111111111111111111111111".to_string()])
+            .build();
+        validation.max_allowed_lamports = 1_000_000;
+        validation.price = PriceConfig { model: PriceModel::Free };
+        validation.fee_payer_policy.system.allow_transfer = true;
+        let _m = ConfigMockBuilder::new()
+            .with_bundle_enabled(true)
+            .with_usage_limit_enabled(false)
+            .with_validation(validation)
+            .build_and_setup();
+        let signer_pubkey = setup_or_get_test_signer();
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let rpc_client = Arc::new(
+            RpcMockBuilder::new()
+                .with_fee_estimate(5000)
+                .with_blockhash()
+                .with_simulation()
+                .build(),
+        );
+
+        let transactions: Vec<String> = (0..2)
+            .map(|_| {
+                let ix = transfer(&signer_pubkey, &Pubkey::new_unique(), 600_000);
+                let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&signer_pubkey)));
+                let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+                TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
+            })
+            .collect();
+
+        let request = SignBundleRequest {
+            transactions,
+            signer_key: Some(signer_pubkey.to_string()),
+            sig_verify: true,
+            user_id: None,
+            sign_only_indices: None,
+        };
+
+        let err = sign_bundle(&rpc_client, request).await.unwrap_err().to_string();
+        assert!(err.contains("Total bundle transfer amount 1200000"), "Unexpected error: {err}");
+    }
+
+    #[tokio::test]
     async fn test_sign_bundle_single_transaction() {
         let mut validation = ValidationConfigBuilder::new()
             .with_allowed_programs(vec!["11111111111111111111111111111111".to_string()])
