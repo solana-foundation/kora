@@ -9,7 +9,10 @@ use crate::token::{
 use super::interface::{TokenInterface, TokenState};
 use solana_program::{program_pack::Pack, pubkey::Pubkey};
 use spl_token_2022_interface::{
-    extension::{transfer_fee::TransferFeeConfig, ExtensionType, StateWithExtensions},
+    extension::{
+        transfer_fee::{TransferFee, TransferFeeConfig},
+        ExtensionType, StateWithExtensions,
+    },
     state::{Account as Token2022AccountState, AccountState, Mint as Token2022MintState},
 };
 use std::{collections::HashMap, fmt::Debug};
@@ -84,45 +87,48 @@ impl Token2022Mint {
         }
     }
 
-    /// Calculate transfer fee for a given amount and epoch
+    /// Calculate transfer fee for a given amount and epoch.
+    /// A newer fee scheduled for a later epoch is charged if it is higher, so a transaction
+    /// that lands after the epoch boundary still covers the fee in force when it executes.
     /// Returns None if no transfer fee is configured
     pub fn calculate_transfer_fee(
         &self,
         amount: u64,
         current_epoch: u64,
     ) -> Result<Option<u64>, crate::error::KoraError> {
-        if let Some(fee_config) = self.get_transfer_fee() {
-            let transfer_fee = if current_epoch >= u64::from(fee_config.newer_transfer_fee.epoch) {
-                &fee_config.newer_transfer_fee
-            } else {
-                &fee_config.older_transfer_fee
-            };
+        let Some(fee_config) = self.get_transfer_fee() else {
+            return Ok(None);
+        };
 
-            let basis_points = u16::from(transfer_fee.transfer_fee_basis_points);
-            let maximum_fee = u64::from(transfer_fee.maximum_fee);
-
-            let fee_amount = (amount as u128)
-                .checked_mul(basis_points as u128)
-                .and_then(|product| product.checked_add(10_000 - 1))
-                .and_then(|product| product.checked_div(10_000))
-                .and_then(
-                    |result| if result <= u64::MAX as u128 { Some(result as u64) } else { None },
-                )
-                .ok_or_else(|| {
-                    log::error!(
-                        "Transfer fee calculation overflow: amount={}, basis_points={}",
-                        amount,
-                        basis_points
-                    );
-                    crate::error::KoraError::ValidationError(format!(
-                        "Transfer fee calculation overflow: amount={}, basis_points={}",
-                        amount, basis_points
-                    ))
-                })?;
-            Ok(Some(std::cmp::min(fee_amount, maximum_fee)))
-        } else {
-            Ok(None)
+        let newer_fee = Self::fee_for(&fee_config.newer_transfer_fee, amount)?;
+        if current_epoch >= u64::from(fee_config.newer_transfer_fee.epoch) {
+            return Ok(Some(newer_fee));
         }
+        let older_fee = Self::fee_for(&fee_config.older_transfer_fee, amount)?;
+        Ok(Some(older_fee.max(newer_fee)))
+    }
+
+    fn fee_for(transfer_fee: &TransferFee, amount: u64) -> Result<u64, crate::error::KoraError> {
+        let basis_points = u16::from(transfer_fee.transfer_fee_basis_points);
+        let maximum_fee = u64::from(transfer_fee.maximum_fee);
+
+        let fee_amount = (amount as u128)
+            .checked_mul(basis_points as u128)
+            .and_then(|product| product.checked_add(10_000 - 1))
+            .and_then(|product| product.checked_div(10_000))
+            .and_then(|result| if result <= u64::MAX as u128 { Some(result as u64) } else { None })
+            .ok_or_else(|| {
+                log::error!(
+                    "Transfer fee calculation overflow: amount={}, basis_points={}",
+                    amount,
+                    basis_points
+                );
+                crate::error::KoraError::ValidationError(format!(
+                    "Transfer fee calculation overflow: amount={}, basis_points={}",
+                    amount, basis_points
+                ))
+            })?;
+        Ok(std::cmp::min(fee_amount, maximum_fee))
     }
 }
 
@@ -422,12 +428,41 @@ mod tests {
             .with_extensions(vec![ExtensionType::TransferFeeConfig])
             .build_as_custom_token2022_mint(mint_pubkey, extensions);
 
-        // Test older fee (epoch < 10)
-        let fee_old = mint.calculate_transfer_fee(10000, 5).unwrap().unwrap();
-        assert_eq!(fee_old, 100); // 10000 * 1% = 100
+        let fee_before_higher_newer = mint.calculate_transfer_fee(10000, 5).unwrap().unwrap();
+        assert_eq!(fee_before_higher_newer, 200);
 
         // Test newer fee (epoch >= 10)
         let fee_new = mint.calculate_transfer_fee(10000, 15).unwrap().unwrap();
         assert_eq!(fee_new, 200); // 10000 * 2% = 200
+    }
+
+    #[test]
+    fn test_token2022_mint_keeps_older_fee_when_scheduled_fee_is_lower() {
+        let transfer_fee_config = TransferFeeConfig {
+            transfer_fee_config_authority: MaybeNull::try_from(None).unwrap(),
+            withdraw_withheld_authority: MaybeNull::try_from(None).unwrap(),
+            withheld_amount: PodU64::from(0),
+            older_transfer_fee: TransferFee {
+                epoch: PodU64::from(0),
+                transfer_fee_basis_points: PodU16::from(200),
+                maximum_fee: PodU64::from(1000),
+            },
+            newer_transfer_fee: TransferFee {
+                epoch: PodU64::from(10),
+                transfer_fee_basis_points: PodU16::from(100),
+                maximum_fee: PodU64::from(500),
+            },
+        };
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            ExtensionType::TransferFeeConfig as u16,
+            ParsedExtension::Mint(MintExtension::TransferFeeConfig(transfer_fee_config)),
+        );
+        let mint = MintAccountMockBuilder::new()
+            .with_extensions(vec![ExtensionType::TransferFeeConfig])
+            .build_as_custom_token2022_mint(Pubkey::new_unique(), extensions);
+
+        assert_eq!(mint.calculate_transfer_fee(10000, 5).unwrap(), Some(200));
+        assert_eq!(mint.calculate_transfer_fee(10000, 10).unwrap(), Some(100));
     }
 }
