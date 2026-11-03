@@ -308,6 +308,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_sign_bundle_caps_fee_including_lighthouse_assertion() {
+        let mut validation = ValidationConfigBuilder::new()
+            .with_allowed_programs(vec![
+                "11111111111111111111111111111111".to_string(),
+                solana_compute_budget_interface::id().to_string(),
+            ])
+            .build();
+        validation.max_allowed_lamports = 7_000;
+        validation.price = PriceConfig { model: PriceModel::Free };
+        let mut config = ConfigMockBuilder::new()
+            .with_bundle_enabled(true)
+            .with_usage_limit_enabled(false)
+            .with_validation(validation)
+            .build();
+        config.kora.lighthouse.enabled = true;
+        let _m = setup_config_mock(config);
+        let signer_pubkey = setup_or_get_test_signer();
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let rpc_client = Arc::new(
+            RpcMockBuilder::new()
+                .with_fee_estimate(5000)
+                .with_blockhash()
+                .with_simulation()
+                .build(),
+        );
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[
+                solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(
+                    25_000,
+                ),
+                transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1_000),
+            ],
+            Some(&signer_pubkey),
+        ));
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let encoded_tx = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
+
+        let request = SignBundleRequest {
+            transactions: vec![encoded_tx],
+            signer_key: Some(signer_pubkey.to_string()),
+            sig_verify: true,
+            user_id: None,
+            sign_only_indices: None,
+        };
+
+        let err = sign_bundle(&rpc_client, request).await.unwrap_err().to_string();
+        assert!(err.contains("Fee 10000 exceeds maximum allowed 7000"), "Unexpected error: {err}");
+    }
+
+    #[tokio::test]
     async fn test_sign_bundle_rejects_aggregate_outflow_above_limit() {
         let mut validation = ValidationConfigBuilder::new()
             .with_allowed_programs(vec!["11111111111111111111111111111111".to_string()])

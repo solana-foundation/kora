@@ -14,8 +14,9 @@
 
 use crate::common::*;
 use jsonrpsee::rpc_params;
-use kora_lib::transaction::TransactionUtil;
+use kora_lib::{fee::fee::TransactionFeeUtil, transaction::TransactionUtil};
 use solana_client::rpc_config::RpcSimulateTransactionConfig;
+use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_sdk::{pubkey::Pubkey, signature::Signer, transaction::VersionedTransaction};
 use std::str::FromStr;
 
@@ -131,6 +132,71 @@ async fn test_sign_transaction_with_lighthouse_legacy() {
     assert!(
         sim_result.value.err.is_none(),
         "Transaction simulation with lighthouse assertion should succeed: {:?}",
+        sim_result.value.err
+    );
+}
+
+/// Without a SetComputeUnitLimit, the appended assertion raises the default compute unit
+/// limit and therefore the priority fee. The quote must already include that, so the signed
+/// transaction costs exactly what the client paid and the assertion holds.
+#[tokio::test]
+async fn test_sign_transaction_with_lighthouse_prices_assertion_priority_fee() {
+    let ctx = crate::ctx().await;
+    let _fee_payer_sol = FEE_PAYER_SOL.read().await;
+    let rpc_client = ctx.rpc_client();
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let mut payment = 1;
+    let mut quoted_lamports = 0;
+    let mut base64_transaction = String::new();
+    for _ in 0..2 {
+        base64_transaction = ctx
+            .transaction_builder()
+            .with_fee_payer(fee_payer)
+            .with_signer(&sender)
+            .with_instruction(ComputeBudgetInstruction::set_compute_unit_price(50_000))
+            .with_spl_transfer(&token_mint, &sender.pubkey(), &fee_payer, payment)
+            .with_transfer(&sender.pubkey(), &recipient, 10)
+            .build()
+            .await
+            .expect("Failed to create transaction");
+
+        let estimate: serde_json::Value = ctx
+            .rpc_call(
+                "estimateTransactionFee",
+                rpc_params![base64_transaction.clone(), token_mint.to_string()],
+            )
+            .await
+            .expect("Failed to estimate transaction fee");
+        quoted_lamports = estimate["fee_in_lamports"].as_u64().unwrap();
+        payment = estimate["fee_in_token"].as_u64().unwrap();
+    }
+
+    let response: serde_json::Value = ctx
+        .rpc_call("signTransaction", rpc_params![base64_transaction])
+        .await
+        .expect("Failed to sign transaction");
+    response.assert_success();
+
+    let signed_tx =
+        TransactionUtil::decode_b64_transaction(response["signed_transaction"].as_str().unwrap())
+            .expect("Failed to decode signed transaction");
+    assert!(verify_lighthouse_assertion_added(&signed_tx));
+
+    let signed_fee = TransactionFeeUtil::get_estimate_fee(rpc_client, &signed_tx.message)
+        .await
+        .expect("Failed to get fee for signed message");
+    assert_eq!(quoted_lamports, signed_fee, "The quote must cover the transaction Kora signed");
+
+    let sim_result =
+        rpc_client.simulate_transaction(&signed_tx).await.expect("Failed to simulate transaction");
+    assert!(
+        sim_result.value.err.is_none(),
+        "The assertion must hold once the full fee is charged: {:?}",
         sim_result.value.err
     );
 }

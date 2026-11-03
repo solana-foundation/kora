@@ -83,6 +83,7 @@ pub async fn estimate_transaction_fee(
         config,
         TransferHookValidationFlow::ImmediateSignAndSend,
         None,
+        config.kora.lighthouse.enabled,
     )
     .await?;
 

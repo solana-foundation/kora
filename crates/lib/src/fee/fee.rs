@@ -158,10 +158,16 @@ impl FeeConfigUtil {
         rpc_client: &RpcClient,
         config: &Config,
         bundle_instructions: Option<&[Instruction]>,
+        appends_lighthouse_assertion: bool,
     ) -> Result<TotalFeeCalculation, KoraError> {
         // Get base transaction fee using resolved transaction to handle lookup tables
-        let base_fee =
-            TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, transaction).await?;
+        let base_fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, transaction)
+            .await?
+            .checked_add(TransactionFeeUtil::get_lighthouse_assertion_fee(
+                transaction,
+                appends_lighthouse_assertion,
+            ))
+            .ok_or_else(|| KoraError::ValidationError("Base fee overflow".to_string()))?;
 
         // If the Kora signer is not included in the signers, add LAMPORTS_PER_SIGNATURE
         let mut kora_signature_fee = 0u64;
@@ -203,6 +209,7 @@ impl FeeConfigUtil {
     }
 
     /// Main entry point for fee calculation with Kora's price model applied
+    #[allow(clippy::too_many_arguments)]
     pub async fn estimate_kora_fee(
         transaction: &mut VersionedTransactionResolved,
         fee_payer: &Pubkey,
@@ -211,6 +218,7 @@ impl FeeConfigUtil {
         config: &Config,
         transfer_hook_validation_flow: TransferHookValidationFlow,
         bundle_instructions: Option<&[Instruction]>,
+        appends_lighthouse_assertion: bool,
     ) -> Result<TotalFeeCalculation, KoraError> {
         // Always validate Token2022 transfer-hook mutability before pricing logic so
         // both free and paid modes enforce the same transfer-hook security guard.
@@ -239,6 +247,7 @@ impl FeeConfigUtil {
                         rpc_client,
                         config,
                         bundle_instructions,
+                        appends_lighthouse_assertion,
                     )
                     .await?;
 
@@ -258,6 +267,7 @@ impl FeeConfigUtil {
                     rpc_client,
                     config,
                     bundle_instructions,
+                    appends_lighthouse_assertion,
                 )
                 .await?;
 
@@ -354,6 +364,29 @@ impl TransactionFeeUtil {
     /// `account_keys` must be the resolved key list: the runtime resolves program
     /// ids against lookup-table loaded keys too.
     pub fn get_requested_priority_fee(message: &VersionedMessage, account_keys: &[Pubkey]) -> u64 {
+        Self::requested_priority_fee(message, account_keys, 0)
+    }
+
+    /// Priority fee the Lighthouse assertion adds when it is appended after pricing: without a
+    /// SetComputeUnitLimit, one more instruction raises the default compute unit limit.
+    pub fn get_lighthouse_assertion_fee(
+        resolved_transaction: &VersionedTransactionResolved,
+        appends_assertion: bool,
+    ) -> u64 {
+        if !appends_assertion {
+            return 0;
+        }
+        let message = &resolved_transaction.transaction.message;
+        let account_keys = &resolved_transaction.all_account_keys;
+        Self::requested_priority_fee(message, account_keys, 1)
+            .saturating_sub(Self::requested_priority_fee(message, account_keys, 0))
+    }
+
+    fn requested_priority_fee(
+        message: &VersionedMessage,
+        account_keys: &[Pubkey],
+        appended_instructions: u32,
+    ) -> u64 {
         if let VersionedMessage::V1(v1_message) = message {
             return v1_message.config.priority_fee.unwrap_or(0);
         }
@@ -361,7 +394,7 @@ impl TransactionFeeUtil {
         let compute_budget_program_id = solana_compute_budget_interface::id();
         let mut compute_unit_price: Option<u64> = None;
         let mut compute_unit_limit: Option<u32> = None;
-        let mut non_compute_budget_instructions: u32 = 0;
+        let mut non_compute_budget_instructions = appended_instructions;
         for instruction in message.instructions() {
             if account_keys.get(instruction.program_id_index as usize)
                 != Some(&compute_budget_program_id)
@@ -560,6 +593,7 @@ mod tests {
             &config,
             transfer_hook_validation_flow,
             None,
+            false,
         )
         .await
     }
@@ -686,6 +720,7 @@ mod tests {
             &config,
             TransferHookValidationFlow::DelayedSigning,
             None,
+            false,
         )
         .await
     }
@@ -839,6 +874,7 @@ mod tests {
             &config,
             TransferHookValidationFlow::DelayedSigning,
             None,
+            false,
         )
         .await;
 
@@ -1703,6 +1739,7 @@ mod tests {
             &config,
             TransferHookValidationFlow::DelayedSigning,
             None,
+            false,
         )
         .await
         .unwrap();
@@ -2241,12 +2278,47 @@ mod tests {
             &mocked_rpc_client,
             &config,
             None,
+            false,
         )
         .await
         .unwrap();
 
         // Should include base fee (5000) + fee payer outflow (100_000)
         assert_eq!(result.total_fee_lamports, 105_000, "Should return base fee + outflow");
+    }
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_includes_lighthouse_assertion_fee() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let fee_payer = Keypair::new();
+        let recipient = Pubkey::new_unique();
+        let message = create_legacy_message(
+            &fee_payer.pubkey(),
+            &[
+                ComputeBudgetInstruction::set_compute_unit_price(25_000),
+                transfer(&fee_payer.pubkey(), &recipient, 100_000),
+            ],
+        );
+        let config = get_config().unwrap();
+
+        for (appends_assertion, expected) in [(false, 105_000), (true, 110_000)] {
+            let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(5000).build();
+            let mut resolved_transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message.clone())
+                    .unwrap();
+            let result = FeeConfigUtil::estimate_transaction_fee(
+                &mut resolved_transaction,
+                &fee_payer.pubkey(),
+                false,
+                &mocked_rpc_client,
+                &config,
+                None,
+                appends_assertion,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.total_fee_lamports, expected);
+        }
     }
 
     #[tokio::test]
@@ -2273,6 +2345,7 @@ mod tests {
             &mocked_rpc_client,
             &config,
             None,
+            false,
         )
         .await
         .unwrap();
@@ -2312,6 +2385,7 @@ mod tests {
             &mocked_rpc_client,
             &config,
             None,
+            false,
         )
         .await
         .unwrap();
@@ -2446,6 +2520,39 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, 9000, "Should return mocked base fee for V1 message");
+    }
+
+    #[test]
+    fn test_get_lighthouse_assertion_fee() {
+        let payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let resolve = |message| {
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        let price_only = resolve(create_legacy_message(
+            &payer,
+            &[
+                ComputeBudgetInstruction::set_compute_unit_price(25_000),
+                transfer(&payer, &recipient, 1_000),
+            ],
+        ));
+        assert_eq!(
+            TransactionFeeUtil::get_lighthouse_assertion_fee(&price_only, true),
+            5_000,
+            "The appended assertion raises the default limit by one instruction"
+        );
+        assert_eq!(TransactionFeeUtil::get_lighthouse_assertion_fee(&price_only, false), 0);
+
+        let explicit_limit = resolve(create_legacy_message(
+            &payer,
+            &[
+                ComputeBudgetInstruction::set_compute_unit_limit(300_000),
+                ComputeBudgetInstruction::set_compute_unit_price(25_000),
+                transfer(&payer, &recipient, 1_000),
+            ],
+        ));
+        assert_eq!(TransactionFeeUtil::get_lighthouse_assertion_fee(&explicit_limit, true), 0);
     }
 
     #[test]

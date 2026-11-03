@@ -484,6 +484,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             self,
             transfer_hook_validation_flow,
         )?;
+        let appends_lighthouse_assertion = config.kora.lighthouse.enabled && !will_send;
         let fee_calculation = FeeConfigUtil::estimate_kora_fee(
             self,
             &fee_payer,
@@ -492,6 +493,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             config,
             transfer_hook_validation_flow,
             None,
+            appends_lighthouse_assertion,
         )
         .await?;
 
@@ -524,7 +526,13 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             transaction.message.set_recent_blockhash(blockhash.0);
         }
 
-        let estimated_fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, self).await?;
+        let estimated_fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, self)
+            .await?
+            .checked_add(TransactionFeeUtil::get_lighthouse_assertion_fee(
+                self,
+                appends_lighthouse_assertion,
+            ))
+            .ok_or_else(|| KoraError::ValidationError("Estimated fee overflow".to_string()))?;
         validator.validate_lamport_fee(estimated_fee)?;
 
         let lighthouse_assertion_added = LighthouseUtil::add_fee_payer_assertion(

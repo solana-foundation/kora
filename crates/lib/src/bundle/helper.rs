@@ -163,7 +163,11 @@ impl BundleProcessor {
             resolved_transactions.push(resolved_tx);
         }
 
-        for resolved_tx in resolved_transactions.iter_mut() {
+        let appends_lighthouse_assertion = config.kora.lighthouse.enabled
+            && !matches!(plugin_context, Some(PluginExecutionContext::SignAndSendBundle));
+        let last_index = resolved_transactions.len().saturating_sub(1);
+
+        for (i, resolved_tx) in resolved_transactions.iter_mut().enumerate() {
             let fee_calc = FeeConfigUtil::estimate_kora_fee(
                 resolved_tx,
                 &fee_payer,
@@ -172,6 +176,7 @@ impl BundleProcessor {
                 config,
                 transfer_hook_validation_flow,
                 Some(&all_bundle_instructions),
+                appends_lighthouse_assertion && i == last_index,
             )
             .await?;
 
@@ -214,7 +219,7 @@ impl BundleProcessor {
 
         let mut bundle_payment_totals = PaymentLamportTotals::default();
         let mut total_solana_estimated_fee = 0u64;
-        for resolved in resolved_transactions.iter_mut() {
+        for (i, resolved) in resolved_transactions.iter_mut().enumerate() {
             let payment_totals = TokenUtil::calculate_payment_lamport_totals(
                 config,
                 resolved,
@@ -226,8 +231,14 @@ impl BundleProcessor {
             bundle_payment_totals.checked_add_assign(payment_totals)?;
 
             let fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, resolved).await?;
-            total_solana_estimated_fee =
-                total_solana_estimated_fee.checked_add(fee).ok_or_else(|| {
+            let assertion_fee = TransactionFeeUtil::get_lighthouse_assertion_fee(
+                resolved,
+                appends_lighthouse_assertion && i == last_index,
+            );
+            total_solana_estimated_fee = total_solana_estimated_fee
+                .checked_add(fee)
+                .and_then(|total| total.checked_add(assertion_fee))
+                .ok_or_else(|| {
                     KoraError::ValidationError("Bundle Solana fee calculation overflow".to_string())
                 })?;
 
