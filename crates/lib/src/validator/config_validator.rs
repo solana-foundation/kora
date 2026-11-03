@@ -278,6 +278,46 @@ mod tests {
         );
     }
 
+    fn usage_limited_config(model: PriceModel, api_keys: Option<Vec<String>>) -> Config {
+        Config {
+            validation: ValidationConfig {
+                price: PriceConfig { model },
+                ..validation_config_with_auth()
+            },
+            kora: KoraConfig {
+                auth: AuthConfig { api_keys, ..Default::default() },
+                usage_limit: UsageLimitConfig { enabled: true, ..UsageLimitConfig::default() },
+                ..KoraConfig::default()
+            },
+            metrics: MetricsConfig::default(),
+        }
+    }
+
+    fn has_free_usage_limit_warning(config: &Config) -> bool {
+        let mut warnings = Vec::new();
+        ConfigValidator::check_auth(config, &mut warnings);
+        warnings.iter().any(|w| w.contains("usage_limit is enabled with free pricing"))
+    }
+
+    #[test]
+    #[serial]
+    fn test_check_auth_warns_on_usage_limit_with_free_pricing_and_no_auth() {
+        std::env::remove_var(AuthConfig::API_KEY_ENV);
+        assert!(has_free_usage_limit_warning(&usage_limited_config(PriceModel::Free, None)));
+        assert!(!has_free_usage_limit_warning(&usage_limited_config(
+            PriceModel::Free,
+            Some(vec!["key".to_string()]),
+        )));
+        assert!(!has_free_usage_limit_warning(&usage_limited_config(
+            PriceModel::Fixed {
+                amount: 1000,
+                token: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                strict: false
+            },
+            None,
+        )));
+    }
+
     #[tokio::test]
     #[serial]
     async fn test_validate_rejects_usage_limit_enabled_without_rules() {
