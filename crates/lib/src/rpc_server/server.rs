@@ -31,7 +31,7 @@ use jsonrpsee::{
     types::ErrorObjectOwned,
     RpcModule,
 };
-use std::{iter::empty, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::HashSet, iter::empty, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
 use tower::{
     buffer::BufferLayer,
@@ -150,7 +150,6 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
 
     let allow_origins = build_allow_origin(&config.kora.cors_allow_origins);
 
-    // Build middleware stack with tracing and CORS
     let cors = CorsLayer::new()
         .allow_origin(allow_origins)
         .allow_methods([Method::POST, Method::GET])
@@ -165,11 +164,11 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
 
     let rpc_client = rpc.get_rpc_client().clone();
 
-    let allowed_methods = config.kora.enabled_methods.get_enabled_method_names();
-    let metrics_allowed_methods = Arc::new(allowed_methods.iter().cloned().collect());
+    let allowed_methods: Arc<HashSet<String>> =
+        Arc::new(config.kora.enabled_methods.get_enabled_method_names().into_iter().collect());
 
     let (metrics_handle, metrics_layers, balance_tracker_handle) =
-        run_metrics_server_if_required(port, rpc_client, metrics_allowed_methods).await?;
+        run_metrics_server_if_required(port, rpc_client, allowed_methods.clone()).await?;
 
     let recaptcha_config = config.kora.auth.resolved_recaptcha_secret().map(|secret| {
         RecaptchaConfig::new(
@@ -180,25 +179,34 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
     });
 
     let record_metrics = metrics_layers.is_some();
+    let (http_metrics_layer, metrics_handler_layer) = match metrics_layers {
+        Some(layers) => (layers.http_metrics_layer, layers.metrics_handler_layer),
+        None => (None, None),
+    };
+    let exempt_metrics_path =
+        metrics_handler_layer.as_ref().map(|layer| layer.endpoint().to_string());
 
     let middleware = ServiceBuilder::new()
-        // Placed early to return 200s immediately without waiting in rate-limit queues.
-        .option_layer(
-            metrics_layers.as_ref().and_then(|layers| layers.metrics_handler_layer.clone()),
-        )
+        // Outermost layer ensures all responses (including 429 rejections) carry CORS headers.
         .layer(cors)
-        // Sits after CORS so 429 responses carry CORS headers, and before http_metrics
-        // so client body upload stalls cannot delay the immediate 429 rejection.
+        // Drops excess traffic before body reads to protect against upload-stalling attacks.
         .option_layer(
             config
                 .kora
                 .global_rate_limit
-                .map(|limit| GlobalRateLimitLayer::new(limit, record_metrics)),
+                .map(|limit| GlobalRateLimitLayer::new(limit, record_metrics, exempt_metrics_path)),
         )
-        .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
+        // Translates GET /liveness into an internal RPC call.
         .layer(ProxyGetRequestLayer::new([(LIVENESS_PATH, "liveness")])?)
+        // Connection-scoped rate limiter wrapped in a buffer to manage per-connection concurrency.
         .layer(rate_limit_layer(config.kora.rate_limit))
+        // Handles Prometheus scraping without global rate limit interference.
+        .option_layer(metrics_handler_layer)
+        // Sheds unallowed methods before auth and latency instrumentation.
         .layer(MethodValidationLayer::new(allowed_methods))
+        // Placed inside rate limiter so duration excludes permit wait time.
+        .option_layer(http_metrics_layer)
+        // Authentication and abuse prevention layers.
         .option_layer(config.kora.auth.resolved_api_keys().map(ApiKeyAuthLayer::new))
         .option_layer(
             config
@@ -812,24 +820,8 @@ mod tests {
             "method": "SOME_ARBITRARY_UNBOUNDED_STRING"
         });
 
-        let counter = &HttpMetrics::get().requests_total;
-        let before = counter
-            .get_metric_with_label_values(&["unknown", "405"])
-            .map(|c| c.get())
-            .unwrap_or(0.0);
-
         let res = client.post(&base_url).json(&payload).send().await.expect("Request failed");
         assert_eq!(res.status().as_u16(), 405);
-
-        let after = counter
-            .get_metric_with_label_values(&["unknown", "405"])
-            .map(|c| c.get())
-            .unwrap_or(0.0);
-        assert_eq!(
-            after - before,
-            1.0,
-            "requests_total for method=\"unknown\",status=\"405\" must increment by 1"
-        );
 
         let res_metrics = client
             .get(format!("{}/metrics", base_url))
@@ -838,10 +830,6 @@ mod tests {
             .expect("Metrics request failed");
 
         let metrics_text = res_metrics.text().await.unwrap();
-        assert!(
-            metrics_text.contains("method=\"unknown\""),
-            "Unknown methods must be mapped to 'unknown' to prevent unbounded cardinality"
-        );
         assert!(
             !metrics_text.contains("SOME_ARBITRARY_UNBOUNDED_STRING"),
             "Arbitrary strings must not be recorded as labels"

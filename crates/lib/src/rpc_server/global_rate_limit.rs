@@ -49,18 +49,22 @@ impl TokenBucket {
     }
 }
 
-// Wraps a single shared bucket to enforce a global limit across all clients.
-// Sits after CORS and before auth, so 429 responses still carry CORS headers.
+// Shared token bucket enforcing a pre-auth limit across all incoming traffic.
 #[derive(Clone)]
 pub struct GlobalRateLimitLayer {
     bucket: Arc<Mutex<TokenBucket>>,
     record_metrics: bool,
+    exempt_metrics_path: Option<String>,
 }
 
 impl GlobalRateLimitLayer {
-    pub fn new(capacity: u64, record_metrics: bool) -> Self {
+    pub fn new(capacity: u64, record_metrics: bool, exempt_metrics_path: Option<String>) -> Self {
         let cap = capacity as f64;
-        Self { bucket: Arc::new(Mutex::new(TokenBucket::new(cap, cap))), record_metrics }
+        Self {
+            bucket: Arc::new(Mutex::new(TokenBucket::new(cap, cap))),
+            record_metrics,
+            exempt_metrics_path,
+        }
     }
 }
 
@@ -72,6 +76,7 @@ impl<S> Layer<S> for GlobalRateLimitLayer {
             inner,
             bucket: self.bucket.clone(),
             record_metrics: self.record_metrics,
+            exempt_metrics_path: self.exempt_metrics_path.clone(),
         }
     }
 }
@@ -81,6 +86,7 @@ pub struct GlobalRateLimitService<S> {
     inner: S,
     bucket: Arc<Mutex<TokenBucket>>,
     record_metrics: bool,
+    exempt_metrics_path: Option<String>,
 }
 
 impl<S> Service<Request<Body>> for GlobalRateLimitService<S>
@@ -93,19 +99,17 @@ where
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // Tower requires poll_ready to be called before call.
-        // We delay polling inner here because we clone inner below;
-        // cloning a Buffer yields an un-polled clone without a permit.
-        // We use `oneshot` to poll the clone.
+        // Individual clones acquire readiness via oneshot in call().
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
-        // Exempt liveness GET endpoints so the server remains observable when under heavy load.
-        // Metrics bypass is handled by the outer MetricsHandlerLayer.
-        let is_liveness = req.method() == Method::GET && req.uri().path() == LIVENESS_PATH;
-        let allowed = is_liveness || {
-            // Recover instead of panicking to prevent a single panicked thread from poisoning the global rate limiter.
+        // Health and metrics GET endpoints bypass shedding so monitoring remains operational under flood.
+        let is_exempt = req.method() == Method::GET
+            && (req.uri().path() == LIVENESS_PATH
+                || self.exempt_metrics_path.as_deref() == Some(req.uri().path()));
+
+        let allowed = is_exempt || {
             let mut bucket = self.bucket.lock().unwrap_or_else(|e| {
                 log::warn!("Global rate limiter mutex was poisoned, recovering inner state");
                 e.into_inner()
@@ -181,7 +185,7 @@ mod tests {
         let call_count = Arc::new(AtomicUsize::new(0));
         let mock_service = MockService { call_count: call_count.clone() };
 
-        let layer = GlobalRateLimitLayer::new(1, false);
+        let layer = GlobalRateLimitLayer::new(1, false, None);
         let mut service = ServiceBuilder::new().layer(layer).service(mock_service);
 
         let req1 =
@@ -204,7 +208,7 @@ mod tests {
         let call_count = Arc::new(AtomicUsize::new(0));
         let mock_service = MockService { call_count: call_count.clone() };
 
-        let layer = GlobalRateLimitLayer::new(1, false);
+        let layer = GlobalRateLimitLayer::new(1, false, None);
         let mut service = ServiceBuilder::new().layer(layer).service(mock_service);
 
         // First POST to LIVENESS_PATH consumes the only token in the bucket.
@@ -225,6 +229,37 @@ mod tests {
         // GET to LIVENESS_PATH must always pass even when the bucket is empty.
         let get_req =
             Request::builder().method(Method::GET).uri(LIVENESS_PATH).body(Body::empty()).unwrap();
+        let res3 = service.ready().await.unwrap().call(get_req).await.unwrap();
+        assert_eq!(res3.status(), StatusCode::OK);
+        assert_eq!(call_count.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn test_global_rate_limit_metrics_bypass_only_for_get() {
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let mock_service = MockService { call_count: call_count.clone() };
+
+        let layer = GlobalRateLimitLayer::new(1, false, Some("/metrics".to_string()));
+        let mut service = ServiceBuilder::new().layer(layer).service(mock_service);
+
+        // First POST to /metrics consumes the only token in the bucket.
+        let post1 =
+            Request::builder().method(Method::POST).uri("/metrics").body(Body::empty()).unwrap();
+        let res1 = service.ready().await.unwrap().call(post1).await.unwrap();
+        assert_eq!(res1.status(), StatusCode::OK);
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+
+        // Second POST to /metrics must be rate-limited (429) because the bucket is now empty.
+        let post2 =
+            Request::builder().method(Method::POST).uri("/metrics").body(Body::empty()).unwrap();
+        let res2 = service.ready().await.unwrap().call(post2).await.unwrap();
+        assert_eq!(res2.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(res2.extensions().get::<RejectionReason>(), Some(&RejectionReason::RateLimit));
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+
+        // GET to /metrics must always pass even when the bucket is empty.
+        let get_req =
+            Request::builder().method(Method::GET).uri("/metrics").body(Body::empty()).unwrap();
         let res3 = service.ready().await.unwrap().call(get_req).await.unwrap();
         assert_eq!(res3.status(), StatusCode::OK);
         assert_eq!(call_count.load(Ordering::SeqCst), 2);

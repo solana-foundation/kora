@@ -18,6 +18,10 @@ impl MetricsHandlerLayer {
     pub fn new(endpoint: String) -> Self {
         Self { endpoint }
     }
+
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
 }
 
 impl Default for MetricsHandlerLayer {
@@ -50,16 +54,12 @@ where
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // Tower requires poll_ready to be called before call.
-        // We delay polling inner here because we clone inner below;
-        // cloning a Buffer yields an un-polled clone without a permit.
-        // We use `oneshot` to poll the clone.
+        // Individual clones acquire readiness via oneshot in call().
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
-        let endpoint = self.endpoint.clone();
-        if req.uri().path() == endpoint && req.method() == http::Method::GET {
+        if req.method() == http::Method::GET && req.uri().path() == self.endpoint {
             Box::pin(async move {
                 match crate::metrics::gather() {
                     Ok(metrics) => Ok(build_response_with_graceful_error(
@@ -70,11 +70,14 @@ where
                         StatusCode::OK,
                         &metrics,
                     )),
-                    Err(e) => Ok(build_response_with_graceful_error(
-                        None,
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        &format!("Error gathering metrics: {e}"),
-                    )),
+                    Err(e) => {
+                        log::error!("Failed to gather Prometheus metrics: {e}");
+                        Ok(build_response_with_graceful_error(
+                            None,
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            &format!("Error gathering metrics: {e}"),
+                        ))
+                    }
                 }
             })
         } else {

@@ -82,6 +82,7 @@ impl HttpMetrics {
         HTTP_METRICS.get_or_init(HttpMetrics::new)
     }
 
+    /// Records rejections as UNKNOWN_METHOD because rate limiting drops requests before body reads.
     pub fn record_global_rate_limit_rejection(&self) {
         let status = http::StatusCode::TOO_MANY_REQUESTS.as_str();
         self.requests_total.with_label_values(&[UNKNOWN_METHOD, status]).inc();
@@ -135,10 +136,7 @@ where
     >;
 
     fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // Tower requires poll_ready to be called before call.
-        // We delay polling inner here because we clone inner below;
-        // cloning a Buffer yields an un-polled clone without a permit.
-        // We use `oneshot` to poll the clone.
+        // Individual clones acquire readiness via oneshot in call().
         Poll::Ready(Ok(()))
     }
 
@@ -153,15 +151,15 @@ where
             let is_liveness =
                 parts.method == http::Method::GET && parts.uri.path() == LIVENESS_PATH;
 
-            let mut method = if is_liveness {
-                "liveness".to_string()
+            let rpc_method = if is_liveness { None } else { get_jsonrpc_method(&body_bytes) };
+            let method = if is_liveness {
+                "liveness"
             } else {
-                get_jsonrpc_method(&body_bytes).unwrap_or(UNKNOWN_METHOD.to_string())
+                rpc_method
+                    .as_deref()
+                    .filter(|m| allowed_methods.contains(*m))
+                    .unwrap_or(UNKNOWN_METHOD)
             };
-
-            if !is_liveness && !allowed_methods.contains(&method) {
-                method = UNKNOWN_METHOD.to_string();
-            }
 
             let new_body = Body::from(body_bytes);
             let new_request = Request::from_parts(parts, new_body);
@@ -174,20 +172,24 @@ where
             match &result {
                 Ok(response) => {
                     let status = response.status();
-                    metrics.requests_total.with_label_values(&[&method, status.as_str()]).inc();
+                    metrics.requests_total.with_label_values(&[method, status.as_str()]).inc();
                     metrics
                         .request_duration_seconds
-                        .with_label_values(&[&method])
+                        .with_label_values(&[method])
                         .observe(duration.as_secs_f64());
                     if let Some(reason) = response.extensions().get::<RejectionReason>() {
                         metrics
                             .http_rejections_total
-                            .with_label_values(&[&method, reason.as_str()])
+                            .with_label_values(&[method, reason.as_str()])
                             .inc();
                     }
                 }
                 Err(_) => {
-                    metrics.requests_total.with_label_values(&[&method, ERROR_STATUS]).inc();
+                    metrics.requests_total.with_label_values(&[method, ERROR_STATUS]).inc();
+                    metrics
+                        .request_duration_seconds
+                        .with_label_values(&[method])
+                        .observe(duration.as_secs_f64());
                 }
             }
 

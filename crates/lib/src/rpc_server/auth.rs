@@ -10,7 +10,7 @@ use jsonrpsee::server::HttpBody as Body;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RejectionReason {
     AuthFailure,
     RateLimit,
