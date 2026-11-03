@@ -48,6 +48,11 @@ impl TransactionValidator {
             unless self.fee_payer_policy.alt.allow_close,
             "Fee payer cannot be used for 'ALT CloseLookupTable'");
 
+        deny_fee_payer!(alt_instructions, ParsedALTInstructionType::AltCloseLookupTable,
+            ParsedALTInstructionData::AltCloseLookupTable { lookup_table_authority, recipient, .. } =>
+            *lookup_table_authority == self.fee_payer_pubkey && *recipient != self.fee_payer_pubkey,
+            "ALT CloseLookupTable: when fee payer is the authority, recipient must also be the fee payer");
+
         Ok(())
     }
 }

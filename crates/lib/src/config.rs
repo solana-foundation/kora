@@ -441,7 +441,8 @@ pub struct AltInstructionPolicy {
     pub allow_freeze: bool,
     /// Allow fee payer to be authority in ALT DeactivateLookupTable instructions
     pub allow_deactivate: bool,
-    /// Allow fee payer to be authority in ALT CloseLookupTable instructions
+    /// Allow fee payer to be authority in ALT CloseLookupTable instructions. The recipient must
+    /// always be the fee payer, regardless of this flag.
     pub allow_close: bool,
 }
 

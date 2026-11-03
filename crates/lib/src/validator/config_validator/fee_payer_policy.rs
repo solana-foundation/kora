@@ -142,7 +142,7 @@ impl ConfigValidator {
                 "Users can deactivate lookup tables controlled by the fee payer. This can disrupt systems that depend on those tables";
 
             alt, allow_close, "ALT CloseLookupTable instructions",
-                "Users can close lookup tables controlled by the fee payer and redirect lamports to arbitrary recipients";
+                "Users can close lookup tables controlled by the fee payer. The rent is always refunded to the fee payer";
 
             loader_v4, allow_write, "Loader-v4 Write instructions",
                 "Users can make the fee payer write arbitrary bytes into program accounts it is the authority for";

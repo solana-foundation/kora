@@ -2252,10 +2252,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_ok());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message))
+                if message.contains("recipient must also be the fee payer")
+        ));
 
         let rpc_client = RpcMockBuilder::new().with_account_info(&alt_account).build();
         let mut policy = FeePayerPolicy::default();
@@ -2285,44 +2287,6 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_validate_transfer_amounts_rejects_alt_close_outflow_above_max_allowed_lamports() {
-        let fee_payer = Pubkey::new_unique();
-        let lookup_table = Pubkey::new_unique();
-        let recipient = Pubkey::new_unique();
-        let alt_account = AccountMockBuilder::new()
-            .with_owner(ADDRESS_LOOKUP_TABLE_PROGRAM_ID)
-            .with_lamports(2_000_000)
-            .build();
-
-        let mut policy = FeePayerPolicy::default();
-        policy.alt.allow_close = true;
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![ADDRESS_LOOKUP_TABLE_PROGRAM_ID.to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(policy)
-            .build();
-        setup_both_configs(config);
-
-        let rpc_client = RpcMockBuilder::new().with_account_info(&alt_account).build();
-        let config = get_config().unwrap();
-        let validator = TransactionValidator::new(config, fee_payer).unwrap();
-
-        let close_ix = alt_instruction::close_lookup_table(lookup_table, fee_payer, recipient);
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
-        let mut transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-
-        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
-        assert!(matches!(
-            result,
-            Err(KoraError::InvalidTransaction(message))
-                if message.contains("Total transfer amount 2000000 exceeds maximum allowed 1000000")
-        ));
     }
 
     #[tokio::test]
