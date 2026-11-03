@@ -208,11 +208,7 @@ impl Token2022SecurityParser {
                     ));
                 }
                 TokenInstruction::PermissionedBurnExtension => {
-                    parsed.push(Self::unsupported_fee_payer_account_check(
-                        instruction,
-                        "PermissionedBurn extension instruction",
-                        Some(ExtensionType::PermissionedBurn),
-                    ));
+                    parsed.push(Self::parse_permissioned_burn_extension(instruction)?);
                 }
                 TokenInstruction::ConfidentialTransferExtension
                 | TokenInstruction::ConfidentialTransferFeeExtension
@@ -530,7 +526,7 @@ mod tests {
         let instruction = Instruction {
             program_id: spl_token_2022_interface::id(),
             accounts: vec![AccountMeta::new(Pubkey::new_unique(), false)],
-            data: vec![46, 0],
+            data: vec![46, 1],
         };
 
         let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
@@ -540,6 +536,28 @@ mod tests {
             parsed[0].account_usage_policy,
             Token2022AccountUsagePolicy::RejectIfFeePayerPresent
         );
+    }
+
+    #[test]
+    fn test_parse_permissioned_burn_initialize_plants_authority() {
+        let authority = Pubkey::new_unique();
+        let instruction =
+            spl_token_2022_interface::extension::permissioned_burn::instruction::initialize(
+                &spl_token_2022_interface::id(),
+                &Pubkey::new_unique(),
+                &authority,
+            )
+            .unwrap();
+
+        let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(
+            parsed[0].account_usage_policy,
+            Token2022AccountUsagePolicy::RejectIfFeePayerPresent
+        );
+        assert_eq!(parsed[0].data_pubkeys.len(), 1);
+        assert_eq!(parsed[0].data_pubkeys[0].pubkey, authority);
+        assert_eq!(parsed[0].data_pubkeys[0].role, Token2022FieldRole::PlantedAuthority);
     }
 
     #[test]

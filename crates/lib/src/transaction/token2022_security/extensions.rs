@@ -6,6 +6,7 @@ use spl_token_2022_interface::{
         interest_bearing_mint::{self, instruction::InterestBearingMintInstruction},
         metadata_pointer::{self, instruction::MetadataPointerInstruction},
         pausable::{self, instruction::PausableInstruction},
+        permissioned_burn::{self, instruction::PermissionedBurnInstruction},
         scaled_ui_amount::{self, instruction::ScaledUiAmountMintInstruction},
         transfer_fee::instruction::TransferFeeInstruction,
         transfer_hook::{self, instruction::TransferHookInstruction},
@@ -527,6 +528,47 @@ impl Token2022SecurityParser {
                 }))
             }
             PausableInstruction::Pause | PausableInstruction::Resume => Ok(None),
+        }
+    }
+
+    pub(super) fn parse_permissioned_burn_extension(
+        instruction: &Instruction,
+    ) -> Result<Token2022SecurityInstruction, KoraError> {
+        let permissioned_burn_instruction = Self::decode_extension_type::<
+            PermissionedBurnInstruction,
+        >(instruction, "PermissionedBurn")?;
+
+        match permissioned_burn_instruction {
+            PermissionedBurnInstruction::Initialize => {
+                let initialize: permissioned_burn::instruction::InitializeInstructionData =
+                    Self::extension_data(
+                        decode_instruction_data(&instruction.data[1..]),
+                        "PermissionedBurn initialize",
+                    )?;
+
+                Ok(Token2022SecurityInstruction {
+                    instruction_name: "Token2022 InitializePermissionedBurn",
+                    extension_type: Some(ExtensionType::PermissionedBurn),
+                    accounts: Self::instruction_accounts(instruction),
+                    account_usage_policy: Token2022AccountUsagePolicy::RejectIfFeePayerPresent,
+                    update_authority: None,
+                    multisig_signers: vec![],
+                    data_pubkeys: vec![Token2022SecurityField {
+                        context: "Token2022 InitializePermissionedBurn authority",
+                        pubkey: initialize.authority,
+                        role: Token2022FieldRole::PlantedAuthority,
+                    }],
+                })
+            }
+            PermissionedBurnInstruction::Burn
+            | PermissionedBurnInstruction::BurnChecked
+            | PermissionedBurnInstruction::ConfidentialBurn => {
+                Ok(Self::unsupported_fee_payer_account_check(
+                    instruction,
+                    "PermissionedBurn extension instruction",
+                    Some(ExtensionType::PermissionedBurn),
+                ))
+            }
         }
     }
 

@@ -5381,6 +5381,48 @@ mod tests {
         );
     }
 
+    async fn validate_permissioned_burn_initialize_with_fee_payer_authority(
+        allow_initialize_extension_authority: bool,
+    ) -> Result<(), KoraError> {
+        let fee_payer = Keypair::new();
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_initialize_extension_authority =
+            allow_initialize_extension_authority;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+        let ix = spl_token_2022_interface::extension::permissioned_burn::instruction::initialize(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+            &fee_payer.pubkey(),
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        validator.validate_transaction(config, &mut transaction, &rpc_client).await
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_permissioned_burn_initialize_rejects_fee_payer_authority_by_default() {
+        let result = validate_permissioned_burn_initialize_with_fee_payer_authority(false).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("Token2022 InitializePermissionedBurn authority")),
+            "Expected rejection when fee payer is assigned as permissioned burn authority, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_permissioned_burn_initialize_allowed_with_extension_authority_opt_in() {
+        let result = validate_permissioned_burn_initialize_with_fee_payer_authority(true).await;
+        assert!(result.is_ok(), "Opt-in should allow the fee payer as authority: {result:?}");
+    }
+
     #[tokio::test]
     #[serial]
     async fn test_token2022_transfer_hook_update_rejected_when_policy_denies() {
