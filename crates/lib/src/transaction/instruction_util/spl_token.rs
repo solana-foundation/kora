@@ -57,8 +57,11 @@ pub enum ParsedSPLInstructionData {
         is_2022: bool,
     },
     SplTokenBurn {
+        amount: u64,
         owner: Pubkey,
         multisig_signers: Vec<Pubkey>,
+        mint: Option<Pubkey>,
+        source_address: Pubkey,
         is_2022: bool,
     },
     SplTokenCloseAccount {
@@ -231,25 +234,33 @@ macro_rules! match_shared_token_instruction {
                     $is_2022,
                 );
             }
-            TokenInstruction::Burn { .. } => {
-                let owner = Self::parse_burn_owner_with_mint_fallback($instruction)?;
+            TokenInstruction::Burn { amount } => {
+                let (owner, mint) = Self::parse_burn_owner_with_mint_fallback($instruction)?;
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenBurn {
+                        amount,
                         owner,
                         multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        mint,
+                        source_address: $instruction.accounts
+                            [instruction_indexes::spl_token_burn::SOURCE_INDEX]
+                            .pubkey,
                         is_2022: $is_2022,
                     },
                 );
             }
-            TokenInstruction::BurnChecked { .. } => {
+            TokenInstruction::BurnChecked { amount, .. } => {
                 use instruction_indexes::spl_token_burn as ix;
                 validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenBurn {
+                        amount,
                         owner: $instruction.accounts[ix::OWNER_INDEX].pubkey,
                         multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        mint: Some($instruction.accounts[ix::MINT_INDEX].pubkey),
+                        source_address: $instruction.accounts[ix::SOURCE_INDEX].pubkey,
                         is_2022: $is_2022,
                     },
                 );
@@ -486,23 +497,25 @@ macro_rules! match_shared_token_instruction {
 }
 
 impl IxUtils {
-    fn parse_burn_owner_with_mint_fallback(instruction: &Instruction) -> Result<Pubkey, KoraError> {
+    fn parse_burn_owner_with_mint_fallback(
+        instruction: &Instruction,
+    ) -> Result<(Pubkey, Option<Pubkey>), KoraError> {
+        use instruction_indexes::spl_token_burn as ix;
         // Standard Burn has 3 accounts: [source, mint, authority]
         // Reconstructed from parsed RPC data may have only 2: [source, authority]
         // (Solana RPC doesn't include mint in parsed "burn" non-checked JSON)
-        if instruction.accounts.len()
-            >= instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
-        {
-            return Ok(
-                instruction.accounts[instruction_indexes::spl_token_burn::OWNER_INDEX].pubkey
-            );
+        if instruction.accounts.len() >= ix::REQUIRED_NUMBER_OF_ACCOUNTS {
+            return Ok((
+                instruction.accounts[ix::OWNER_INDEX].pubkey,
+                Some(instruction.accounts[ix::MINT_INDEX].pubkey),
+            ));
         }
 
         if instruction.accounts.len() == 2 {
             log::debug!(
                 "Burn instruction has 2 accounts (reconstructed without mint), using index 1 as authority"
             );
-            return Ok(instruction.accounts[1].pubkey);
+            return Ok((instruction.accounts[1].pubkey, None));
         }
 
         log::error!("Burn instruction has less than 2 accounts: {:?}", instruction);

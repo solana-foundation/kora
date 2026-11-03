@@ -21,7 +21,7 @@ impl TransactionValidator {
             unless token_policy(self.fee_payer_policy, *is_2022).allow_approve, "Approve");
 
         deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenBurn,
-            ParsedSPLInstructionData::SplTokenBurn { owner, multisig_signers, is_2022 } =>
+            ParsedSPLInstructionData::SplTokenBurn { owner, multisig_signers, is_2022, .. } =>
             self.fee_payer_signs(owner, multisig_signers),
             unless token_policy(self.fee_payer_policy, *is_2022).allow_burn, "Burn");
 

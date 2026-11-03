@@ -1446,6 +1446,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_burn() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let source = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let burn = spl_token_interface::instruction::burn(
+            &spl_token_interface::id(),
+            &source,
+            &mint,
+            &fee_payer,
+            &[],
+            100_000_000,
+        )
+        .unwrap();
+        let burn_checked = spl_token_2022_interface::instruction::burn_checked(
+            &spl_token_2022_interface::id(),
+            &source,
+            &mint,
+            &fee_payer,
+            &[],
+            100_000_000,
+            6,
+        )
+        .unwrap();
+        for ix in [burn, burn_checked] {
+            let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+            assert_eq!(
+                outflow_of(&fee_payer, ix.clone(), &rpc_client).await,
+                100_000_000,
+                "A fee-payer burn must count the priced token value as outflow"
+            );
+
+            let mut other_owner = ix;
+            other_owner.accounts[2].pubkey = Pubkey::new_unique();
+            assert_eq!(outflow_of(&fee_payer, other_owner, &rpc_client).await, 0);
+        }
+    }
+
+    #[tokio::test]
     async fn test_calculate_fee_payer_outflow_withdraw_excess_lamports() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let fee_payer = Pubkey::new_unique();

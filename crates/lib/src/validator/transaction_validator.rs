@@ -2557,12 +2557,44 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_burn_above_max_allowed_lamports_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_burn = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let burn_ix = spl_token_interface::instruction::burn(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &fee_payer,
+            &[],
+            2_000_000,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message))
+                if message.contains("Total transfer amount 2000000 exceeds maximum allowed 1000000")
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_burn() {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_burn = true;
         setup_spl_config_with_policy(policy);
@@ -2588,7 +2620,7 @@ mod tests {
             .await
             .is_ok());
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_burn = false;
         setup_spl_config_with_policy(policy);
@@ -5962,7 +5994,7 @@ mod tests {
         )
         .unwrap();
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_revoke = true;
         policy.spl_token.allow_burn = true;
@@ -5982,7 +6014,7 @@ mod tests {
             "Both policies true should pass"
         );
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_revoke = true;
         policy.spl_token.allow_burn = false;
@@ -6004,7 +6036,7 @@ mod tests {
             panic!("Expected InvalidTransaction error for burn policy");
         }
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_revoke = false;
         policy.spl_token.allow_burn = true;

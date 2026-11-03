@@ -202,8 +202,7 @@ impl TokenUtil {
         Ok(result)
     }
 
-    /// Calculate the total lamports value of SPL token transfers where the fee payer is involved
-    /// This includes both outflow (fee payer as owner/source) and inflow (fee payer owns destination)
+    /// Calculate the total lamports value of SPL tokens the fee payer transfers out or burns.
     pub async fn calculate_spl_transfers_value_in_lamports(
         spl_transfers: &[ParsedSPLInstructionData],
         fee_payer: &Pubkey,
@@ -215,6 +214,13 @@ impl TokenUtil {
 
         for transfer in spl_transfers {
             if let ParsedSPLInstructionData::SplTokenTransfer {
+                amount,
+                owner,
+                mint,
+                source_address,
+                ..
+            }
+            | ParsedSPLInstructionData::SplTokenBurn {
                 amount,
                 owner,
                 mint,

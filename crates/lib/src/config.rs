@@ -354,7 +354,8 @@ pub struct NonceInstructionPolicy {
 pub struct SplTokenInstructionPolicy {
     /// Allow fee payer to be the owner in SPL Token Transfer/TransferChecked instructions
     pub allow_transfer: bool,
-    /// Allow fee payer to be the owner in SPL Token Burn/BurnChecked instructions
+    /// Allow fee payer to be the owner in SPL Token Burn/BurnChecked instructions. Burned tokens are
+    /// priced and counted against `max_allowed_lamports`, so the mint needs a price.
     pub allow_burn: bool,
     /// Allow fee payer to be the owner in SPL Token CloseAccount instructions
     pub allow_close_account: bool,
@@ -389,7 +390,8 @@ pub struct SplTokenInstructionPolicy {
 pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be the owner in Token2022 Transfer/TransferChecked instructions
     pub allow_transfer: bool,
-    /// Allow fee payer to be the owner in Token2022 Burn/BurnChecked instructions
+    /// Allow fee payer to be the owner in Token2022 Burn/BurnChecked instructions. Burned tokens are
+    /// priced and counted against `max_allowed_lamports`, so the mint needs a price.
     pub allow_burn: bool,
     /// Allow fee payer to be the owner in Token2022 CloseAccount instructions
     pub allow_close_account: bool,

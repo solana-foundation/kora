@@ -358,12 +358,17 @@ impl FeeConfigUtil {
 
         let spl_instructions = transaction.get_or_parse_spl_instructions()?;
         let empty_vec = vec![];
-        let spl_transfers =
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransfer).unwrap_or(&empty_vec);
+        let spl_transfers_and_burns: Vec<ParsedSPLInstructionData> =
+            [ParsedSPLInstructionType::SplTokenTransfer, ParsedSPLInstructionType::SplTokenBurn]
+                .iter()
+                .filter_map(|instruction_type| spl_instructions.get(instruction_type))
+                .flatten()
+                .cloned()
+                .collect();
 
-        if !spl_transfers.is_empty() {
+        if !spl_transfers_and_burns.is_empty() {
             let spl_outflow = TokenUtil::calculate_spl_transfers_value_in_lamports(
-                spl_transfers,
+                &spl_transfers_and_burns,
                 fee_payer_pubkey,
                 rpc_client,
                 config,
