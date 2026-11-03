@@ -160,6 +160,9 @@ impl ConfigValidator {
                         .to_string(),
                 );
             }
+            if let Err(e) = usage_config.build_rules() {
+                errors.push(e.to_string());
+            }
 
             let (usage_errors, usage_warnings) = CacheValidator::validate(usage_config).await;
             errors.extend(usage_errors);

@@ -112,7 +112,7 @@ mod tests {
             NonceInstructionPolicy, PluginsConfig, ProgramsConfig, SplTokenConfig,
             SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
             Token2022InstructionPolicy, TransactionPluginType, TransferHookPolicy,
-            UsageLimitConfig, ValidationConfig, CORS_WILDCARD,
+            UsageLimitConfig, UsageLimitRuleConfig, ValidationConfig, CORS_WILDCARD,
         },
         constant::{
             BPF_LOADER_UPGRADEABLE_PROGRAM_ID, DEFAULT_MAX_REQUEST_BODY_SIZE, LIGHTHOUSE_PROGRAM_ID,
@@ -318,9 +318,7 @@ mod tests {
         )));
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_validate_rejects_usage_limit_enabled_without_rules() {
+    async fn usage_limit_validation_errors(rules: Vec<UsageLimitRuleConfig>) -> Vec<String> {
         std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = Config {
             validation: ValidationConfig {
@@ -352,7 +350,7 @@ mod tests {
                     enabled: true,
                     cache_url: None,
                     fallback_if_unavailable: true,
-                    rules: vec![],
+                    rules,
                 },
                 ..KoraConfig::default()
             },
@@ -366,8 +364,27 @@ mod tests {
             CommitmentConfig::confirmed(),
         );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
-        let errors = result.expect_err("enabled usage_limit with no rules must fail validation");
+        result.expect_err("enabled usage_limit must fail validation")
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_rejects_usage_limit_enabled_without_rules() {
+        let errors = usage_limit_validation_errors(vec![]).await;
         assert!(errors.iter().any(|e| e.contains("no rules are configured")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_rejects_uncountable_usage_limit_rule() {
+        let errors = usage_limit_validation_errors(vec![UsageLimitRuleConfig::Instruction {
+            program: SPL_TOKEN_PROGRAM_ID.to_string(),
+            instruction: "Transfer".to_string(),
+            max: 10,
+            window_seconds: None,
+        }])
+        .await;
+        assert!(errors.iter().any(|e| e.contains("can never be counted")), "{errors:?}");
     }
 
     #[tokio::test]

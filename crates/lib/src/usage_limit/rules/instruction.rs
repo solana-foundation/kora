@@ -52,6 +52,7 @@ const BPF_LOADER_EXTEND_PROGRAM_CHECKED: &str = "extendprogramchecked";
 /// - System: CreateAccount / CreateAccountWithSeed
 /// - ATA: CreateIdempotent / Create
 /// - Loader-v4: Write / Copy / SetProgramLength / Deploy / Retract / TransferAuthority / Finalize
+/// - BPF Loader Upgradeable: every instruction, counted when Kora is the authority or payer
 #[derive(Debug)]
 pub struct InstructionRule {
     program: Pubkey,
@@ -300,6 +301,40 @@ impl InstructionIdentifier {
             }
             _ => None,
         }
+    }
+
+    /// Whether `identify` can ever return `instruction` for `program`, so a rule on the pair
+    /// can be counted.
+    pub fn is_supported(program_id: &Pubkey, instruction: &str) -> bool {
+        let names: &[&str] = match *program_id {
+            _ if *program_id == SYSTEM_PROGRAM_ID => {
+                &[SYSTEM_CREATE_ACCOUNT, SYSTEM_CREATE_ACCOUNT_WITH_SEED]
+            }
+            _ if *program_id == ATA_PROGRAM_ID => &[ATA_CREATE, ATA_CREATE_IDEMPOTENT],
+            _ if *program_id == LOADER_V4_PROGRAM_ID => &[
+                LOADER_V4_WRITE,
+                LOADER_V4_COPY,
+                LOADER_V4_SET_PROGRAM_LENGTH,
+                LOADER_V4_DEPLOY,
+                LOADER_V4_RETRACT,
+                LOADER_V4_TRANSFER_AUTHORITY,
+                LOADER_V4_FINALIZE,
+            ],
+            _ if *program_id == BPF_LOADER_UPGRADEABLE_PROGRAM_ID => &[
+                BPF_LOADER_INITIALIZE_BUFFER,
+                BPF_LOADER_WRITE,
+                BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN,
+                BPF_LOADER_UPGRADE,
+                BPF_LOADER_SET_AUTHORITY,
+                BPF_LOADER_CLOSE,
+                BPF_LOADER_EXTEND_PROGRAM,
+                BPF_LOADER_SET_AUTHORITY_CHECKED,
+                BPF_LOADER_MIGRATE,
+                BPF_LOADER_EXTEND_PROGRAM_CHECKED,
+            ],
+            _ => &[],
+        };
+        names.contains(&instruction.to_lowercase().as_str())
     }
 
     fn system(data: &[u8]) -> Option<String> {
