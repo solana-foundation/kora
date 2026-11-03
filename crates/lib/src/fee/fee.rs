@@ -1390,6 +1390,90 @@ mod tests {
         );
     }
 
+    async fn outflow_of(fee_payer: &Pubkey, ix: Instruction, rpc_client: &RpcClient) -> i128 {
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        FeeConfigUtil::calculate_fee_payer_outflow(
+            fee_payer,
+            &mut resolved,
+            rpc_client,
+            &get_config().unwrap(),
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_unwrap_lamports() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let source = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let source_account = AccountMockBuilder::new().with_lamports(5_000_000).build();
+        let no_rpc = RpcMockBuilder::new().build();
+
+        for program_id in [spl_token_interface::id(), spl_token_2022_interface::id()] {
+            let ix = spl_token_interface::instruction::unwrap_lamports(
+                &spl_token_interface::id(),
+                &source,
+                &recipient,
+                &fee_payer,
+                &[],
+                Some(1_500_000),
+            )
+            .unwrap();
+            let ix = Instruction { program_id, ..ix };
+            assert_eq!(outflow_of(&fee_payer, ix.clone(), &no_rpc).await, 1_500_000);
+
+            let rpc_client =
+                RpcMockBuilder::new().build_with_sequential_accounts(vec![&source_account]);
+            let mut full_unwrap = ix.clone();
+            full_unwrap.data = spl_token_interface::instruction::TokenInstruction::UnwrapLamports {
+                amount: None.into(),
+            }
+            .pack();
+            assert_eq!(
+                outflow_of(&fee_payer, full_unwrap, &rpc_client).await,
+                5_000_000,
+                "Unwrapping the whole balance must count the source balance"
+            );
+
+            let mut to_fee_payer = ix.clone();
+            to_fee_payer.accounts[1].pubkey = fee_payer;
+            assert_eq!(outflow_of(&fee_payer, to_fee_payer, &no_rpc).await, 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_withdraw_excess_lamports() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let source = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let source_account = AccountMockBuilder::new().with_lamports(3_000_000).build();
+        let rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                serde_json::json!(2_039_280),
+            )
+            .build_with_sequential_accounts(vec![&source_account]);
+
+        let ix = spl_token_2022_interface::instruction::withdraw_excess_lamports(
+            &spl_token_2022_interface::id(),
+            &source,
+            &recipient,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(outflow_of(&fee_payer, ix.clone(), &rpc_client).await, 960_720);
+
+        let mut to_fee_payer = ix;
+        to_fee_payer.accounts[1].pubkey = fee_payer;
+        assert_eq!(outflow_of(&fee_payer, to_fee_payer, &rpc_client).await, 0);
+    }
+
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_reuses_first_snapshot_per_transaction() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();

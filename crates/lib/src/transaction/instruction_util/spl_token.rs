@@ -145,11 +145,16 @@ pub enum ParsedSPLInstructionData {
     },
     // WithdrawExcessLamports (both spl and spl 2022)
     SplTokenWithdrawExcessLamports {
+        source: Pubkey,
+        destination: Pubkey,
         owner: Pubkey,
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
     },
     SplTokenUnwrapLamports {
+        source: Pubkey,
+        destination: Pubkey,
+        amount: Option<u64>,
         owner: Pubkey,
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
@@ -446,6 +451,8 @@ macro_rules! match_shared_token_instruction {
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenWithdrawExcessLamports {
+                        source: $instruction.accounts[ix::SOURCE_INDEX].pubkey,
+                        destination: $instruction.accounts[ix::DESTINATION_INDEX].pubkey,
                         owner: $instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
                         multisig_signers: Self::extract_multisig_signers(
                             $instruction,
@@ -455,12 +462,15 @@ macro_rules! match_shared_token_instruction {
                     },
                 );
             }
-            TokenInstruction::UnwrapLamports { .. } => {
+            TokenInstruction::UnwrapLamports { amount } => {
                 use instruction_indexes::spl_token_unwrap_lamports as ix;
                 validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenUnwrapLamports {
+                        source: $instruction.accounts[ix::SOURCE_INDEX].pubkey,
+                        destination: $instruction.accounts[ix::DESTINATION_INDEX].pubkey,
+                        amount: amount.into(),
                         owner: $instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
                         multisig_signers: Self::extract_multisig_signers(
                             $instruction,

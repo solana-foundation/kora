@@ -401,6 +401,75 @@ impl FeeConfigUtil {
             }
         }
 
+        let unwraps = spl_instructions
+            .get(&ParsedSPLInstructionType::SplTokenUnwrapLamports)
+            .unwrap_or(&empty_vec);
+        for instruction in unwraps {
+            if let ParsedSPLInstructionData::SplTokenUnwrapLamports {
+                source,
+                destination,
+                amount,
+                owner,
+                multisig_signers,
+                ..
+            } = instruction
+            {
+                if !Self::fee_payer_moves_lamports_out(
+                    fee_payer_pubkey,
+                    owner,
+                    multisig_signers,
+                    destination,
+                ) {
+                    continue;
+                }
+                let lamports = match amount {
+                    Some(amount) => *amount,
+                    None => rpc_client.get_account(source).await?.lamports,
+                };
+                Self::add_outflow(&mut total, lamports, "SplTokenUnwrapLamports")?;
+            }
+        }
+
+        let excess_withdrawals = spl_instructions
+            .get(&ParsedSPLInstructionType::SplTokenWithdrawExcessLamports)
+            .unwrap_or(&empty_vec);
+        for instruction in excess_withdrawals {
+            if let ParsedSPLInstructionData::SplTokenWithdrawExcessLamports {
+                source,
+                destination,
+                owner,
+                multisig_signers,
+                ..
+            } = instruction
+            {
+                if !Self::fee_payer_moves_lamports_out(
+                    fee_payer_pubkey,
+                    owner,
+                    multisig_signers,
+                    destination,
+                ) {
+                    continue;
+                }
+                let account = rpc_client.get_account(source).await?;
+                let rent_exempt_minimum =
+                    rpc_client.get_minimum_balance_for_rent_exemption(account.data.len()).await?;
+                Self::add_outflow(
+                    &mut total,
+                    account.lamports.saturating_sub(rent_exempt_minimum),
+                    "SplTokenWithdrawExcessLamports",
+                )?;
+            }
+        }
+
         Ok(total)
+    }
+
+    fn fee_payer_moves_lamports_out(
+        fee_payer: &Pubkey,
+        owner: &Pubkey,
+        multisig_signers: &[Pubkey],
+        destination: &Pubkey,
+    ) -> bool {
+        (owner == fee_payer || multisig_signers.contains(fee_payer)) && destination != fee_payer
     }
 }

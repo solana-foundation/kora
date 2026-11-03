@@ -82,13 +82,13 @@ impl TransactionValidator {
             "ThawAccount");
 
         deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenWithdrawExcessLamports,
-            ParsedSPLInstructionData::SplTokenWithdrawExcessLamports { owner, multisig_signers, is_2022 } =>
+            ParsedSPLInstructionData::SplTokenWithdrawExcessLamports { owner, multisig_signers, is_2022, .. } =>
             self.fee_payer_signs(owner, multisig_signers),
             unless token_policy(self.fee_payer_policy, *is_2022).allow_withdraw_excess_lamports,
             "WithdrawExcessLamports");
 
         deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenUnwrapLamports,
-            ParsedSPLInstructionData::SplTokenUnwrapLamports { owner, multisig_signers, is_2022 } =>
+            ParsedSPLInstructionData::SplTokenUnwrapLamports { owner, multisig_signers, is_2022, .. } =>
             self.fee_payer_signs(owner, multisig_signers),
             unless token_policy(self.fee_payer_policy, *is_2022).allow_unwrap_lamports,
             "UnwrapLamports");

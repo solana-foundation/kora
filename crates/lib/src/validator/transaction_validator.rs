@@ -1902,6 +1902,38 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_spl_unwrap_lamports_above_max_allowed_lamports_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_unwrap_lamports = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = spl_token_interface::instruction::unwrap_lamports(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &fee_payer,
+            &[],
+            Some(2_000_000),
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message))
+                if message.contains("Total transfer amount 2000000 exceeds maximum allowed 1000000")
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_token2022_transfers() {
         let fee_payer = Pubkey::new_unique();
 
@@ -4930,6 +4962,15 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let token_account = Pubkey::new_unique();
         let other = Pubkey::new_unique();
+        let withdraw_source_rpc = || {
+            RpcMockBuilder::new()
+                .with_account_info(&AccountMockBuilder::new().with_lamports(2_100_000).build())
+                .with_custom_mock(
+                    solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                    serde_json::json!(2_039_280),
+                )
+                .build()
+        };
 
         let build_withdraw = |destination: &Pubkey, authority: &Pubkey| {
             let ix = spl_token_2022_interface::instruction::withdraw_excess_lamports(
@@ -4944,7 +4985,7 @@ mod tests {
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
         };
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = withdraw_source_rpc();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_withdraw_excess_lamports = false;
         setup_token2022_config_with_policy(policy);
@@ -4964,7 +5005,7 @@ mod tests {
             .await
             .is_ok());
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = withdraw_source_rpc();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_withdraw_excess_lamports = true;
         setup_token2022_config_with_policy(policy);
