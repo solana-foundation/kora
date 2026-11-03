@@ -39,13 +39,15 @@ afterwards: `signTransaction` and `signBundle`.
 `validator/config_validator/transactions.rs` warns when lighthouse is enabled alongside those
 methods. It is a warning, not an error; the node still starts unprotected.
 
-### Two drain guards are not flag-gated
+### Some drain guards are not flag-gated
 
-Do not go looking for a `fee_payer_policy` flag for these. They are `deny_fee_payer!` calls with no
-`unless` clause:
+Do not go looking for a `fee_payer_policy` flag for these. They are rejected regardless of policy:
 
 - BPF Loader Upgradeable `Close` (`transaction_validator/bpf_loader_upgradeable.rs`): a fee-payer
-  authority paired with a foreign recipient is always rejected.
+  authority paired with a foreign recipient is always rejected, and so is closing the fee payer
+  itself to a foreign recipient, with or without an authority.
+- System `CreateAccount*` (`transaction_validator/system.rs`): the fee payer can never be the
+  account being created. `CreateAccountAllowPrefund` with zero lamports would otherwise retype it.
 - Loader v4 `SetProgramLength` (`transaction_validator/loader_v4.rs`): when the fee payer is the
   authority, the recipient must also be the fee payer.
 

@@ -81,6 +81,11 @@ impl TransactionValidator {
             "BPF Loader Upgradeable Close: when fee payer is the authority, \
              recipient must also be the fee payer (drainage guard)");
 
+        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::Close,
+            ParsedBpfLoaderUpgradeableInstructionData::Close { target, recipient, .. } =>
+            *target == self.fee_payer_pubkey && *recipient != self.fee_payer_pubkey,
+            "BPF Loader Upgradeable Close: closing the fee payer account must refund the fee payer");
+
         deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::ExtendProgram,
             ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram { payer, .. } =>
             payer.is_some_and(|p| p == self.fee_payer_pubkey),

@@ -3016,7 +3016,13 @@ mod tests {
                 false,
                 false,
             ),
-            ("brick vector, allowed", build_ix(fee_payer, other, 1000, allowed_owner), true, true),
+            ("brick vector, allowed", build_ix(fee_payer, other, 1000, allowed_owner), true, false),
+            (
+                "retype vector no funding, allowed",
+                build_ix(fee_payer, fee_payer, 0, allowed_owner),
+                true,
+                false,
+            ),
             // lamports == 0 omits the funder; fee payer as new account must still be gated.
             (
                 "brick vector no funding, disallowed",
@@ -6435,6 +6441,31 @@ mod tests {
         } else {
             panic!("expected InvalidTransaction, got {err:?}");
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_authorityless_close_of_fee_payer_to_foreign_recipient_rejected() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.bpf_loader_upgradeable.allow_close = true;
+        setup_bpf_v3_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v3::close_any(&fee_payer, &attacker, None, None);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .expect_err("closing the fee payer to a foreign recipient must be rejected");
+        assert!(err.to_string().contains("must refund the fee payer"), "got: {err}");
     }
 
     #[tokio::test]

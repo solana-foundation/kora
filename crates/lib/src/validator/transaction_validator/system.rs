@@ -66,9 +66,15 @@ impl TransactionValidator {
                 ..
             } = instruction
             {
-                let fee_payer_participates = *payer == self.fee_payer_pubkey
-                    || *base == Some(self.fee_payer_pubkey)
-                    || *new_account == self.fee_payer_pubkey;
+                if *new_account == self.fee_payer_pubkey {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be the account created by 'System Create Account'"
+                            .to_string(),
+                    ));
+                }
+
+                let fee_payer_participates =
+                    *payer == self.fee_payer_pubkey || *base == Some(self.fee_payer_pubkey);
                 if fee_payer_participates && !self.fee_payer_policy.system.allow_create_account {
                     return Err(KoraError::InvalidTransaction(
                         "Fee payer cannot be used for 'System Create Account'".to_string(),

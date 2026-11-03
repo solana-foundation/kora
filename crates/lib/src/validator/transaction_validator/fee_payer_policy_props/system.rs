@@ -1,4 +1,4 @@
-use super::{assert_role_gated_iff_flag_off, role_and_flags, DrainRole};
+use super::{assert_role_gated_iff_flag_off, role_and_flags, validate, DrainRole};
 use crate::{
     config::FeePayerPolicy,
     constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR,
@@ -26,12 +26,9 @@ enum SystemRole {
     Allocate,
     AllocateWithSeed,
     CreateAccountPayer,
-    CreateAccountNewAccount,
     CreateAccountWithSeedPayer,
-    CreateAccountWithSeedNewAccount,
     CreateAccountWithSeedBase,
     CreateAccountAllowPrefundPayer,
-    CreateAccountAllowPrefundNewAccount,
     NonceInitialize,
     NonceAdvance,
     NonceAuthorize,
@@ -47,12 +44,9 @@ impl DrainRole for SystemRole {
         Self::Allocate,
         Self::AllocateWithSeed,
         Self::CreateAccountPayer,
-        Self::CreateAccountNewAccount,
         Self::CreateAccountWithSeedPayer,
-        Self::CreateAccountWithSeedNewAccount,
         Self::CreateAccountWithSeedBase,
         Self::CreateAccountAllowPrefundPayer,
-        Self::CreateAccountAllowPrefundNewAccount,
         Self::NonceInitialize,
         Self::NonceAdvance,
         Self::NonceAuthorize,
@@ -69,12 +63,9 @@ impl DrainRole for SystemRole {
             Self::Assign | Self::AssignWithSeed => &mut policy.system.allow_assign,
             Self::Allocate | Self::AllocateWithSeed => &mut policy.system.allow_allocate,
             Self::CreateAccountPayer
-            | Self::CreateAccountNewAccount
             | Self::CreateAccountWithSeedPayer
-            | Self::CreateAccountWithSeedNewAccount
             | Self::CreateAccountWithSeedBase
-            | Self::CreateAccountAllowPrefundPayer
-            | Self::CreateAccountAllowPrefundNewAccount => &mut policy.system.allow_create_account,
+            | Self::CreateAccountAllowPrefundPayer => &mut policy.system.allow_create_account,
             Self::NonceInitialize => &mut policy.system.nonce.allow_initialize,
             Self::NonceAdvance => &mut policy.system.nonce.allow_advance,
             Self::NonceAuthorize => &mut policy.system.nonce.allow_authorize,
@@ -104,21 +95,9 @@ impl DrainRole for SystemRole {
             Self::CreateAccountPayer => {
                 create_account(actor, &Pubkey::new_unique(), 1_000, 8, &SYSTEM_PROGRAM_ID)
             }
-            Self::CreateAccountNewAccount => {
-                create_account(&Pubkey::new_unique(), actor, 1_000, 8, &SYSTEM_PROGRAM_ID)
-            }
             Self::CreateAccountWithSeedPayer => create_account_with_seed(
                 actor,
                 &Pubkey::new_unique(),
-                &Pubkey::new_unique(),
-                "seed",
-                1_000,
-                8,
-                &SYSTEM_PROGRAM_ID,
-            ),
-            Self::CreateAccountWithSeedNewAccount => create_account_with_seed(
-                &Pubkey::new_unique(),
-                actor,
                 &Pubkey::new_unique(),
                 "seed",
                 1_000,
@@ -136,9 +115,6 @@ impl DrainRole for SystemRole {
             ),
             Self::CreateAccountAllowPrefundPayer => {
                 create_account_allow_prefund(&Pubkey::new_unique(), actor)
-            }
-            Self::CreateAccountAllowPrefundNewAccount => {
-                create_account_allow_prefund(actor, &Pubkey::new_unique())
             }
             Self::NonceInitialize => {
                 create_nonce_account(&Pubkey::new_unique(), &Pubkey::new_unique(), actor, 1_000_000)
@@ -171,5 +147,40 @@ proptest! {
         (role_idx, actor_is_fee_payer, flags) in role_and_flags::<SystemRole>(),
     ) {
         assert_role_gated_iff_flag_off::<SystemRole>(role_idx, actor_is_fee_payer, &flags)?;
+    }
+}
+
+fn fee_payer_as_created_account(fee_payer: &Pubkey) -> [Instruction; 3] {
+    [
+        create_account(&Pubkey::new_unique(), fee_payer, 1_000, 8, &SYSTEM_PROGRAM_ID),
+        create_account_with_seed(
+            &Pubkey::new_unique(),
+            fee_payer,
+            &Pubkey::new_unique(),
+            "seed",
+            1_000,
+            8,
+            &SYSTEM_PROGRAM_ID,
+        ),
+        create_account_allow_prefund(fee_payer, &Pubkey::new_unique()),
+    ]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn fee_payer_as_created_account_always_denied(
+        flags in prop::collection::vec(any::<bool>(), SystemRole::ROLES.len()),
+    ) {
+        let mut policy = FeePayerPolicy::default();
+        for (role, allowed) in SystemRole::ROLES.iter().zip(&flags) {
+            *role.flag(&mut policy) = *allowed;
+        }
+        let fee_payer = Pubkey::new_unique();
+        for ix in fee_payer_as_created_account(&fee_payer) {
+            let result = validate::<SystemRole>(policy.clone(), fee_payer, ix);
+            prop_assert!(result.is_err(), "fee payer as created account must be denied");
+        }
     }
 }
