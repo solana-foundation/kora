@@ -337,7 +337,8 @@ pub struct SystemInstructionPolicy {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct NonceInstructionPolicy {
-    /// Allow fee payer to be set as the nonce authority in InitializeNonceAccount instructions
+    /// Allow fee payer to be set as the nonce authority or be the nonce account in
+    /// InitializeNonceAccount instructions
     pub allow_initialize: bool,
     /// Allow fee payer to be the nonce authority in AdvanceNonceAccount instructions
     pub allow_advance: bool,

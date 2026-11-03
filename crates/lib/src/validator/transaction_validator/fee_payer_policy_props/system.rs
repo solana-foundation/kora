@@ -30,6 +30,7 @@ enum SystemRole {
     CreateAccountWithSeedBase,
     CreateAccountAllowPrefundPayer,
     NonceInitialize,
+    NonceInitializeAccount,
     NonceAdvance,
     NonceAuthorize,
     NonceWithdraw,
@@ -48,6 +49,7 @@ impl DrainRole for SystemRole {
         Self::CreateAccountWithSeedBase,
         Self::CreateAccountAllowPrefundPayer,
         Self::NonceInitialize,
+        Self::NonceInitializeAccount,
         Self::NonceAdvance,
         Self::NonceAuthorize,
         Self::NonceWithdraw,
@@ -66,7 +68,9 @@ impl DrainRole for SystemRole {
             | Self::CreateAccountWithSeedPayer
             | Self::CreateAccountWithSeedBase
             | Self::CreateAccountAllowPrefundPayer => &mut policy.system.allow_create_account,
-            Self::NonceInitialize => &mut policy.system.nonce.allow_initialize,
+            Self::NonceInitialize | Self::NonceInitializeAccount => {
+                &mut policy.system.nonce.allow_initialize
+            }
             Self::NonceAdvance => &mut policy.system.nonce.allow_advance,
             Self::NonceAuthorize => &mut policy.system.nonce.allow_authorize,
             Self::NonceWithdraw => &mut policy.system.nonce.allow_withdraw,
@@ -118,6 +122,10 @@ impl DrainRole for SystemRole {
             }
             Self::NonceInitialize => {
                 create_nonce_account(&Pubkey::new_unique(), &Pubkey::new_unique(), actor, 1_000_000)
+                    .swap_remove(1)
+            }
+            Self::NonceInitializeAccount => {
+                create_nonce_account(&Pubkey::new_unique(), actor, &Pubkey::new_unique(), 1_000_000)
                     .swap_remove(1)
             }
             Self::NonceAdvance => advance_nonce_account(&Pubkey::new_unique(), actor),

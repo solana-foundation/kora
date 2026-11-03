@@ -3537,6 +3537,36 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_allocated_fee_payer_cannot_be_initialized_as_foreign_nonce() {
+        use solana_system_interface::instruction::{allocate, create_nonce_account};
+
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_allocate = true;
+        setup_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let initialize_nonce =
+            create_nonce_account(&attacker, &fee_payer, &attacker, 1_000_000).swap_remove(1);
+        let message = VersionedMessage::Legacy(Message::new(
+            &[allocate(&fee_payer, 80), initialize_nonce],
+            Some(&fee_payer),
+        ));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("System Initialize Nonce Account"), "{err}");
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_nonce_advance() {
         use solana_system_interface::instruction::advance_nonce_account;
 

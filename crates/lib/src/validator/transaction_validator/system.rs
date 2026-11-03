@@ -86,8 +86,8 @@ impl TransactionValidator {
         }
 
         deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemInitializeNonceAccount,
-            ParsedSystemInstructionData::SystemInitializeNonceAccount { nonce_authority, .. } =>
-            *nonce_authority == self.fee_payer_pubkey,
+            ParsedSystemInstructionData::SystemInitializeNonceAccount { nonce_account, nonce_authority } =>
+            *nonce_authority == self.fee_payer_pubkey || *nonce_account == self.fee_payer_pubkey,
             unless self.fee_payer_policy.system.nonce.allow_initialize,
             "Fee payer cannot be used for 'System Initialize Nonce Account'");
 
