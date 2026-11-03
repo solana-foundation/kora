@@ -373,8 +373,16 @@ async fn write_chunks(
         *written_chunks,
     );
     for ixs in batches {
-        match submit(ctx.http, ctx.cfg.kora_url, &ctx.cfg.user_id, ctx.rpc, kora_pubkey, &ixs, &[])
-            .await
+        match submit(
+            ctx.http,
+            ctx.cfg.kora_url,
+            &ctx.cfg.user_id,
+            ctx.rpc,
+            kora_pubkey,
+            &ixs,
+            &[buffer],
+        )
+        .await
         {
             Ok(_) => {
                 *written_chunks += ixs.len();
@@ -551,7 +559,7 @@ pub async fn upgrade(cfg: &UpgradeConfig<'_>) -> Result<Signature> {
     for ixs in
         write_instruction_batches(&buffer.pubkey(), &kora_pubkey, &bytes, WRITE_CHUNK_SIZE, 0)
     {
-        submit(&http, cfg.kora_url, &cfg.user_id, &rpc, &kora_pubkey, &ixs, &[]).await?;
+        submit(&http, cfg.kora_url, &cfg.user_id, &rpc, &kora_pubkey, &ixs, &[&buffer]).await?;
         written_chunks += ixs.len();
         if written_chunks % 25 < ixs.len() || written_chunks == chunk_count {
             log::info!("wrote chunk {}/{}", written_chunks, chunk_count);
@@ -585,7 +593,8 @@ pub async fn program_is_live(rpc_url: &str, program: &Pubkey) -> Result<bool> {
         .is_some())
 }
 
-/// Buffer writes from chunk `first_chunk` on, grouped `WRITES_PER_TX` to a transaction.
+/// Buffer writes from chunk `first_chunk` on, grouped `WRITES_PER_TX` to a transaction. The
+/// buffer signs each write so Kora can tell the writer created the buffer.
 pub fn write_instruction_batches(
     buffer: &Pubkey,
     authority: &Pubkey,
@@ -598,7 +607,10 @@ pub fn write_instruction_batches(
         .enumerate()
         .skip(first_chunk)
         .map(|(i, chunk)| {
-            loader_v3::write(buffer, authority, (i * chunk_size) as u32, chunk.to_vec())
+            let mut ix =
+                loader_v3::write(buffer, authority, (i * chunk_size) as u32, chunk.to_vec());
+            ix.accounts[0].is_signer = true;
+            ix
         })
         .collect();
     writes.chunks(WRITES_PER_TX).map(<[Instruction]>::to_vec).collect()
@@ -923,8 +935,14 @@ mod inline_tests {
         );
         assert_eq!(batches.len(), 1);
         let ixs = &batches[0];
-        let tx = build_tx(&kora.pubkey(), ixs, &[], Hash::new_unique(), resource_config(ixs.len()))
-            .unwrap();
+        let tx = build_tx(
+            &kora.pubkey(),
+            ixs,
+            &[&buffer],
+            Hash::new_unique(),
+            resource_config(ixs.len()),
+        )
+        .unwrap();
 
         let serialized = wincode::serialize(&tx).unwrap();
         assert!(

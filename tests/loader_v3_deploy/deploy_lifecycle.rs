@@ -45,12 +45,18 @@ async fn deploy_v3_program_through_kora() -> Result<()> {
     )?;
     submit_and_confirm(&ctx, &kora_pubkey, &create_buf, &[&buffer]).await?;
 
+    let foreign_write = loader_v3::write(&buffer.pubkey(), &kora_pubkey, 0, vec![0xEE; 64]);
+    expect_reject(&ctx, &kora_pubkey, &[foreign_write], &[], "signed by the buffer keypair")
+        .await?;
+
     futures::stream::iter(bytes.chunks(WRITE_CHUNK_SIZE).enumerate().map(Ok))
         .try_for_each_concurrent(16, |(i, chunk)| {
             let offset = (i * WRITE_CHUNK_SIZE) as u32;
-            let ix = loader_v3::write(&buffer.pubkey(), &kora_pubkey, offset, chunk.to_vec());
+            let mut ix = loader_v3::write(&buffer.pubkey(), &kora_pubkey, offset, chunk.to_vec());
+            ix.accounts[0].is_signer = true;
             let ctx = &ctx;
-            async move { submit_and_confirm(ctx, &kora_pubkey, &[ix], &[]).await }
+            let buffer = &buffer;
+            async move { submit_and_confirm(ctx, &kora_pubkey, &[ix], &[buffer]).await }
         })
         .await?;
 

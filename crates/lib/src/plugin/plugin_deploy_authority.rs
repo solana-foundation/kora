@@ -162,6 +162,7 @@ impl TransactionPlugin for DeployAuthorityPlugin {
 
         // ---- BPF Loader Upgradeable (loader-v3) ----
         let bpf_v3 = transaction.get_or_parse_bpf_loader_upgradeable_instructions()?;
+        let verified_signers = transaction.verified_signers();
         for data in bpf_v3.values().flatten() {
             match data {
                 ParsedBpfLoaderUpgradeableInstructionData::InitializeBuffer {
@@ -177,8 +178,16 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                         )?;
                     }
                 }
-                ParsedBpfLoaderUpgradeableInstructionData::Write { authority, .. } => {
+                ParsedBpfLoaderUpgradeableInstructionData::Write { buffer, authority, .. } => {
                     require_fee_payer("BPF Loader Write authority", authority, fee_payer, context)?;
+                    if !verified_signers.contains(buffer) {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "DeployAuthority plugin: BPF Loader Write to buffer {buffer} must be \
+                             signed by the buffer keypair, so only the client that created the \
+                             buffer can fill it (context: {})",
+                            context.method_name()
+                        )));
+                    }
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
                     upgrade_authority,
@@ -818,14 +827,50 @@ mod tests {
         (config, rpc_client)
     }
 
+    fn buffer_signed_write(
+        buffer: &Pubkey,
+        authority: &Pubkey,
+    ) -> solana_sdk::instruction::Instruction {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let mut ix = loader_v3::write(buffer, authority, 0, vec![1, 2, 3]);
+        ix.accounts[0].is_signer = true;
+        ix
+    }
+
     #[tokio::test]
     async fn v3_accepts_write_when_kora_is_authority() {
+        let (config, rpc_client) = build_runner_v3();
+        let fee_payer = Pubkey::new_unique();
+        let buffer = Keypair::new();
+        let ix = buffer_signed_write(&buffer.pubkey(), &fee_payer);
+        assert!(run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&buffer])
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn v3_rejects_write_without_buffer_signature() {
         use solana_loader_v3_interface::instruction as loader_v3;
         let (config, rpc_client) = build_runner_v3();
         let fee_payer = Pubkey::new_unique();
-        let buffer = Pubkey::new_unique();
-        let ix = loader_v3::write(&buffer, &fee_payer, 0, vec![1, 2, 3]);
-        assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
+        let ix = loader_v3::write(&Pubkey::new_unique(), &fee_payer, 0, vec![1, 2, 3]);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("signed by the buffer keypair")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn v3_rejects_write_with_unsigned_buffer_signer_slot() {
+        let (config, rpc_client) = build_runner_v3();
+        let fee_payer = Pubkey::new_unique();
+        let ix = buffer_signed_write(&Pubkey::new_unique(), &fee_payer);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("signed by the buffer keypair")),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]
