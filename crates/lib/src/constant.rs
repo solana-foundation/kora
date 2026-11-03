@@ -165,11 +165,14 @@ pub mod instruction_indexes {
 
     pub mod spl_token_approve {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const SOURCE_INDEX: usize = 0;
         pub const OWNER_INDEX: usize = 2;
     }
 
     pub mod spl_token_approve_checked {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 4;
+        pub const SOURCE_INDEX: usize = 0;
+        pub const MINT_INDEX: usize = 1;
         pub const OWNER_INDEX: usize = 3;
     }
 

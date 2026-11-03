@@ -360,7 +360,8 @@ pub struct SplTokenInstructionPolicy {
     pub allow_burn: bool,
     /// Allow fee payer to be the owner in SPL Token CloseAccount instructions
     pub allow_close_account: bool,
-    /// Allow fee payer to be the owner in SPL Token Approve/ApproveChecked instructions
+    /// Allow fee payer to be the owner in SPL Token Approve/ApproveChecked instructions. The approved
+    /// amount is priced and counted against `max_allowed_lamports`, so the mint needs a price.
     pub allow_approve: bool,
     /// Allow fee payer to be the owner in SPL Token Revoke instructions
     pub allow_revoke: bool,
@@ -396,7 +397,8 @@ pub struct Token2022InstructionPolicy {
     pub allow_burn: bool,
     /// Allow fee payer to be the owner in Token2022 CloseAccount instructions
     pub allow_close_account: bool,
-    /// Allow fee payer to be the owner in Token2022 Approve/ApproveChecked instructions
+    /// Allow fee payer to be the owner in Token2022 Approve/ApproveChecked instructions. The approved
+    /// amount is priced and counted against `max_allowed_lamports`, so the mint needs a price.
     pub allow_approve: bool,
     /// Allow fee payer to be the owner in Token2022 Revoke instructions
     pub allow_revoke: bool,

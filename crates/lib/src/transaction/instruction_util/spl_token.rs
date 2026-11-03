@@ -72,8 +72,11 @@ pub enum ParsedSPLInstructionData {
         is_2022: bool,
     },
     SplTokenApprove {
+        amount: u64,
         owner: Pubkey,
         multisig_signers: Vec<Pubkey>,
+        mint: Option<Pubkey>,
+        source_address: Pubkey,
         is_2022: bool,
     },
     SplTokenRevoke {
@@ -279,26 +282,32 @@ macro_rules! match_shared_token_instruction {
                     },
                 );
             }
-            TokenInstruction::Approve { .. } => {
+            TokenInstruction::Approve { amount } => {
                 use instruction_indexes::spl_token_approve as ix;
                 validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenApprove {
+                        amount,
                         owner: $instruction.accounts[ix::OWNER_INDEX].pubkey,
                         multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        mint: None,
+                        source_address: $instruction.accounts[ix::SOURCE_INDEX].pubkey,
                         is_2022: $is_2022,
                     },
                 );
             }
-            TokenInstruction::ApproveChecked { .. } => {
+            TokenInstruction::ApproveChecked { amount, .. } => {
                 use instruction_indexes::spl_token_approve_checked as ix;
                 validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenApprove {
+                        amount,
                         owner: $instruction.accounts[ix::OWNER_INDEX].pubkey,
                         multisig_signers: Self::extract_multisig_signers($instruction, 4),
+                        mint: Some($instruction.accounts[ix::MINT_INDEX].pubkey),
+                        source_address: $instruction.accounts[ix::SOURCE_INDEX].pubkey,
                         is_2022: $is_2022,
                     },
                 );

@@ -2730,12 +2730,51 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_approve_above_max_allowed_lamports_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_approve = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let approve_ix = spl_token_interface::instruction::approve_checked(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &fee_payer,
+            &[],
+            2_000_000,
+            6,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message))
+                if message.contains("Total transfer amount 2000000 exceeds maximum allowed 1000000")
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_approve() {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
         let delegate = Pubkey::new_unique();
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let mint = Pubkey::new_unique();
+        let source_token_account =
+            TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_approve = true;
         setup_spl_config_with_policy(policy);
@@ -2788,7 +2827,6 @@ mod tests {
             .await
             .is_err());
 
-        let mint = Pubkey::new_unique();
         let approve_checked_ix = spl_token_interface::instruction::approve_checked(
             &spl_token_interface::id(),
             &fee_payer_token_account,
@@ -2886,7 +2924,14 @@ mod tests {
         let fee_payer_token_account = Pubkey::new_unique();
         let delegate = Pubkey::new_unique();
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let mint = Pubkey::new_unique();
+        let source_token_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&fee_payer)
+            .build_token2022();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build_token2022();
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_approve = true;
         setup_token2022_config_with_policy(policy);
@@ -2939,7 +2984,6 @@ mod tests {
             .await
             .is_err());
 
-        let mint = Pubkey::new_unique();
         let approve_checked_ix = spl_token_2022_interface::instruction::approve_checked(
             &spl_token_2022_interface::id(),
             &fee_payer_token_account,

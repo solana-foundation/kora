@@ -202,7 +202,8 @@ impl TokenUtil {
         Ok(result)
     }
 
-    /// Calculate the total lamports value of SPL tokens the fee payer transfers out or burns.
+    /// Calculate the total lamports value of SPL tokens the fee payer transfers out, burns, or
+    /// approves a delegate to spend.
     pub async fn calculate_spl_transfers_value_in_lamports(
         spl_transfers: &[ParsedSPLInstructionData],
         fee_payer: &Pubkey,
@@ -221,6 +222,13 @@ impl TokenUtil {
                 ..
             }
             | ParsedSPLInstructionData::SplTokenBurn {
+                amount,
+                owner,
+                mint,
+                source_address,
+                ..
+            }
+            | ParsedSPLInstructionData::SplTokenApprove {
                 amount,
                 owner,
                 mint,
