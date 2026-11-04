@@ -99,22 +99,22 @@ impl TransactionValidator {
             "Fee payer cannot be used for 'System Initialize Nonce Account'");
 
         deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemAdvanceNonceAccount,
-            ParsedSystemInstructionData::SystemAdvanceNonceAccount { nonce_authority, .. } =>
-            *nonce_authority == self.fee_payer_pubkey,
+            ParsedSystemInstructionData::SystemAdvanceNonceAccount { nonce_authority, extra_signers, .. } =>
+            self.fee_payer_signs(nonce_authority, extra_signers),
             unless self.fee_payer_policy.system.nonce.allow_advance,
             "Fee payer cannot be used for 'System Advance Nonce Account'");
 
         deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemAuthorizeNonceAccount,
-            ParsedSystemInstructionData::SystemAuthorizeNonceAccount { nonce_authority, .. } =>
-            *nonce_authority == self.fee_payer_pubkey,
+            ParsedSystemInstructionData::SystemAuthorizeNonceAccount { nonce_authority, extra_signers, .. } =>
+            self.fee_payer_signs(nonce_authority, extra_signers),
             unless self.fee_payer_policy.system.nonce.allow_authorize,
             "Fee payer cannot be used for 'System Authorize Nonce Account'");
 
         // Note: SystemUpgradeNonceAccount not validated - no authority parameter
 
         deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemWithdrawNonceAccount,
-            ParsedSystemInstructionData::SystemWithdrawNonceAccount { nonce_account, nonce_authority, .. } =>
-            *nonce_authority == self.fee_payer_pubkey || *nonce_account == self.fee_payer_pubkey,
+            ParsedSystemInstructionData::SystemWithdrawNonceAccount { nonce_account, nonce_authority, extra_signers, .. } =>
+            self.fee_payer_signs(nonce_authority, extra_signers) || *nonce_account == self.fee_payer_pubkey,
             unless self.fee_payer_policy.system.nonce.allow_withdraw,
             "Fee payer cannot be used for 'System Withdraw Nonce Account'");
 

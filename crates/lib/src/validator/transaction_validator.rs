@@ -3982,6 +3982,58 @@ mod tests {
             .is_err());
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_nonce_rejects_fee_payer_as_extra_signer() {
+        use solana_system_interface::instruction::{
+            advance_nonce_account, authorize_nonce_account, withdraw_nonce_account,
+        };
+
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+        let decoy = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        let cases = [
+            (
+                advance_nonce_account(&nonce_account, &decoy),
+                "Fee payer cannot be used for 'System Advance Nonce Account'",
+            ),
+            (
+                authorize_nonce_account(&nonce_account, &decoy, &recipient),
+                "Fee payer cannot be used for 'System Authorize Nonce Account'",
+            ),
+            (
+                withdraw_nonce_account(&nonce_account, &decoy, &recipient, 1000),
+                "Fee payer cannot be used for 'System Withdraw Nonce Account'",
+            ),
+        ];
+
+        for (mut instruction, expected) in cases {
+            let config = ConfigMockBuilder::new()
+                .with_price_source(PriceSource::Mock)
+                .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+                .with_max_allowed_lamports(1_000_000)
+                .with_fee_payer_policy(FeePayerPolicy::default())
+                .with_allow_durable_transactions(true)
+                .build();
+            update_config(config).unwrap();
+            let config = get_config().unwrap();
+            let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+            instruction.accounts.push(AccountMeta::new_readonly(fee_payer, true));
+            let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let rpc_client = RpcMockBuilder::new().build();
+            let err = validator
+                .validate_transaction(config, &mut transaction, &rpc_client)
+                .await
+                .unwrap_err();
+            assert!(err.to_string().contains(expected), "{expected}: got {err}");
+        }
+    }
+
     #[test]
     #[serial]
     fn test_strict_pricing_total_exceeds_fixed() {

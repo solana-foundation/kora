@@ -43,6 +43,7 @@ pub enum ParsedSystemInstructionData {
         nonce_account: Pubkey,
         nonce_authority: Pubkey,
         recipient: Pubkey,
+        extra_signers: Vec<Pubkey>,
     },
     // Includes assign and assign with seed
     SystemAssign {
@@ -61,11 +62,13 @@ pub enum ParsedSystemInstructionData {
     SystemAdvanceNonceAccount {
         nonce_account: Pubkey,
         nonce_authority: Pubkey,
+        extra_signers: Vec<Pubkey>,
     },
     SystemAuthorizeNonceAccount {
         nonce_account: Pubkey,
         nonce_authority: Pubkey,
         new_authority: Pubkey,
+        extra_signers: Vec<Pubkey>,
     },
     // Note: SystemUpgradeNonceAccount not included - no authority parameter
 }
@@ -157,6 +160,10 @@ impl IxUtils {
                     nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
                     nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
                     recipient: key(ix::RECIPIENT_INDEX),
+                    extra_signers: Self::extract_multisig_signers(
+                        instruction,
+                        ix::REQUIRED_NUMBER_OF_ACCOUNTS,
+                    ),
                 }
             }
             Ok(SystemInstruction::Assign { owner }) => {
@@ -201,6 +208,10 @@ impl IxUtils {
                 ParsedSystemInstructionData::SystemAdvanceNonceAccount {
                     nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
                     nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
+                    extra_signers: Self::extract_multisig_signers(
+                        instruction,
+                        ix::REQUIRED_NUMBER_OF_ACCOUNTS,
+                    ),
                 }
             }
             Ok(SystemInstruction::AuthorizeNonceAccount(new_authority)) => {
@@ -210,6 +221,10 @@ impl IxUtils {
                     nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
                     nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
                     new_authority,
+                    extra_signers: Self::extract_multisig_signers(
+                        instruction,
+                        ix::REQUIRED_NUMBER_OF_ACCOUNTS,
+                    ),
                 }
             }
             // UpgradeNonceAccount: Not parsed - no authority parameter, cannot validate fee payer involvement

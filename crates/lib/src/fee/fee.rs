@@ -462,7 +462,7 @@ mod tests {
     use solana_sdk::{
         account::Account,
         hash::Hash,
-        instruction::Instruction,
+        instruction::{AccountMeta, Instruction},
         pubkey::Pubkey,
         signature::{Keypair, Signer},
     };
@@ -1236,6 +1236,33 @@ mod tests {
             outflow, 300_000,
             "CreateAccountWithSeed funded by fee payer should add to outflow"
         );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_nonce_withdraw_with_fee_payer_as_extra_signer() {
+        let mocked_rpc_client = RpcMockBuilder::new().build();
+        let fee_payer = Pubkey::new_unique();
+        let mut withdraw_instruction = withdraw_nonce_account(
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            50_000,
+        );
+        withdraw_instruction.accounts.push(AccountMeta::new_readonly(fee_payer, true));
+        let message =
+            VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = setup_or_get_test_config();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 50_000);
     }
 
     #[tokio::test]

@@ -258,13 +258,15 @@ impl FeeConfigUtil {
                 nonce_account,
                 nonce_authority,
                 recipient,
+                extra_signers,
             } = instruction
             {
                 // An Allocate leaves the fee payer holding zeroed data, which the System Program
                 // reads as an uninitialized nonce account that only the nonce account itself needs
                 // to sign for withdrawing, so the fee payer controls it regardless of the authority.
-                let fee_payer_controlled =
-                    *nonce_authority == *fee_payer_pubkey || *nonce_account == *fee_payer_pubkey;
+                let fee_payer_controlled = *nonce_authority == *fee_payer_pubkey
+                    || *nonce_account == *fee_payer_pubkey
+                    || extra_signers.contains(fee_payer_pubkey);
                 if *recipient == *fee_payer_pubkey && fee_payer_controlled {
                     // Self-withdrawals only move lamports between fee-payer-controlled accounts.
                     // They should not reduce unrelated outflow elsewhere in the transaction.
