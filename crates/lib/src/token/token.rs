@@ -1357,4 +1357,108 @@ mod tests_token {
         assert_eq!(totals.inflow, 3_000_000_000);
         assert_eq!(totals.outflow, 0);
     }
+
+    #[tokio::test]
+    async fn test_calculate_payment_lamport_totals_counts_burn_from_payment_account_as_outflow() {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let expected_destination_owner = Pubkey::new_unique();
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let burner = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+
+        let source_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&Pubkey::new_unique())
+            .build();
+        let destination_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&expected_destination_owner)
+            .build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+
+        let payment = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::id(),
+            &source_address,
+            &mint,
+            &destination_address,
+            &Pubkey::new_unique(),
+            &[],
+            1_000_000,
+            6,
+        )
+        .unwrap();
+        let burn = spl_token_interface::instruction::burn_checked(
+            &spl_token_interface::id(),
+            &destination_address,
+            &mint,
+            &burner,
+            &[],
+            1_000_000,
+            6,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[payment, burn],
+            Some(&expected_destination_owner),
+        ));
+        let mut transaction_resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &source_account,
+            &destination_account,
+            &destination_account,
+            &mint_account,
+        ]);
+
+        let mut mock_oracle = crate::oracle::MockPriceOracle::new();
+        mock_oracle.expect_get_prices().times(1).returning(|_, mint_addresses| {
+            let mut result = HashMap::new();
+            for mint in mint_addresses {
+                result.insert(
+                    mint.clone(),
+                    TokenPrice {
+                        price: Decimal::from(1),
+                        confidence: 1.0,
+                        source: PriceSource::Mock,
+                        block_id: None,
+                    },
+                );
+            }
+            Ok(result)
+        });
+
+        let shared_mock_oracle = Arc::new(mock_oracle);
+        TEST_ORACLE.with(|o| {
+            *o.borrow_mut() = Some(shared_mock_oracle.clone());
+        });
+
+        struct OracleGuard;
+        impl Drop for OracleGuard {
+            fn drop(&mut self) {
+                TEST_ORACLE.with(|o| {
+                    *o.borrow_mut() = None;
+                });
+            }
+        }
+        let _guard = OracleGuard;
+
+        let mut config = get_config().unwrap();
+        config.kora.cache.enabled = false;
+        let totals = TokenUtil::calculate_payment_lamport_totals(
+            &config,
+            &mut transaction_resolved,
+            &rpc_client,
+            &expected_destination_owner,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(totals.inflow, 1_000_000_000);
+        assert_eq!(totals.outflow, totals.inflow);
+    }
 }

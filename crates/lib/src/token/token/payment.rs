@@ -380,6 +380,57 @@ impl TokenUtil {
             });
         }
 
+        let all_instructions = bundle_instructions
+            .map(|instructions| instructions.to_vec())
+            .unwrap_or_else(|| transaction_resolved.all_instructions().to_vec());
+        for instruction in transaction_resolved
+            .get_or_parse_spl_instructions()?
+            .get(&ParsedSPLInstructionType::SplTokenBurn)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenBurn {
+                amount,
+                mint,
+                source_address,
+                is_2022,
+                ..
+            } = instruction
+            {
+                let token_program: Box<dyn TokenInterface> = if *is_2022 {
+                    Box::new(Token2022Program::new())
+                } else {
+                    Box::new(TokenProgram::new())
+                };
+                let Some((owner, source_mint, _)) = Self::resolve_token_account_owner_and_mint(
+                    config,
+                    rpc_client,
+                    token_program.as_ref(),
+                    source_address,
+                    &all_instructions,
+                )
+                .await?
+                else {
+                    continue;
+                };
+                if owner != *expected_destination_owner {
+                    continue;
+                }
+                let token_mint = mint.unwrap_or(source_mint);
+                if !config.validation.supports_token(&token_mint.to_string()) {
+                    continue;
+                }
+
+                payment_mints.insert(token_mint);
+                valid_transfers.push(ValidTransfer {
+                    is_inflow: false,
+                    is_outflow: true,
+                    token_mint,
+                    inflow_amount: 0,
+                    amount: *amount,
+                });
+            }
+        }
+
         if payment_mints.is_empty() {
             return Ok(totals);
         }
