@@ -50,9 +50,14 @@ async function initializeClients() {
   console.log("  → Kora RPC:", CONFIG.koraRpcUrl);
   console.log("  → Solana RPC:", CONFIG.solanaRpcUrl);
 
+  const apiKey = process.env.KORA_API_KEY;
+  if (!apiKey) {
+    throw new Error("KORA_API_KEY must be set to the key the Kora server was started with");
+  }
+
   const client = new KoraClient({
     rpcUrl: CONFIG.koraRpcUrl,
-    apiKey: 'kora_facilitator_api_key_example',
+    apiKey,
   });
 
   return { client };

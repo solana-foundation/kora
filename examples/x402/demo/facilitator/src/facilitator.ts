@@ -25,7 +25,10 @@ const KORA_RPC_URL = process.env.KORA_RPC_URL || "http://localhost:8080/";
 const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL;
 const FACILITATOR_PORT = process.env.FACILITATOR_PORT || 3000;
 const NETWORK = (process.env.NETWORK || SOLANA_DEVNET_CAIP2) as Network;
-const KORA_API_KEY = process.env.KORA_API_KEY || "kora_facilitator_api_key_example";
+const KORA_API_KEY = process.env.KORA_API_KEY;
+if (!KORA_API_KEY) {
+  throw new Error("KORA_API_KEY must be set in .env");
+}
 const CONFIRM_TIMEOUT_MS = 30_000;
 const CONFIRM_POLL_MS = 1_000;
 

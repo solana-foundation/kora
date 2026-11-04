@@ -1047,6 +1047,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_example_configs_ship_no_auth_secrets() {
+        let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let mut pending = vec![examples];
+        let mut checked = 0;
+        while let Some(dir) = pending.pop() {
+            for entry in fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    if path.file_name().is_some_and(|name| name != "node_modules") {
+                        pending.push(path);
+                    }
+                } else if path.file_name().is_some_and(|name| name == "kora.toml") {
+                    let config = Config::load_config(&path).unwrap();
+                    assert!(config.kora.auth.api_keys.is_none(), "{}", path.display());
+                    assert!(config.kora.auth.hmac_secret.is_none(), "{}", path.display());
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 0);
+    }
+
+    #[test]
     fn test_is_valid_cors_origin_table() {
         let cases = vec![
             (CORS_WILDCARD, true),

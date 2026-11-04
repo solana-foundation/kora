@@ -68,7 +68,7 @@ Deploy Kora + the x402 facilitator with a single command.
    ```sh
    cp .env.example .env
    ```
-   Fill in `KORA_PRIVATE_KEY` (the Kora fee-payer signing key) and optionally `SOLANA_RPC_URL`.
+   Fill in `KORA_PRIVATE_KEY` (the Kora fee-payer signing key), `KORA_API_KEY` (any random secret, e.g. `openssl rand -hex 32`) and optionally `SOLANA_RPC_URL`.
 
 2. Start both services:
    ```sh
