@@ -54,6 +54,8 @@ Do not go looking for a `fee_payer_policy` flag for these. They are rejected reg
   recipient must also be the fee payer.
 - Loader v4 `SetProgramLength` (`transaction_validator/loader_v4.rs`): when the fee payer is the
   authority, the recipient must also be the fee payer.
+- Stake and Vote (`validate_stake_vote_fee_payer_usage` in `transaction_validator.rs`): any
+  instruction for either program that references the fee payer in any account position is rejected.
 
 ### Fee payer policy must fail closed
 

@@ -1,5 +1,6 @@
 use crate::{
     config::{Config, FeePayerPolicy, ProgramsConfig},
+    constant::{STAKE_PROGRAM_ID, VOTE_PROGRAM_ID},
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation, TransactionFeeUtil},
     token::token::TokenUtil,
@@ -249,6 +250,7 @@ impl TransactionValidator {
         transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
         self.validate_ata_create_instructions(transaction_resolved)?;
+        self.validate_stake_vote_fee_payer_usage(transaction_resolved)?;
 
         self.validate_system_fee_payer_usage(
             transaction_resolved.get_or_parse_system_instructions()?,
@@ -288,6 +290,24 @@ impl TransactionValidator {
         if has_fee_payer_ata_create {
             return Err(KoraError::InvalidTransaction(
                 "Fee payer cannot fund ATA creation (Create or CreateIdempotent)".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn validate_stake_vote_fee_payer_usage(
+        &self,
+        transaction_resolved: &VersionedTransactionResolved,
+    ) -> Result<(), KoraError> {
+        let fee_payer_in_stake_or_vote = transaction_resolved.all_instructions().iter().any(|ix| {
+            (ix.program_id == STAKE_PROGRAM_ID || ix.program_id == VOTE_PROGRAM_ID)
+                && ix.accounts.iter().any(|meta| meta.pubkey == self.fee_payer_pubkey)
+        });
+
+        if fee_payer_in_stake_or_vote {
+            return Err(KoraError::InvalidTransaction(
+                "Fee payer cannot be used in Stake or Vote program instructions".to_string(),
             ));
         }
 
@@ -3546,6 +3566,60 @@ mod tests {
 
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
         assert!(result.is_ok(), "expected Ok, got {:?}", result);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_stake_and_vote_instructions_reject_fee_payer_account() {
+        let fee_payer = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![STAKE_PROGRAM_ID.to_string(), VOTE_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(10_000_000)
+            .build();
+        update_config(config).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let withdraw = |program_id: Pubkey, authority: Pubkey| {
+            Instruction::new_with_bytes(
+                program_id,
+                &[4, 0, 0, 0, 0, 202, 154, 59, 0, 0, 0, 0],
+                vec![
+                    AccountMeta::new(Pubkey::new_unique(), false),
+                    AccountMeta::new(Pubkey::new_unique(), false),
+                    AccountMeta::new_readonly(authority, true),
+                ],
+            )
+        };
+
+        for program_id in [STAKE_PROGRAM_ID, VOTE_PROGRAM_ID] {
+            let message = VersionedMessage::Legacy(Message::new(
+                &[withdraw(program_id, Pubkey::new_unique())],
+                Some(&fee_payer),
+            ));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let result =
+                validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+            assert!(result.is_ok(), "expected Ok for {program_id}, got {result:?}");
+
+            let message = VersionedMessage::Legacy(Message::new(
+                &[withdraw(program_id, fee_payer)],
+                Some(&fee_payer),
+            ));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let result =
+                validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+            match result {
+                Err(KoraError::InvalidTransaction(msg)) => {
+                    assert!(msg.contains("Stake or Vote"), "{msg}");
+                }
+                other => panic!("expected Stake/Vote fee payer rejection, got {other:?}"),
+            }
+        }
     }
 
     #[tokio::test]
