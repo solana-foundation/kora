@@ -1554,6 +1554,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_full_unwrap_counts_same_transaction_deposits() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let payer = Pubkey::new_unique();
+        let source = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let source_account = AccountMockBuilder::new().with_lamports(5_000_000).build();
+        let native_mint = spl_token_interface::native_mint::id();
+
+        let deposit = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &native_mint,
+            &source,
+            &payer,
+            &[],
+            2_000_000,
+            9,
+        )
+        .unwrap();
+        let full_unwrap = spl_token_interface::instruction::unwrap_lamports(
+            &spl_token_interface::id(),
+            &source,
+            &recipient,
+            &fee_payer,
+            &[],
+            None,
+        )
+        .unwrap();
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[deposit, full_unwrap], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&source_account]);
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &rpc_client,
+            &get_config().unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 7_000_000);
+    }
+
+    #[tokio::test]
     async fn test_calculate_fee_payer_outflow_burn() {
         let mint = Pubkey::new_unique();
         let _m = ConfigMockBuilder::new()

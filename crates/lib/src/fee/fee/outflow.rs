@@ -492,7 +492,27 @@ impl FeeConfigUtil {
                 }
                 let lamports = match amount {
                     Some(amount) => *amount,
-                    None => rpc_client.get_account(source).await?.lamports,
+                    None => {
+                        let deposits = spl_instructions
+                            .get(&ParsedSPLInstructionType::SplTokenTransfer)
+                            .unwrap_or(&empty_vec)
+                            .iter()
+                            .filter_map(|transfer| match transfer {
+                                ParsedSPLInstructionData::SplTokenTransfer {
+                                    destination_address,
+                                    amount,
+                                    ..
+                                } if destination_address == source => Some(*amount),
+                                _ => None,
+                            })
+                            .try_fold(0u64, u64::checked_add)
+                            .ok_or_else(|| {
+                                KoraError::ValidationError(
+                                    "Token deposits into unwrapped account overflow".to_string(),
+                                )
+                            })?;
+                        rpc_client.get_account(source).await?.lamports.saturating_add(deposits)
+                    }
                 };
                 Self::add_outflow(&mut total, lamports, "SplTokenUnwrapLamports")?;
             }
