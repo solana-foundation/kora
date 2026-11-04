@@ -18,8 +18,8 @@ use spl_token_2022_interface::{
 use crate::{error::KoraError, sanitize_error};
 
 use super::{
-    Token2022AccountUsagePolicy, Token2022FieldRole, Token2022SecurityField,
-    Token2022SecurityInstruction, Token2022SecurityParser,
+    Token2022AccountUsagePolicy, Token2022AuthorityKind, Token2022FieldRole,
+    Token2022SecurityField, Token2022SecurityInstruction, Token2022SecurityParser,
 };
 
 impl Token2022SecurityParser {
@@ -47,6 +47,7 @@ impl Token2022SecurityParser {
                 ..
             } => Ok(Some(Token2022SecurityInstruction {
                 instruction_name: "Token2022 InitializeTransferFeeConfig",
+                authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                 extension_type: Some(ExtensionType::TransferFeeConfig),
                 accounts: Self::instruction_accounts(instruction),
                 account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -71,6 +72,7 @@ impl Token2022SecurityParser {
             TransferFeeInstruction::SetTransferFee { .. } => {
                 Ok(Some(Token2022SecurityInstruction {
                     instruction_name: "Token2022 SetTransferFee",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::TransferFeeConfig),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -86,6 +88,7 @@ impl Token2022SecurityParser {
             TransferFeeInstruction::WithdrawWithheldTokensFromMint => {
                 Ok(Some(Token2022SecurityInstruction {
                     instruction_name: "Token2022 WithdrawWithheldTokensFromMint",
+                    authority_kind: Token2022AuthorityKind::WithdrawWithheld,
                     extension_type: Some(ExtensionType::TransferFeeConfig),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -103,6 +106,7 @@ impl Token2022SecurityParser {
                     instruction.accounts.len().saturating_sub(num_token_accounts as usize);
                 Ok(Some(Token2022SecurityInstruction {
                     instruction_name: "Token2022 WithdrawWithheldTokensFromAccounts",
+                    authority_kind: Token2022AuthorityKind::WithdrawWithheld,
                     extension_type: Some(ExtensionType::TransferFeeConfig),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -147,6 +151,7 @@ impl Token2022SecurityParser {
 
                 Ok(Some(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializeInterestBearingConfig",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::InterestBearingConfig),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -163,6 +168,7 @@ impl Token2022SecurityParser {
             }
             InterestBearingMintInstruction::UpdateRate => Ok(Some(Token2022SecurityInstruction {
                 instruction_name: "Token2022 UpdateInterestBearingConfigRate",
+                authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                 extension_type: Some(ExtensionType::InterestBearingConfig),
                 accounts: Self::instruction_accounts(instruction),
                 account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -193,6 +199,7 @@ impl Token2022SecurityParser {
 
                 Ok(Some(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializeTransferHook",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::TransferHook),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -224,6 +231,7 @@ impl Token2022SecurityParser {
 
                 Ok(Some(Token2022SecurityInstruction {
                     instruction_name: "Token2022 TransferHookUpdate",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::TransferHook),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -263,6 +271,7 @@ impl Token2022SecurityParser {
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializeMetadataPointer",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::MetadataPointer),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -294,6 +303,7 @@ impl Token2022SecurityParser {
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 UpdateMetadataPointer",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::MetadataPointer),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -331,6 +341,7 @@ impl Token2022SecurityParser {
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializeGroupPointer",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::GroupPointer),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -362,6 +373,7 @@ impl Token2022SecurityParser {
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 UpdateGroupPointer",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::GroupPointer),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -400,6 +412,7 @@ impl Token2022SecurityParser {
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializeGroupMemberPointer",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::GroupMemberPointer),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -431,6 +444,7 @@ impl Token2022SecurityParser {
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 UpdateGroupMemberPointer",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::GroupMemberPointer),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -469,6 +483,7 @@ impl Token2022SecurityParser {
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializeScaledUiAmountConfig",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::ScaledUiAmount),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -485,6 +500,7 @@ impl Token2022SecurityParser {
             }
             ScaledUiAmountMintInstruction::UpdateMultiplier => Ok(Token2022SecurityInstruction {
                 instruction_name: "Token2022 UpdateScaledUiAmountConfigMultiplier",
+                authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                 extension_type: Some(ExtensionType::ScaledUiAmount),
                 accounts: Self::instruction_accounts(instruction),
                 account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -515,6 +531,7 @@ impl Token2022SecurityParser {
 
                 Ok(Some(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializePausable",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::Pausable),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -548,6 +565,7 @@ impl Token2022SecurityParser {
 
                 Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializePermissionedBurn",
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::PermissionedBurn),
                     accounts: Self::instruction_accounts(instruction),
                     account_usage_policy: Token2022AccountUsagePolicy::RejectIfFeePayerPresent,

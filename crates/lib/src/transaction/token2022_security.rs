@@ -33,8 +33,15 @@ pub struct Token2022SecurityInstruction {
     pub accounts: Vec<Pubkey>,
     pub account_usage_policy: Token2022AccountUsagePolicy,
     pub update_authority: Option<Pubkey>,
+    pub authority_kind: Token2022AuthorityKind,
     pub multisig_signers: Vec<Pubkey>,
     pub data_pubkeys: Vec<Token2022SecurityField>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Token2022AuthorityKind {
+    ExtensionUpdate,
+    WithdrawWithheld,
 }
 
 impl Token2022SecurityInstruction {
@@ -105,6 +112,7 @@ impl Token2022SecurityParser {
                 TokenInstruction::InitializeMintCloseAuthority { close_authority } => {
                     parsed.push(Token2022SecurityInstruction {
                         instruction_name: "Token2022 InitializeMintCloseAuthority",
+                        authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                         extension_type: Some(ExtensionType::MintCloseAuthority),
                         accounts: Self::instruction_accounts(instruction),
                         account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -122,6 +130,7 @@ impl Token2022SecurityParser {
                 TokenInstruction::InitializePermanentDelegate { delegate } => {
                     parsed.push(Token2022SecurityInstruction {
                         instruction_name: "Token2022 InitializePermanentDelegate",
+                        authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                         extension_type: Some(ExtensionType::PermanentDelegate),
                         accounts: Self::instruction_accounts(instruction),
                         account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -288,6 +297,7 @@ impl Token2022SecurityParser {
     ) -> Token2022SecurityInstruction {
         Token2022SecurityInstruction {
             instruction_name,
+            authority_kind: Token2022AuthorityKind::ExtensionUpdate,
             extension_type,
             accounts: Self::instruction_accounts(instruction),
             account_usage_policy: Token2022AccountUsagePolicy::RejectIfFeePayerPresent,

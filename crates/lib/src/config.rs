@@ -423,6 +423,10 @@ pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be used as the current authority for Token2022 extension update/admin
     /// instructions.
     pub allow_update_extension_authority: bool,
+    /// Allow fee payer to be the withdraw-withheld authority in Token2022
+    /// WithdrawWithheldTokensFromMint/WithdrawWithheldTokensFromAccounts instructions. The
+    /// withdrawn fees go to a destination the caller chooses.
+    pub allow_withdraw_withheld_tokens: bool,
     /// Allow fee payer to be the freeze authority in Token2022 FreezeAccount instructions
     pub allow_freeze_account: bool,
     /// Allow fee payer to be the freeze authority in Token2022 ThawAccount instructions

@@ -462,6 +462,8 @@ export interface Token2022InstructionPolicy {
     allow_update_extension_authority: boolean;
     /** Allow fee payer to be the authority in Token2022 WithdrawExcessLamports instructions */
     allow_withdraw_excess_lamports: boolean;
+    /** Allow fee payer to be the withdraw-withheld authority in Token2022 WithdrawWithheldTokens instructions */
+    allow_withdraw_withheld_tokens: boolean;
 }
 
 /**

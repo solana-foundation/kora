@@ -183,6 +183,7 @@ describe('KoraClient Unit Tests', () => {
                             allow_unwrap_lamports: false,
                             allow_update_extension_authority: false,
                             allow_withdraw_excess_lamports: false,
+                            allow_withdraw_withheld_tokens: false,
                         },
                     },
                     max_allowed_lamports: 1000000,

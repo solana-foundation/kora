@@ -1878,6 +1878,7 @@ mod tests {
                         allow_initialize_multisig: true,
                         allow_initialize_extension_authority: true,
                         allow_update_extension_authority: true,
+                        allow_withdraw_withheld_tokens: true,
                         allow_freeze_account: true,
                         allow_thaw_account: true,
                         allow_withdraw_excess_lamports: true,

@@ -126,6 +126,9 @@ impl ConfigValidator {
             token_2022, allow_unwrap_lamports, "Token2022 UnwrapLamports instructions",
                 "Users can make the fee payer unwrap lamports from its native token accounts to arbitrary recipients. This can drain SOL";
 
+            token_2022, allow_withdraw_withheld_tokens, "Token2022 WithdrawWithheldTokens instructions",
+                "Users can make the fee payer withdraw withheld transfer fees from mints and accounts where it is the withdraw-withheld authority, to a destination they choose";
+
             token_2022, allow_reallocate, "Token2022 Reallocate instructions",
                 "Users can make the fee payer the payer, owner, or a multisig signer of Reallocate on token accounts. As payer, the fee payer funds the rent for growing accounts it does not own through a System Transfer CPI, which also requires system.allow_transfer and counts toward max_allowed_lamports. This can drain SOL";
 

@@ -6,8 +6,8 @@ use spl_token_metadata_interface::instruction::TokenMetadataInstruction;
 use crate::error::KoraError;
 
 use super::{
-    Token2022AccountUsagePolicy, Token2022FieldRole, Token2022InterfaceFamily,
-    Token2022SecurityInstruction, Token2022SecurityParser,
+    Token2022AccountUsagePolicy, Token2022AuthorityKind, Token2022FieldRole,
+    Token2022InterfaceFamily, Token2022SecurityInstruction, Token2022SecurityParser,
 };
 
 impl Token2022SecurityParser {
@@ -107,6 +107,7 @@ impl Token2022SecurityParser {
 
         Ok(Token2022SecurityInstruction {
             instruction_name,
+            authority_kind: Token2022AuthorityKind::ExtensionUpdate,
             extension_type: Some(ExtensionType::TokenMetadata),
             accounts: Self::instruction_accounts(instruction),
             account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -186,6 +187,7 @@ impl Token2022SecurityParser {
 
         Ok(Token2022SecurityInstruction {
             instruction_name,
+            authority_kind: Token2022AuthorityKind::ExtensionUpdate,
             extension_type: Some(extension_type),
             accounts: Self::instruction_accounts(instruction),
             account_usage_policy: Token2022AccountUsagePolicy::Ignore,

@@ -5866,6 +5866,45 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_token2022_withdraw_withheld_needs_its_own_policy_flag() {
+        let fee_payer = Keypair::new();
+        let withdraw = || {
+            let ix = spl_token_2022_interface::extension::transfer_fee::instruction::withdraw_withheld_tokens_from_mint(
+                &spl_token_2022_interface::id(),
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &fee_payer.pubkey(),
+                &[],
+            )
+            .unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_update_extension_authority = true;
+        setup_token2022_config_with_policy(policy.clone());
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = validator.validate_transaction(config, &mut withdraw(), &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("current Token2022 extension authority")),
+            "Extension update opt-in alone must not allow withheld withdrawals, got: {result:?}"
+        );
+
+        policy.token_2022.allow_update_extension_authority = false;
+        policy.token_2022.allow_withdraw_withheld_tokens = true;
+        setup_token2022_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = validator.validate_transaction(config, &mut withdraw(), &rpc_client).await;
+        assert!(result.is_ok(), "Withdraw-withheld opt-in should allow the withdrawal: {result:?}");
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_token2022_initialize_mint_close_authority_rejects_disallowed_new_authority() {
         let fee_payer = Keypair::new();
         let mint = Pubkey::new_unique();
