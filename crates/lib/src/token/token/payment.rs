@@ -253,6 +253,17 @@ impl TokenUtil {
                     continue;
                 }
 
+                if let (None, Some((_, source_mint, _)), Some((_, destination_mint, _))) =
+                    (mint, &source_account_info, &destination_account_info)
+                {
+                    if source_mint != destination_mint {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "Transfer source mint {source_mint} does not match destination mint \
+                             {destination_mint}"
+                        )));
+                    }
+                }
+
                 let token_mint = mint
                     .or(source_account_info.as_ref().map(|(_, token_mint, _)| *token_mint))
                     .or(destination_account_info.as_ref().map(|(_, token_mint, _)| *token_mint))

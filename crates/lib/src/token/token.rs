@@ -1461,4 +1461,56 @@ mod tests_token {
         assert_eq!(totals.inflow, 1_000_000_000);
         assert_eq!(totals.outflow, totals.inflow);
     }
+
+    #[tokio::test]
+    async fn test_calculate_payment_lamport_totals_rejects_unchecked_transfer_mint_mismatch() {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let expected_destination_owner = Pubkey::new_unique();
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let allowed_mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let worthless_mint = Pubkey::new_unique();
+
+        let source_account = TokenAccountMockBuilder::new()
+            .with_mint(&allowed_mint)
+            .with_owner(&Pubkey::new_unique())
+            .build();
+        let destination_account = TokenAccountMockBuilder::new()
+            .with_mint(&worthless_mint)
+            .with_owner(&expected_destination_owner)
+            .build();
+
+        let payment = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &source_address,
+            &destination_address,
+            &Pubkey::new_unique(),
+            &[],
+            1_000_000,
+        )
+        .unwrap();
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[payment], Some(&expected_destination_owner)));
+        let mut transaction_resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_account, &destination_account]);
+
+        let mut config = get_config().unwrap();
+        config.kora.cache.enabled = false;
+        let err = TokenUtil::calculate_payment_lamport_totals(
+            &config,
+            &mut transaction_resolved,
+            &rpc_client,
+            &expected_destination_owner,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.to_string().contains("does not match destination mint"), "{err}");
+    }
 }
