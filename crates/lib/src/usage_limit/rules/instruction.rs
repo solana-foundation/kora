@@ -227,10 +227,12 @@ impl InstructionRule {
                             let kora_is_authority_or_payer = if instr_type
                                 == BPF_LOADER_INITIALIZE_BUFFER
                                 || instr_type == BPF_LOADER_WRITE
-                                || instr_type == BPF_LOADER_SET_AUTHORITY
-                                || instr_type == BPF_LOADER_SET_AUTHORITY_CHECKED
                             {
                                 kora_at(1)
+                            } else if instr_type == BPF_LOADER_SET_AUTHORITY
+                                || instr_type == BPF_LOADER_SET_AUTHORITY_CHECKED
+                            {
+                                kora_at(1) || kora_at(2)
                             } else if instr_type == BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN {
                                 kora_at(0) || kora_at(7)
                             } else if instr_type == BPF_LOADER_UPGRADE {
@@ -764,5 +766,68 @@ mod tests {
             timestamp: 0,
         };
         assert_eq!(rule.count_increment(&mut ctx), 0);
+    }
+
+    fn bpf_loader_set_authority_count(
+        ix: solana_sdk::instruction::Instruction,
+        kora: &Pubkey,
+        instr_type: &str,
+    ) -> u64 {
+        use crate::transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::transaction::VersionedTransaction;
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(kora)));
+        let tx = VersionedTransaction { signatures: vec![], message };
+        let mut tx_resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let rule = InstructionRule::lifetime(
+            BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
+            instr_type.to_string(),
+            10,
+        );
+        let mut ctx = LimiterContext {
+            transaction: &mut tx_resolved,
+            user_id: "user".to_string(),
+            kora_signer: Some(*kora),
+            timestamp: 0,
+        };
+        rule.count_increment(&mut ctx)
+    }
+
+    #[test]
+    fn test_bpf_loader_upgradeable_set_authority_counts_when_kora_is_new_authority() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+
+        let kora = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let ix = loader_v3::set_upgrade_authority(&program, &attacker, Some(&kora));
+        assert_eq!(bpf_loader_set_authority_count(ix, &kora, BPF_LOADER_SET_AUTHORITY), 1);
+    }
+
+    #[test]
+    fn test_bpf_loader_upgradeable_set_authority_checked_counts_when_kora_is_new_authority() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+
+        let kora = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let ix = loader_v3::set_upgrade_authority_checked(&program, &attacker, &kora);
+        assert_eq!(bpf_loader_set_authority_count(ix, &kora, BPF_LOADER_SET_AUTHORITY_CHECKED), 1);
+    }
+
+    #[test]
+    fn test_bpf_loader_upgradeable_set_authority_skips_when_kora_not_involved() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+
+        let kora = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let ix = loader_v3::set_upgrade_authority(&program, &attacker, None);
+        assert_eq!(bpf_loader_set_authority_count(ix, &kora, BPF_LOADER_SET_AUTHORITY), 0);
     }
 }
