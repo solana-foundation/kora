@@ -1483,10 +1483,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_burn() {
-        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let mint = Pubkey::new_unique();
+        let _m = ConfigMockBuilder::new()
+            .with_cache_enabled(false)
+            .with_allowed_tokens(vec![mint.to_string()])
+            .build_and_setup();
         let fee_payer = Pubkey::new_unique();
         let source = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
 
         let burn = spl_token_interface::instruction::burn(
             &spl_token_interface::id(),

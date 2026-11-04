@@ -256,6 +256,11 @@ impl TokenUtil {
                             })?;
                         token_account.mint()
                     };
+                    if !config.validation.allowed_tokens.contains(&mint_pubkey.to_string()) {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "Fee payer cannot move tokens of mint {mint_pubkey}: it is not in allowed_tokens"
+                        )));
+                    }
                     mint_to_transfers.entry(mint_pubkey).or_default().push(*amount);
                 }
             }

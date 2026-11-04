@@ -237,6 +237,7 @@ fn harness(scenario: &Scenario) -> Harness {
     let config = ConfigMockBuilder::new()
         .with_price_source(crate::oracle::PriceSource::Mock)
         .with_max_allowed_lamports(scenario.max_allowed_lamports)
+        .with_allowed_tokens(vec![WSOL_DEVNET_MINT.to_string()])
         .build();
     let fee_payer = Pubkey::new_unique();
     let ata_owners: Vec<Pubkey> = (0..ATA_OWNER_POOL).map(|_| Pubkey::new_unique()).collect();

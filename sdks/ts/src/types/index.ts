@@ -266,7 +266,7 @@ export interface ValidationConfig {
     allowed_programs: 'All' | string[];
     /** List of SPL tokens accepted for paid transactions */
     allowed_spl_paid_tokens: string[];
-    /** List of allowed token mint addresses for fee payment */
+    /** Token mints the node supports; fee payer token outflows are limited to these mints */
     allowed_tokens: string[];
     /** Transaction message versions the node accepts */
     allowed_transaction_versions?: ('legacy' | 0 | 1)[];

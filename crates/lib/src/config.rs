@@ -246,6 +246,9 @@ pub struct ValidationConfig {
     pub max_priority_fee_lamports: Option<u64>,
     pub max_signatures: u64,
     pub allowed_programs: ProgramsConfig,
+    /// Token mints the node supports. Token transfers, burns, approvals and account handoffs
+    /// out of the fee payer are only allowed for these mints; tokens the client owns are not
+    /// filtered.
     pub allowed_tokens: Vec<String>,
     pub allowed_spl_paid_tokens: SplTokenConfig,
     pub disallowed_accounts: Vec<String>,

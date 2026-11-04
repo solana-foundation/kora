@@ -553,11 +553,16 @@ mod tests {
         update_config(config).unwrap();
     }
 
+    fn allowed_mint() -> Pubkey {
+        Pubkey::new_from_array([7; 32])
+    }
+
     fn setup_default_config() {
         let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
+            .with_allowed_tokens(vec![allowed_mint().to_string()])
             .with_fee_payer_policy(FeePayerPolicy::default())
             .build();
         setup_both_configs(config);
@@ -568,6 +573,7 @@ mod tests {
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
+            .with_allowed_tokens(vec![allowed_mint().to_string()])
             .with_fee_payer_policy(policy)
             .build();
         setup_both_configs(config);
@@ -578,6 +584,7 @@ mod tests {
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_interface::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
+            .with_allowed_tokens(vec![allowed_mint().to_string()])
             .with_fee_payer_policy(policy)
             .build();
         setup_both_configs(config);
@@ -588,6 +595,7 @@ mod tests {
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
+            .with_allowed_tokens(vec![allowed_mint().to_string()])
             .with_fee_payer_policy(policy)
             .build();
         setup_both_configs(config);
@@ -598,6 +606,7 @@ mod tests {
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
+            .with_allowed_tokens(vec![allowed_mint().to_string()])
             .with_fee_payer_policy(policy)
             .build();
         config.validation.token_2022.allow_confidential_transfers = true;
@@ -1743,7 +1752,7 @@ mod tests {
 
         let fee_payer_token_account = Pubkey::new_unique();
         let recipient_token_account = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
 
         let source_token_account =
             TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
@@ -1829,11 +1838,55 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_fee_payer_transfer_of_mint_outside_allowed_tokens_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_transfer = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let off_list_mint = Pubkey::new_unique();
+        let transfer_from = |owner: &Pubkey| {
+            let ix = spl_token_interface::instruction::transfer_checked(
+                &spl_token_interface::id(),
+                &Pubkey::new_unique(),
+                &off_list_mint,
+                &Pubkey::new_unique(),
+                owner,
+                &[],
+                10,
+                6,
+            )
+            .unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+        let result = validator
+            .validate_transaction(config, &mut transfer_from(&fee_payer), &rpc_client)
+            .await;
+        assert!(
+            matches!(&result, Err(KoraError::InvalidTransaction(message)) if message.contains("not in allowed_tokens")),
+            "{result:?}"
+        );
+
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+        let client = Pubkey::new_unique();
+        assert!(validator
+            .validate_transaction(config, &mut transfer_from(&client), &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_spl_transfer_wrapped_in_batch_is_enforced() {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
         let recipient_token_account = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
 
         let source_token_account =
             TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
@@ -1980,7 +2033,7 @@ mod tests {
 
         let fee_payer_token_account = Pubkey::new_unique();
         let recipient_token_account = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
 
         let rpc_client = RpcMockBuilder::new()
             .with_mint_account(2) // Mock mint with 2 decimals for SPL outflow calculation
@@ -2609,7 +2662,7 @@ mod tests {
         let burn_ix = spl_token_interface::instruction::burn(
             &spl_token_interface::id(),
             &Pubkey::new_unique(),
-            &Pubkey::new_unique(),
+            &allowed_mint(),
             &fee_payer,
             &[],
             2_000_000,
@@ -2633,7 +2686,7 @@ mod tests {
     async fn test_fee_payer_policy_burn() {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
 
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
         let mut policy = FeePayerPolicy::default();
@@ -2782,7 +2835,7 @@ mod tests {
         let approve_ix = spl_token_interface::instruction::approve_checked(
             &spl_token_interface::id(),
             &Pubkey::new_unique(),
-            &Pubkey::new_unique(),
+            &allowed_mint(),
             &Pubkey::new_unique(),
             &fee_payer,
             &[],
@@ -2827,7 +2880,7 @@ mod tests {
             let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
         };
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
         let funded_account = TokenAccountMockBuilder::new()
             .with_mint(&mint)
             .with_owner(&fee_payer)
@@ -2864,7 +2917,7 @@ mod tests {
         let fee_payer_token_account = Pubkey::new_unique();
         let delegate = Pubkey::new_unique();
 
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
         let source_token_account =
             TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
         let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
@@ -3019,7 +3072,7 @@ mod tests {
         let fee_payer_token_account = Pubkey::new_unique();
         let delegate = Pubkey::new_unique();
 
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
         let source_token_account = TokenAccountMockBuilder::new()
             .with_mint(&mint)
             .with_owner(&fee_payer)
@@ -6232,7 +6285,7 @@ mod tests {
     async fn test_fee_payer_policy_mixed_instructions() {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
 
         let revoke_ix = spl_token_interface::instruction::revoke(
             &spl_token_interface::id(),
