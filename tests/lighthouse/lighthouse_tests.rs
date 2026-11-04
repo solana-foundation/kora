@@ -275,6 +275,8 @@ async fn test_sign_transaction_with_lighthouse_v0() {
 #[tokio::test]
 async fn test_sign_bundle_with_lighthouse() {
     let ctx = crate::ctx().await;
+    let _fee_payer_sol = FEE_PAYER_SOL.read().await;
+    let rpc_client = ctx.rpc_client();
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -318,25 +320,23 @@ async fn test_sign_bundle_with_lighthouse() {
         let signed_tx = TransactionUtil::decode_b64_transaction(signed_tx_value.as_str().unwrap())
             .expect("Failed to decode signed transaction");
 
-        let is_last = i == signed_txs.len() - 1;
+        assert_eq!(
+            signed_tx.message.instructions().len(),
+            original_ix_counts[i] + 1,
+            "Bundle member {i} should have a lighthouse assertion added"
+        );
+        assert!(
+            verify_lighthouse_assertion_added(&signed_tx),
+            "Bundle member {i}'s last instruction should be lighthouse program"
+        );
 
-        if is_last {
-            assert_eq!(
-                signed_tx.message.instructions().len(),
-                original_ix_counts[i] + 1,
-                "Last transaction should have lighthouse assertion added"
-            );
-            assert!(
-                verify_lighthouse_assertion_added(&signed_tx),
-                "Last transaction's last instruction should be lighthouse program"
-            );
-        } else {
-            assert_eq!(
-                signed_tx.message.instructions().len(),
-                original_ix_counts[i],
-                "Non-last transactions should not have lighthouse assertion"
-            );
-        }
+        let sim_result =
+            rpc_client.simulate_transaction(&signed_tx).await.expect("Failed to simulate member");
+        assert!(
+            sim_result.value.err.is_none(),
+            "Bundle member {i} should pass its lighthouse assertion: {:?}",
+            sim_result.value.err
+        );
     }
 }
 

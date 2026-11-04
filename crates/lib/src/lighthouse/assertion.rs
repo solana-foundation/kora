@@ -47,12 +47,37 @@ impl LighthouseUtil {
             return Ok(false);
         }
 
-        let current_balance = rpc_client.get_balance(fee_payer).await.map_err(|e| {
+        let current_balance = Self::fetch_fee_payer_balance(rpc_client, fee_payer).await?;
+        Self::add_fee_payer_assertion_for_balance(
+            transaction,
+            fee_payer,
+            current_balance,
+            estimated_fee,
+            config,
+        )
+    }
+
+    pub async fn fetch_fee_payer_balance(
+        rpc_client: &RpcClient,
+        fee_payer: &Pubkey,
+    ) -> Result<u64, KoraError> {
+        rpc_client.get_balance(fee_payer).await.map_err(|e| {
             KoraError::RpcError(format!(
                 "Failed to fetch fee payer balance for Lighthouse assertion: {}",
                 sanitize_error!(e)
             ))
-        })?;
+        })
+    }
+
+    /// Same as `add_fee_payer_assertion`, but against a balance the caller already fetched, so a
+    /// bundle can assert every member against one balance read.
+    pub fn add_fee_payer_assertion_for_balance(
+        transaction: &mut VersionedTransaction,
+        fee_payer: &Pubkey,
+        current_balance: u64,
+        estimated_fee: u64,
+        config: &LighthouseConfig,
+    ) -> Result<bool, KoraError> {
         let min_expected = current_balance.saturating_sub(estimated_fee);
 
         if min_expected == 0 {
