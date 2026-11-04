@@ -3949,7 +3949,14 @@ mod tests {
         let nonce_account = Pubkey::new_unique();
         let new_authority = Pubkey::new_unique();
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let nonce_with_balance = |lamports: u64| solana_sdk::account::Account {
+            lamports,
+            data: vec![0; 80],
+            owner: SYSTEM_PROGRAM_ID,
+            executable: false,
+            rent_epoch: 0,
+        };
+
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_authorize = true;
         setup_config_with_policy(policy);
@@ -3960,10 +3967,24 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client =
+            RpcMockBuilder::new().with_account_info(&nonce_with_balance(1_000)).build();
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
+
+        let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &new_authority);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client =
+            RpcMockBuilder::new().with_account_info(&nonce_with_balance(2_000_000)).build();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("exceeds"), "got {err}");
 
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();

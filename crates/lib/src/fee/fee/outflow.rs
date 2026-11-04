@@ -284,6 +284,26 @@ impl FeeConfigUtil {
             }
         }
 
+        for instruction in parsed_system_instructions
+            .get(&ParsedSystemInstructionType::SystemAuthorizeNonceAccount)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedSystemInstructionData::SystemAuthorizeNonceAccount {
+                nonce_account,
+                nonce_authority,
+                new_authority,
+                extra_signers,
+            } = instruction
+            {
+                let fee_payer_signs = *nonce_authority == *fee_payer_pubkey
+                    || extra_signers.contains(fee_payer_pubkey);
+                if fee_payer_signs && *new_authority != *fee_payer_pubkey {
+                    let lamports = rpc_client.get_account(nonce_account).await?.lamports;
+                    Self::add_outflow(&mut total, lamports, "SystemAuthorizeNonceAccount")?;
+                }
+            }
+        }
+
         let parsed_alt_instructions = transaction.get_or_parse_alt_instructions()?;
         for instruction in parsed_alt_instructions
             .get(&ParsedALTInstructionType::AltCloseLookupTable)

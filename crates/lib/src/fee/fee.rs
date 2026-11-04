@@ -468,8 +468,8 @@ mod tests {
     };
     use solana_system_interface::{
         instruction::{
-            create_account, create_account_with_seed, transfer, transfer_with_seed,
-            withdraw_nonce_account,
+            authorize_nonce_account, create_account, create_account_with_seed, transfer,
+            transfer_with_seed, withdraw_nonce_account,
         },
         program::ID as SYSTEM_PROGRAM_ID,
     };
@@ -1263,6 +1263,51 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(outflow, 50_000);
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_nonce_authorize_hands_off_balance() {
+        let nonce_balance = 5_000_000;
+        let mocked_rpc_client = RpcMockBuilder::new()
+            .with_account_info(&Account {
+                lamports: nonce_balance,
+                data: vec![0; 80],
+                owner: SYSTEM_PROGRAM_ID,
+                executable: false,
+                rent_epoch: 0,
+            })
+            .build();
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+        let config = setup_or_get_test_config();
+
+        let outflow_for = |new_authority: Pubkey| {
+            let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &new_authority);
+            let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        let mut handoff = outflow_for(Pubkey::new_unique());
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut handoff,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, nonce_balance as i128);
+
+        let mut keep = outflow_for(fee_payer);
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut keep,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 0);
     }
 
     #[tokio::test]
