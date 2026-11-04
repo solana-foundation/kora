@@ -469,6 +469,16 @@ impl MintAccountMockBuilder {
                             MaybeNull::try_from(self.transfer_hook_program_id)
                                 .map_err(|e| e.to_string())?;
                     }
+                    ExtensionType::ScaledUiAmount => {
+                        state.init_extension::<extension::scaled_ui_amount::ScaledUiAmountConfig>(
+                            true,
+                        )?;
+                    }
+                    ExtensionType::InterestBearingConfig => {
+                        state.init_extension::<extension::interest_bearing_mint::InterestBearingConfig>(
+                            true,
+                        )?;
+                    }
                     // Add other extension types as needed
                     _ => {}
                 }

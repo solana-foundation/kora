@@ -2189,6 +2189,30 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_check_token_mint_extensions_amount_multipliers() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        for extension in [ExtensionType::ScaledUiAmount, ExtensionType::InterestBearingConfig] {
+            let mint = create_mock_token2022_mint_with_extensions(6, vec![extension]);
+            let mint_pubkey = Pubkey::new_unique();
+            let rpc_client = create_mock_rpc_client_with_account(&mint);
+            let mut warnings = Vec::new();
+
+            ConfigValidator::check_token_mint_extensions(
+                &rpc_client,
+                &[mint_pubkey.to_string()],
+                &mut warnings,
+            )
+            .await;
+
+            assert_eq!(warnings.len(), 1, "{extension:?}");
+            assert!(warnings[0].contains("ScaledUiAmount or InterestBearingConfig"));
+            assert!(warnings[0].contains(&mint_pubkey.to_string()));
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_check_token_mint_extensions_no_risky_extensions() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
 
