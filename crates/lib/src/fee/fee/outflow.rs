@@ -5,7 +5,7 @@ use crate::{
     error::KoraError,
     token::{
         spl_token_2022::Token2022Mint,
-        token::{AtaCreationInstructionInfo, TokenUtil},
+        token::{AtaCreationInstructionInfo, TokenType, TokenUtil},
     },
     transaction::{
         ParsedALTInstructionData, ParsedALTInstructionType,
@@ -358,7 +358,7 @@ impl FeeConfigUtil {
 
         let spl_instructions = transaction.get_or_parse_spl_instructions()?;
         let empty_vec = vec![];
-        let spl_token_outflows: Vec<ParsedSPLInstructionData> = [
+        let mut spl_token_outflows: Vec<ParsedSPLInstructionData> = [
             ParsedSPLInstructionType::SplTokenTransfer,
             ParsedSPLInstructionType::SplTokenBurn,
             ParsedSPLInstructionType::SplTokenApprove,
@@ -368,6 +368,44 @@ impl FeeConfigUtil {
         .flatten()
         .cloned()
         .collect();
+
+        for instruction in spl_instructions
+            .get(&ParsedSPLInstructionType::SplTokenSetAuthority)
+            .unwrap_or(&empty_vec)
+        {
+            if let ParsedSPLInstructionData::SplTokenSetAuthority {
+                account,
+                authority,
+                new_authority,
+                is_token_account_control: true,
+                is_2022,
+                ..
+            } = instruction
+            {
+                if authority != fee_payer_pubkey || *new_authority == Some(*fee_payer_pubkey) {
+                    continue;
+                }
+                let token_account = rpc_client.get_account(account).await?;
+                Self::add_outflow(&mut total, token_account.lamports, "SplTokenSetAuthority")?;
+                let state = TokenType::get_token_program_from_owner(&token_account.owner)?
+                    .unpack_token_account(&token_account.data)
+                    .map_err(|e| {
+                        KoraError::TokenOperationError(format!(
+                            "Failed to unpack token account {account}: {e}"
+                        ))
+                    })?;
+                if state.amount() > 0 {
+                    spl_token_outflows.push(ParsedSPLInstructionData::SplTokenApprove {
+                        amount: state.amount(),
+                        owner: *fee_payer_pubkey,
+                        multisig_signers: vec![],
+                        mint: Some(state.mint()),
+                        source_address: *account,
+                        is_2022: *is_2022,
+                    });
+                }
+            }
+        }
 
         if !spl_token_outflows.is_empty() {
             let spl_outflow = TokenUtil::calculate_spl_transfers_value_in_lamports(

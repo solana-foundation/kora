@@ -38,7 +38,7 @@ impl TransactionValidator {
 
         deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenSetAuthority,
             ParsedSPLInstructionData::SplTokenSetAuthority {
-                authority, new_authority, multisig_signers, is_2022
+                authority, new_authority, multisig_signers, is_2022, ..
             } => (self.fee_payer_signs(authority, multisig_signers)
                 || *new_authority == Some(self.fee_payer_pubkey)),
             unless token_policy(self.fee_payer_policy, *is_2022).allow_set_authority,

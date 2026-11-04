@@ -367,6 +367,8 @@ pub struct SplTokenInstructionPolicy {
     /// Allow fee payer to be the owner in SPL Token Revoke instructions
     pub allow_revoke: bool,
     /// Allow fee payer to be the current or the new authority in SPL Token SetAuthority instructions
+    /// When the fee payer hands a token account's owner or close authority to someone else, the
+    /// account's lamports and token balance count against max_allowed_lamports.
     pub allow_set_authority: bool,
     /// Allow fee payer to be the mint authority in SPL Token MintTo/MintToChecked instructions
     pub allow_mint_to: bool,
@@ -404,6 +406,8 @@ pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be the owner in Token2022 Revoke instructions
     pub allow_revoke: bool,
     /// Allow fee payer to be the current or the new authority in Token2022 SetAuthority instructions
+    /// When the fee payer hands a token account's owner or close authority to someone else, the
+    /// account's lamports and token balance count against max_allowed_lamports.
     pub allow_set_authority: bool,
     /// Allow fee payer to be the mint authority in Token2022 MintTo/MintToChecked instructions
     pub allow_mint_to: bool,

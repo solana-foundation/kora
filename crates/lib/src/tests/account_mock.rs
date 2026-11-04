@@ -147,6 +147,11 @@ impl TokenAccountMockBuilder {
         self
     }
 
+    pub fn with_lamports(mut self, lamports: u64) -> Self {
+        self.lamports = lamports;
+        self
+    }
+
     pub fn with_delegate(mut self, delegate: Option<Pubkey>) -> Self {
         self.delegate = match delegate {
             Some(key) => COption::Some(key),

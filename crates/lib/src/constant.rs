@@ -185,6 +185,7 @@ pub mod instruction_indexes {
 
     pub mod spl_token_set_authority {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const ACCOUNT_INDEX: usize = 0;
         pub const CURRENT_AUTHORITY_INDEX: usize = 1;
     }
 

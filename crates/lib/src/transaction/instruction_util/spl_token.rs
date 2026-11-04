@@ -85,8 +85,10 @@ pub enum ParsedSPLInstructionData {
         is_2022: bool,
     },
     SplTokenSetAuthority {
+        account: Pubkey,
         authority: Pubkey,
         new_authority: Option<Pubkey>,
+        is_token_account_control: bool,
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
     },
@@ -324,14 +326,19 @@ macro_rules! match_shared_token_instruction {
                     },
                 );
             }
-            TokenInstruction::SetAuthority { new_authority, .. } => {
+            TokenInstruction::SetAuthority { authority_type, new_authority } => {
                 use instruction_indexes::spl_token_set_authority as ix;
                 validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenSetAuthority {
+                        account: $instruction.accounts[ix::ACCOUNT_INDEX].pubkey,
                         authority: $instruction.accounts[ix::CURRENT_AUTHORITY_INDEX].pubkey,
                         new_authority: new_authority.into(),
+                        is_token_account_control: matches!(
+                            authority_type,
+                            AuthorityType::AccountOwner | AuthorityType::CloseAccount
+                        ),
                         multisig_signers: Self::extract_multisig_signers($instruction, 2),
                         is_2022: $is_2022,
                     },
@@ -704,7 +711,7 @@ impl IxUtils {
             let program_id = instruction.program_id;
 
             if program_id == spl_token_interface::ID {
-                use spl_token_interface::instruction::TokenInstruction;
+                use spl_token_interface::instruction::{AuthorityType, TokenInstruction};
 
                 let Ok(spl_ix) = TokenInstruction::unpack(&instruction.data) else {
                     continue;
@@ -724,7 +731,7 @@ impl IxUtils {
                             TransferHookInstruction, UpdateInstructionData as TransferHookUpdate,
                         },
                     },
-                    instruction::{decode_instruction_data, TokenInstruction},
+                    instruction::{decode_instruction_data, AuthorityType, TokenInstruction},
                 };
 
                 let spl_ix = match TokenInstruction::unpack(&instruction.data) {
