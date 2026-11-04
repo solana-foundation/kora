@@ -1610,7 +1610,9 @@ async fn test_create_account_allow_prefund_brick_vector_policy_violation() {
 
     match result {
         Err(error) => {
-            error.assert_contains_message("Fee payer cannot be used for 'System Create Account'");
+            error.assert_contains_message(
+                "Fee payer cannot be the account created by 'System Create Account'",
+            );
         }
         Ok(_) => {
             panic!("Expected error for create_account_allow_prefund brick-vector policy violation")
