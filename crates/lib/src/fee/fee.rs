@@ -816,7 +816,7 @@ mod tests {
             .await;
 
             if listed {
-                assert!(result.is_ok(), "listed legacy-transfer mint must be exempt: {result:?}");
+                assert!(result.is_ok(), "listed legacy-transfer mint must be exempt");
             } else {
                 let msg = result.expect_err("unlisted legacy-transfer mint must be rejected");
                 assert!(msg.to_string().contains("Mutable transfer-hook authority found"));
@@ -838,7 +838,7 @@ mod tests {
         )
         .await;
 
-        assert!(result.is_ok(), "unlisted mint without a hook must pass: {result:?}");
+        assert!(result.is_ok(), "unlisted mint without a hook must pass");
     }
 
     #[tokio::test]
