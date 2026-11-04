@@ -49,3 +49,7 @@ Full walkthrough: https://launch.solana.com/docs/kora/operators/deployment/railw
 - Point a health check at `/liveness`; it bypasses auth by design.
 - A public node with no `api_key` or `hmac_secret` set is an open paymaster. Rate limiting alone
   does not stop a funded attacker draining the fee payer.
+- Redis is fully trusted: Kora reads cached prices, accounts and usage counters from it without
+  re-checking them. Keep it off the public network and require a password
+  (`redis://:<password>@host:6379`). `docker-compose.yml` takes the password from
+  `REDIS_PASSWORD`. `rediss://` is not supported.
