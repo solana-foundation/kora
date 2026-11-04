@@ -36,6 +36,7 @@ const PRICE_ORACLE_MAX_RETRIES: u32 = 3;
 const PRICE_ORACLE_BASE_DELAY: Duration = Duration::from_secs(1);
 
 static CACHE_POOL: OnceCell<Option<Pool>> = OnceCell::const_new();
+static CLUSTER_NAMESPACE: OnceCell<String> = OnceCell::const_new();
 
 /// Process-wide price oracle. Held as an `Arc` so the inner `reqwest::Client`
 /// (and its connection pool) is reused across all cache misses instead of
@@ -63,7 +64,7 @@ pub struct CacheUtil;
 
 impl CacheUtil {
     /// Initialize the cache pool based on configuration
-    pub async fn init() -> Result<(), KoraError> {
+    pub async fn init(rpc_client: &RpcClient) -> Result<(), KoraError> {
         let config = get_config()?;
 
         #[allow(clippy::needless_borrow)]
@@ -96,6 +97,16 @@ impl CacheUtil {
                 ))
             })?;
 
+            let genesis_hash = rpc_client.get_genesis_hash().await.map_err(|e| {
+                KoraError::RpcError(format!(
+                    "Failed to fetch genesis hash for cache namespace: {}",
+                    sanitize_error!(e)
+                ))
+            })?;
+            CLUSTER_NAMESPACE.set(genesis_hash.to_string()).map_err(|_| {
+                KoraError::InternalServerError("Cache namespace already initialized".to_string())
+            })?;
+
             log::info!("Cache initialized successfully");
 
             Some(pool)
@@ -120,8 +131,19 @@ impl CacheUtil {
         })
     }
 
+    fn cluster_key(cluster: Option<&str>, key: String) -> String {
+        match cluster {
+            Some(cluster) => format!("{cluster}:{key}"),
+            None => key,
+        }
+    }
+
+    fn namespaced(key: String) -> String {
+        Self::cluster_key(CLUSTER_NAMESPACE.get().map(String::as_str), key)
+    }
+
     fn get_account_key(pubkey: &Pubkey) -> String {
-        format!("{ACCOUNT_CACHE_KEY}:{pubkey}")
+        Self::namespaced(format!("{ACCOUNT_CACHE_KEY}:{pubkey}"))
     }
 
     /// Get account directly from RPC (bypassing cache)
@@ -297,12 +319,13 @@ impl CacheUtil {
     async fn get_blockhash_from_cache(pool: &Pool) -> Result<Option<Hash>, KoraError> {
         let mut conn = Self::get_connection(pool).await?;
 
-        let cached: Option<String> = conn.get(BLOCKHASH_CACHE_KEY).await.map_err(|e| {
-            KoraError::InternalServerError(format!(
-                "Failed to get blockhash from cache: {}",
-                sanitize_error!(e)
-            ))
-        })?;
+        let cached: Option<String> =
+            conn.get(Self::namespaced(BLOCKHASH_CACHE_KEY.to_string())).await.map_err(|e| {
+                KoraError::InternalServerError(format!(
+                    "Failed to get blockhash from cache: {}",
+                    sanitize_error!(e)
+                ))
+            })?;
 
         match cached {
             Some(s) => {
@@ -318,14 +341,18 @@ impl CacheUtil {
     async fn set_blockhash_in_cache(pool: &Pool, hash: &Hash) -> Result<(), KoraError> {
         let mut conn = Self::get_connection(pool).await?;
 
-        conn.set_ex::<_, _, ()>(BLOCKHASH_CACHE_KEY, hash.to_string(), BLOCKHASH_TTL)
-            .await
-            .map_err(|e| {
-                KoraError::InternalServerError(format!(
-                    "Failed to set blockhash in cache: {}",
-                    sanitize_error!(e)
-                ))
-            })?;
+        conn.set_ex::<_, _, ()>(
+            Self::namespaced(BLOCKHASH_CACHE_KEY.to_string()),
+            hash.to_string(),
+            BLOCKHASH_TTL,
+        )
+        .await
+        .map_err(|e| {
+            KoraError::InternalServerError(format!(
+                "Failed to set blockhash in cache: {}",
+                sanitize_error!(e)
+            ))
+        })?;
 
         Ok(())
     }
@@ -335,7 +362,10 @@ impl CacheUtil {
     /// reconfigured to a different source (e.g. Jupiter) against the same
     /// Redis instance.
     fn get_price_key(mint_address: &str, source: &PriceSource) -> String {
-        format!("{PRICE_CACHE_KEY_PREFIX}:{}:{mint_address}", source.as_cache_key())
+        Self::namespaced(format!(
+            "{PRICE_CACHE_KEY_PREFIX}:{}:{mint_address}",
+            source.as_cache_key()
+        ))
     }
 
     /// Return the process-wide `RetryingPriceOracle`, building it on first use.
@@ -765,6 +795,8 @@ mod tests {
     };
     use chrono::Utc;
     use redis::cmd;
+    use serde_json::json;
+    use solana_client::rpc_request::RpcRequest;
     use std::env;
 
     #[tokio::test]
@@ -802,6 +834,16 @@ mod tests {
         let pubkey = Pubkey::new_unique();
         let key = CacheUtil::get_account_key(&pubkey);
         assert_eq!(key, format!("account:{pubkey}"));
+    }
+
+    #[test]
+    fn test_cluster_key_separates_clusters() {
+        let key = format!("{ACCOUNT_CACHE_KEY}:{}", Pubkey::new_unique());
+        let mainnet = CacheUtil::cluster_key(Some("mainnet-genesis"), key.clone());
+        let devnet = CacheUtil::cluster_key(Some("devnet-genesis"), key.clone());
+        assert_ne!(mainnet, devnet);
+        assert_eq!(mainnet, format!("mainnet-genesis:{key}"));
+        assert_eq!(CacheUtil::cluster_key(None, key.clone()), key);
     }
 
     #[tokio::test]
@@ -1009,7 +1051,10 @@ mod tests {
             .with_cache_url(Some(redis_url))
             .build_and_setup();
 
-        let _ = CacheUtil::init().await;
+        let rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(RpcRequest::GetGenesisHash, json!(Hash::new_unique().to_string()))
+            .build();
+        let _ = CacheUtil::init(&rpc_client).await;
         let config = get_config().unwrap();
 
         let pool = CACHE_POOL.get().unwrap().as_ref().unwrap();
@@ -1064,7 +1109,10 @@ mod tests {
             .with_cache_url(Some(redis_url))
             .build_and_setup();
 
-        let _ = CacheUtil::init().await;
+        let rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(RpcRequest::GetGenesisHash, json!(Hash::new_unique().to_string()))
+            .build();
+        let _ = CacheUtil::init(&rpc_client).await;
         let config = get_config().unwrap();
 
         let pool = CACHE_POOL.get().unwrap().as_ref().unwrap();
