@@ -50,12 +50,8 @@ impl BundleValidator {
         fee_payer: &Pubkey,
         skip_sig_verify: bool,
     ) -> Result<JitoBundleSimulationResult, KoraError> {
-        let simulation_config = Self::build_simulation_config_for_signed_indices(
-            encoded_transactions.len(),
-            signed_indices,
-            fee_payer,
-            skip_sig_verify,
-        );
+        let simulation_config =
+            Self::build_simulation_config(encoded_transactions.len(), fee_payer, skip_sig_verify);
         let jito_client = JitoBundleClient::new(&config.kora.bundle.jito);
         let simulation_result = jito_client
             .simulate_bundle_with_config(encoded_transactions, simulation_config)
@@ -73,21 +69,18 @@ impl BundleValidator {
         Ok(simulation_result)
     }
 
-    fn build_simulation_config_for_signed_indices(
+    fn build_simulation_config(
         bundle_size: usize,
-        signed_indices: &[usize],
         fee_payer: &Pubkey,
         skip_sig_verify: bool,
     ) -> JitoBundleSimulationConfig {
-        let signed_set: HashSet<usize> = signed_indices.iter().copied().collect();
         let fee_payer_account = JitoBundleAccountConfig {
             addresses: vec![fee_payer.to_string()],
             encoding: Some("base64".to_string()),
         };
 
-        let accounts_configs: Vec<Option<JitoBundleAccountConfig>> = (0..bundle_size)
-            .map(|tx_idx| signed_set.contains(&tx_idx).then(|| fee_payer_account.clone()))
-            .collect();
+        let accounts_configs: Vec<Option<JitoBundleAccountConfig>> =
+            vec![Some(fee_payer_account); bundle_size];
 
         JitoBundleSimulationConfig {
             pre_execution_accounts_configs: Some(accounts_configs.clone()),
@@ -129,26 +122,23 @@ impl BundleValidator {
                 &tx_result.logs,
             )?;
 
-            if signed_set.contains(&tx_idx) {
-                let transfer_outflow = Self::fee_payer_transfer_outflow(
-                    rpc_client,
-                    &encoded_transactions[tx_idx],
-                    tx_idx,
-                    tx_result,
-                )
-                .await?;
-                total_transfer_outflow =
-                    total_transfer_outflow.checked_add(transfer_outflow).ok_or_else(|| {
-                        KoraError::ValidationError(
-                            "Bundle outflow calculation overflow".to_string(),
-                        )
-                    })?;
-                if total_transfer_outflow > max_allowed_lamports {
-                    return Err(KoraError::InvalidTransaction(format!(
-                        "Total transfer amount {} exceeds maximum allowed {}",
-                        total_transfer_outflow, max_allowed_lamports
-                    )));
-                }
+            let transfer_outflow = Self::fee_payer_transfer_outflow(
+                rpc_client,
+                &encoded_transactions[tx_idx],
+                tx_idx,
+                tx_result,
+                signed_set.contains(&tx_idx),
+            )
+            .await?;
+            total_transfer_outflow =
+                total_transfer_outflow.checked_add(transfer_outflow).ok_or_else(|| {
+                    KoraError::ValidationError("Bundle outflow calculation overflow".to_string())
+                })?;
+            if total_transfer_outflow > max_allowed_lamports {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Total transfer amount {} exceeds maximum allowed {}",
+                    total_transfer_outflow, max_allowed_lamports
+                )));
             }
         }
 
@@ -191,12 +181,13 @@ impl BundleValidator {
     async fn fee_payer_transfer_outflow(
         rpc_client: &RpcClient,
         encoded_transaction: &str,
-        signed_idx: usize,
+        tx_idx: usize,
         tx_result: &JitoBundleSimulationTransactionResult,
+        signed_by_kora: bool,
     ) -> Result<u64, KoraError> {
         let error = |problem: &str| {
             KoraError::InvalidTransaction(format!(
-                "Bundle simulation {problem} for signed transaction index {signed_idx}"
+                "Bundle simulation {problem} for transaction index {tx_idx}"
             ))
         };
         let pre_accounts = tx_result
@@ -220,8 +211,8 @@ impl BundleValidator {
 
         let observed_lamport_outflow = pre_lamports.saturating_sub(post_lamports);
 
-        if observed_lamport_outflow == 0 {
-            return Ok(0);
+        if observed_lamport_outflow == 0 || !signed_by_kora {
+            return Ok(observed_lamport_outflow);
         }
 
         let transaction = TransactionUtil::decode_b64_transaction(encoded_transaction)?;
@@ -366,18 +357,19 @@ mod tests {
     }
 
     #[test]
-    fn test_build_simulation_config_tracks_only_signed_indices() {
+    fn test_build_simulation_config_tracks_every_index() {
         let fee_payer = Pubkey::new_unique();
-        let config =
-            BundleValidator::build_simulation_config_for_signed_indices(3, &[1], &fee_payer, false);
+        let config = BundleValidator::build_simulation_config(3, &fee_payer, false);
 
         let pre = config.pre_execution_accounts_configs.unwrap();
         let post = config.post_execution_accounts_configs.unwrap();
 
-        assert!(pre[0].is_none());
-        assert!(pre[2].is_none());
-        assert_eq!(pre[1].as_ref().unwrap().addresses, vec![fee_payer.to_string()]);
-        assert_eq!(post[1].as_ref().unwrap().addresses, vec![fee_payer.to_string()]);
+        for configs in [&pre, &post] {
+            assert_eq!(configs.len(), 3);
+            for account_config in configs {
+                assert_eq!(account_config.as_ref().unwrap().addresses, vec![fee_payer.to_string()]);
+            }
+        }
     }
 
     #[test]
@@ -562,6 +554,40 @@ mod tests {
             &config,
             &encoded_transactions,
             &[0, 1],
+            &simulation_result,
+        )
+        .await;
+
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("exceeds maximum allowed 1000000"), "Unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn test_validate_simulation_policy_counts_unsigned_member_outflow() {
+        let fee_payer = Pubkey::new_unique();
+        let encoded_transactions =
+            vec![make_test_transaction(&fee_payer), make_test_transaction(&fee_payer)];
+        let config = ConfigMockBuilder::new()
+            .with_max_allowed_lamports(1_000_000)
+            .with_allowed_programs(vec!["11111111111111111111111111111111".to_string()])
+            .build();
+        let rpc_client = RpcMockBuilder::new().with_fee_estimate(5_000).build();
+
+        let logs = || vec!["Program 11111111111111111111111111111111 invoke [1]".to_string()];
+        let simulation_result = JitoBundleSimulationResult {
+            context: json!({ "slot": 1 }),
+            summary: Some(json!("succeeded")),
+            transaction_results: vec![
+                make_tx_result(logs(), Some(2_000_000), Some(1_995_000)),
+                make_tx_result(logs(), Some(1_995_000), Some(0)),
+            ],
+        };
+
+        let result = BundleValidator::validate_simulation_policy(
+            &rpc_client,
+            &config,
+            &encoded_transactions,
+            &[0],
             &simulation_result,
         )
         .await;
