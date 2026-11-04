@@ -41,6 +41,7 @@ pub struct Token2022SecurityInstruction {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Token2022AuthorityKind {
     ExtensionUpdate,
+    InterfaceInitialize,
     WithdrawWithheld,
 }
 

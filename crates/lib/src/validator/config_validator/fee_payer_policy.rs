@@ -126,6 +126,9 @@ impl ConfigValidator {
             token_2022, allow_unwrap_lamports, "Token2022 UnwrapLamports instructions",
                 "Users can make the fee payer unwrap lamports from its native token accounts to arbitrary recipients. This can drain SOL";
 
+            token_2022, allow_initialize_interface_extension, "Token2022 TokenMetadata Initialize and TokenGroup InitializeGroup instructions",
+                "Users can make the fee payer sign as mint authority to initialize metadata or a group on its mints, with an update authority they choose";
+
             token_2022, allow_withdraw_withheld_tokens, "Token2022 WithdrawWithheldTokens instructions",
                 "Users can make the fee payer withdraw withheld transfer fees from mints and accounts where it is the withdraw-withheld authority, to a destination they choose";
 

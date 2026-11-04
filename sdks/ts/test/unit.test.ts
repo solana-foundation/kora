@@ -172,6 +172,7 @@ describe('KoraClient Unit Tests', () => {
                             allow_freeze_account: true,
                             allow_initialize_account: true,
                             allow_initialize_extension_authority: false,
+                            allow_initialize_interface_extension: false,
                             allow_initialize_mint: true,
                             allow_initialize_multisig: true,
                             allow_mint_to: true,

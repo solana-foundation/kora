@@ -440,6 +440,8 @@ export interface Token2022InstructionPolicy {
     allow_initialize_account: boolean;
     /** Allow fee payer to be planted as a future Token2022 extension authority or delegate during extension initialization */
     allow_initialize_extension_authority: boolean;
+    /** Allow fee payer to sign as mint authority in Token2022 TokenMetadata Initialize and TokenGroup InitializeGroup instructions */
+    allow_initialize_interface_extension: boolean;
     /** Allow fee payer to initialize Token2022 mints */
     allow_initialize_mint: boolean;
     /** Allow fee payer to initialize Token2022 multisig accounts */

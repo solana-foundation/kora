@@ -54,6 +54,12 @@ impl Token2022SecurityParser {
         instruction: &Instruction,
         metadata_instruction: TokenMetadataInstruction,
     ) -> Result<Token2022SecurityInstruction, KoraError> {
+        let authority_kind =
+            if matches!(metadata_instruction, TokenMetadataInstruction::Initialize(_)) {
+                Token2022AuthorityKind::InterfaceInitialize
+            } else {
+                Token2022AuthorityKind::ExtensionUpdate
+            };
         let (instruction_name, update_authority, data_pubkeys) = match metadata_instruction {
             TokenMetadataInstruction::Initialize(_) => (
                 "Token2022 TokenMetadataInitialize",
@@ -107,7 +113,7 @@ impl Token2022SecurityParser {
 
         Ok(Token2022SecurityInstruction {
             instruction_name,
-            authority_kind: Token2022AuthorityKind::ExtensionUpdate,
+            authority_kind,
             extension_type: Some(ExtensionType::TokenMetadata),
             accounts: Self::instruction_accounts(instruction),
             account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -121,6 +127,12 @@ impl Token2022SecurityParser {
         instruction: &Instruction,
         group_instruction: TokenGroupInstruction,
     ) -> Result<Token2022SecurityInstruction, KoraError> {
+        let authority_kind =
+            if matches!(group_instruction, TokenGroupInstruction::InitializeGroup(_)) {
+                Token2022AuthorityKind::InterfaceInitialize
+            } else {
+                Token2022AuthorityKind::ExtensionUpdate
+            };
         let (instruction_name, extension_type, update_authority, multisig_signers, data_pubkeys) =
             match group_instruction {
                 TokenGroupInstruction::InitializeGroup(data) => (
@@ -187,7 +199,7 @@ impl Token2022SecurityParser {
 
         Ok(Token2022SecurityInstruction {
             instruction_name,
-            authority_kind: Token2022AuthorityKind::ExtensionUpdate,
+            authority_kind,
             extension_type: Some(extension_type),
             accounts: Self::instruction_accounts(instruction),
             account_usage_policy: Token2022AccountUsagePolicy::Ignore,

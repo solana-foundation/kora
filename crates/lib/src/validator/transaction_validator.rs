@@ -7258,6 +7258,65 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_interface_initialize_with_fee_payer_mint_authority_needs_own_flag() {
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let foreign_authority = Pubkey::new_unique();
+        let initializers = [
+            spl_token_metadata_interface::instruction::initialize(
+                &spl_token_2022_interface::id(),
+                &mint,
+                &foreign_authority,
+                &mint,
+                &fee_payer,
+                "Token".to_string(),
+                "TKN".to_string(),
+                "https://example.com/token.json".to_string(),
+            ),
+            spl_token_group_interface::instruction::initialize_group(
+                &spl_token_2022_interface::id(),
+                &mint,
+                &mint,
+                &fee_payer,
+                Some(foreign_authority),
+                8,
+            ),
+        ];
+
+        for instruction in initializers {
+            let mut policy = FeePayerPolicy::default();
+            policy.token_2022.allow_update_extension_authority = true;
+            setup_token2022_config_interface_allowed(policy.clone());
+            let config = get_config().unwrap();
+            let validator = TransactionValidator::new(config, fee_payer).unwrap();
+            let rpc_client = RpcMockBuilder::new().build();
+            let message =
+                VersionedMessage::Legacy(Message::new(&[instruction.clone()], Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let result =
+                validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+            assert!(
+                matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("current Token2022 extension authority")),
+                "extension update opt-in alone must not allow mint-authority interface init, got: {result:?}"
+            );
+
+            policy.token_2022.allow_update_extension_authority = false;
+            policy.token_2022.allow_initialize_interface_extension = true;
+            setup_token2022_config_interface_allowed(policy);
+            let config = get_config().unwrap();
+            let validator = TransactionValidator::new(config, fee_payer).unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let result =
+                validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+            assert!(result.is_ok(), "interface init opt-in should allow it: {result:?}");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_metadata_initialize_allowed_when_fee_payer_absent() {
         let fee_payer = Pubkey::new_unique();
         let mint = Pubkey::new_unique();

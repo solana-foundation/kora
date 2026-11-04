@@ -103,6 +103,9 @@ impl TransactionValidator {
                 Token2022AuthorityKind::ExtensionUpdate => {
                     self.fee_payer_policy.token_2022.allow_update_extension_authority
                 }
+                Token2022AuthorityKind::InterfaceInitialize => {
+                    self.fee_payer_policy.token_2022.allow_initialize_interface_extension
+                }
                 Token2022AuthorityKind::WithdrawWithheld => {
                     self.fee_payer_policy.token_2022.allow_withdraw_withheld_tokens
                 }
