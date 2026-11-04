@@ -56,7 +56,7 @@ impl DrainRole for SystemRole {
     ];
 
     fn allowed_programs() -> Vec<String> {
-        vec![SYSTEM_PROGRAM_ID.to_string()]
+        vec![SYSTEM_PROGRAM_ID.to_string(), spl_token_interface::id().to_string()]
     }
 
     fn flag(self, policy: &mut FeePayerPolicy) -> &mut bool {
@@ -190,5 +190,23 @@ proptest! {
             let result = validate::<SystemRole>(policy.clone(), fee_payer, ix);
             prop_assert!(result.is_err(), "fee payer as created account must be denied");
         }
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn fee_payer_assigned_to_foreign_owner_always_denied(
+        flags in prop::collection::vec(any::<bool>(), SystemRole::ROLES.len()),
+    ) {
+        let mut policy = FeePayerPolicy::default();
+        for (role, allowed) in SystemRole::ROLES.iter().zip(&flags) {
+            *role.flag(&mut policy) = *allowed;
+        }
+        let fee_payer = Pubkey::new_unique();
+        let ix = assign(&fee_payer, &spl_token_interface::id());
+        let result = validate::<SystemRole>(policy, fee_payer, ix);
+        prop_assert!(result.is_err(), "fee payer reassigned to a foreign owner must be denied");
     }
 }

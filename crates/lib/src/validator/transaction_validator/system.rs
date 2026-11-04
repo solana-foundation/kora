@@ -4,6 +4,7 @@ use crate::{
     transaction::{ParsedSystemInstructionData, ParsedSystemInstructionType},
 };
 use solana_sdk::pubkey::Pubkey;
+use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
 use std::collections::HashMap;
 
 impl TransactionValidator {
@@ -40,7 +41,13 @@ impl TransactionValidator {
         for instruction in
             system_instructions.get(&ParsedSystemInstructionType::SystemAssign).unwrap_or(&vec![])
         {
-            if let ParsedSystemInstructionData::SystemAssign { owner, .. } = instruction {
+            if let ParsedSystemInstructionData::SystemAssign { account, owner, .. } = instruction {
+                if *account == self.fee_payer_pubkey && *owner != SYSTEM_PROGRAM_ID {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be reassigned to a program other than the System program"
+                            .to_string(),
+                    ));
+                }
                 self.validate_owner_program("Assign", owner)?;
             }
         }

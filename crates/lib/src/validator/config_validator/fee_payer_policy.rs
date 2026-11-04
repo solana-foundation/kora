@@ -28,7 +28,7 @@ impl ConfigValidator {
                 "Users can make the fee payer transfer arbitrary SOL amounts. This can drain your fee payer account";
 
             system, allow_assign, "System Assign instructions",
-                "Users can make the fee payer reassign ownership of its accounts. This can compromise account control";
+                "Users can make the fee payer reassign ownership of accounts it signs for. This can compromise account control";
 
             system, allow_create_account, "System CreateAccount instructions",
                 "Users can make the fee payer pay for arbitrary account creations. This can drain your fee payer account";

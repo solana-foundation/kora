@@ -176,9 +176,9 @@ impl FeeConfigUtil {
         recipient: &Pubkey,
         source: &str,
     ) -> Result<(), KoraError> {
-        let is_fee_payer_authority = authority == fee_payer;
+        let is_fee_payer_source = authority == fee_payer || closed_account == fee_payer;
         let is_fee_payer_recipient = recipient == fee_payer;
-        if is_fee_payer_authority == is_fee_payer_recipient {
+        if is_fee_payer_source == is_fee_payer_recipient {
             return Ok(());
         }
 

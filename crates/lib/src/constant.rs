@@ -96,11 +96,13 @@ pub mod instruction_indexes {
 
     pub mod system_assign {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 1;
+        pub const ACCOUNT_INDEX: usize = 0;
         pub const AUTHORITY_INDEX: usize = 0;
     }
 
     pub mod system_assign_with_seed {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const ACCOUNT_INDEX: usize = 0;
         pub const AUTHORITY_INDEX: usize = 1;
     }
 

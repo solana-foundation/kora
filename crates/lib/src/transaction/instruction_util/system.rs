@@ -46,6 +46,7 @@ pub enum ParsedSystemInstructionData {
     },
     // Includes assign and assign with seed
     SystemAssign {
+        account: Pubkey,
         authority: Pubkey,
         owner: Pubkey,
     },
@@ -162,6 +163,7 @@ impl IxUtils {
                 use instruction_indexes::system_assign as ix;
                 validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 ParsedSystemInstructionData::SystemAssign {
+                    account: key(ix::ACCOUNT_INDEX),
                     authority: key(ix::AUTHORITY_INDEX),
                     owner,
                 }
@@ -170,6 +172,7 @@ impl IxUtils {
                 use instruction_indexes::system_assign_with_seed as ix;
                 validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 ParsedSystemInstructionData::SystemAssign {
+                    account: key(ix::ACCOUNT_INDEX),
                     authority: key(ix::AUTHORITY_INDEX),
                     owner,
                 }

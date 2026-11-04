@@ -1590,6 +1590,47 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_fee_payer_cannot_be_reassigned_to_token_program() {
+        use solana_system_interface::instruction::{allocate, assign_with_seed};
+
+        let fee_payer = Pubkey::new_unique();
+        let token_program = spl_token_interface::id();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_assign = true;
+        policy.system.allow_allocate = true;
+        setup_config_with_policy_and_disallowed(
+            policy,
+            vec![SYSTEM_PROGRAM_ID.to_string(), token_program.to_string()],
+            vec![],
+        );
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instructions = [allocate(&fee_payer, 165), assign(&fee_payer, &token_program)];
+        let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("Fee payer cannot be reassigned"), "{err}");
+
+        let derived = Pubkey::new_unique();
+        let instruction = assign_with_seed(&derived, &fee_payer, "seed", &token_program);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_assign_rejects_off_policy_owner() {
         use solana_system_interface::instruction::assign_with_seed;
 

@@ -322,7 +322,8 @@ pub struct FeePayerPolicy {
 pub struct SystemInstructionPolicy {
     /// Allow fee payer to be the sender in System Transfer/TransferWithSeed instructions
     pub allow_transfer: bool,
-    /// Allow fee payer to be the authority in System Assign/AssignWithSeed instructions
+    /// Allow fee payer to be the authority in System Assign/AssignWithSeed instructions. The fee
+    /// payer account itself can never be reassigned to a program other than the System program.
     pub allow_assign: bool,
     /// Allow fee payer to be the funder or the seeded base signer in System
     /// CreateAccount/CreateAccountWithSeed/CreateAccountAllowPrefund instructions. The fee payer

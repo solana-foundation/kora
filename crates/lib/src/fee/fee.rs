@@ -1706,6 +1706,32 @@ mod tests {
             outflow, 0,
             "Close where the fee payer is neither authority nor recipient should be zero"
         );
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &fee_payer,
+            &recipient,
+            &other_authority,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, 2_157_600,
+            "Closing the fee payer account itself to a third party should count its balance"
+        );
     }
 
     #[tokio::test]
