@@ -1,12 +1,20 @@
-use crate::rpc_server::{
-    auth::RejectionReason,
-    middleware_utils::{extract_parts_and_body_bytes, get_jsonrpc_method},
+use crate::{
+    constant::LIVENESS_PATH,
+    rpc_server::{
+        auth::RejectionReason,
+        middleware_utils::{extract_parts_and_body_bytes, get_jsonrpc_method},
+    },
 };
 use http::{Request, Response};
 use jsonrpsee::server::HttpBody as Body;
 use prometheus::{CounterVec, HistogramVec, Opts};
-use std::{sync::OnceLock, time::Instant};
-use tower::Layer;
+use std::{
+    collections::HashSet,
+    sync::{Arc, OnceLock},
+    task::Poll,
+    time::Instant,
+};
+use tower::{Layer, ServiceExt};
 
 static HTTP_METRICS: OnceLock<HttpMetrics> = OnceLock::new();
 
@@ -73,20 +81,31 @@ impl HttpMetrics {
     pub fn get() -> &'static HttpMetrics {
         HTTP_METRICS.get_or_init(HttpMetrics::new)
     }
+
+    /// Records rejections as UNKNOWN_METHOD because rate limiting drops requests before body reads.
+    pub fn record_global_rate_limit_rejection(&self) {
+        let status = http::StatusCode::TOO_MANY_REQUESTS.as_str();
+        self.requests_total.with_label_values(&[UNKNOWN_METHOD, status]).inc();
+        self.http_rejections_total
+            .with_label_values(&[UNKNOWN_METHOD, RejectionReason::RateLimit.as_str()])
+            .inc();
+    }
 }
 /// Tower layer for collecting HTTP metrics
 #[derive(Clone)]
-pub struct HttpMetricsLayer;
+pub struct HttpMetricsLayer {
+    allowed_methods: Arc<HashSet<String>>,
+}
 
 impl HttpMetricsLayer {
-    pub fn new() -> Self {
-        Self
+    pub fn new(allowed_methods: Arc<HashSet<String>>) -> Self {
+        Self { allowed_methods }
     }
 }
 
 impl Default for HttpMetricsLayer {
     fn default() -> Self {
-        Self::new()
+        Self::new(Arc::new(HashSet::new()))
     }
 }
 
@@ -94,7 +113,7 @@ impl<S> Layer<S> for HttpMetricsLayer {
     type Service = HttpMetricsService<S>;
 
     fn layer(&self, service: S) -> Self::Service {
-        HttpMetricsService { inner: service }
+        HttpMetricsService { inner: service, allowed_methods: self.allowed_methods.clone() }
     }
 }
 
@@ -102,6 +121,7 @@ impl<S> Layer<S> for HttpMetricsLayer {
 #[derive(Clone)]
 pub struct HttpMetricsService<S> {
     inner: S,
+    allowed_methods: Arc<HashSet<String>>,
 }
 
 impl<S> tower::Service<Request<Body>> for HttpMetricsService<S>
@@ -115,49 +135,61 @@ where
         Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
     >;
 
-    fn poll_ready(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
+    fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // Individual clones acquire readiness via oneshot in call().
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, request: Request<Body>) -> Self::Future {
         let start = Instant::now();
-        let mut inner = self.inner.clone();
+        let inner = self.inner.clone();
+        let allowed_methods = self.allowed_methods.clone();
 
         Box::pin(async move {
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
-            let method = get_jsonrpc_method(&body_bytes).unwrap_or(UNKNOWN_METHOD.to_string());
+
+            let is_liveness =
+                parts.method == http::Method::GET && parts.uri.path() == LIVENESS_PATH;
+
+            let rpc_method = if is_liveness { None } else { get_jsonrpc_method(&body_bytes) };
+            let method = if is_liveness {
+                "liveness"
+            } else {
+                rpc_method
+                    .as_deref()
+                    .filter(|m| allowed_methods.contains(*m))
+                    .unwrap_or(UNKNOWN_METHOD)
+            };
 
             let new_body = Body::from(body_bytes);
             let new_request = Request::from_parts(parts, new_body);
 
-            let result = inner.call(new_request).await;
+            let result = inner.oneshot(new_request).await;
 
             let metrics = HttpMetrics::get();
             let duration = start.elapsed();
 
             match &result {
                 Ok(response) => {
-                    let status = response.status().as_u16().to_string();
-                    metrics.requests_total.with_label_values(&[&method, &status]).inc();
+                    let status = response.status();
+                    metrics.requests_total.with_label_values(&[method, status.as_str()]).inc();
                     metrics
                         .request_duration_seconds
-                        .with_label_values(&[&method])
+                        .with_label_values(&[method])
                         .observe(duration.as_secs_f64());
                     if let Some(reason) = response.extensions().get::<RejectionReason>() {
                         metrics
                             .http_rejections_total
-                            .with_label_values(&[&method, reason.as_str()])
+                            .with_label_values(&[method, reason.as_str()])
                             .inc();
                     }
                 }
                 Err(_) => {
+                    metrics.requests_total.with_label_values(&[method, ERROR_STATUS]).inc();
                     metrics
-                        .requests_total
-                        .with_label_values(&[&method, &ERROR_STATUS.to_string()])
-                        .inc();
+                        .request_duration_seconds
+                        .with_label_values(&[method])
+                        .observe(duration.as_secs_f64());
                 }
             }
 
@@ -207,8 +239,11 @@ mod tests {
             vec!["signTransaction".to_string()],
         );
 
-        let service =
-            HttpMetricsLayer::new().layer(RecaptchaLayer::new(recaptcha_config).layer(MockService));
+        let mut allowed = HashSet::new();
+        allowed.insert("signTransaction".to_string());
+
+        let service = HttpMetricsLayer::new(Arc::new(allowed))
+            .layer(RecaptchaLayer::new(recaptcha_config).layer(MockService));
         let mut service = tower::ServiceBuilder::new().service(service);
 
         let method_name = "signTransaction";

@@ -6,3 +6,4 @@ pub mod oracle_mock;
 pub mod rpc_mock;
 pub mod toml_mock;
 pub mod transaction_mock;
+pub mod usage_mock;

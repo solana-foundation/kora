@@ -1,8 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use http::{Request, Response, StatusCode};
 use http_body_util::BodyExt;
 use jsonrpsee::server::HttpBody as Body;
+use tower::ServiceExt;
 
 use crate::KoraError;
 
@@ -60,22 +64,22 @@ pub fn build_response_with_graceful_error(
     })
 }
 
-/// Method validation layer - applies first in middleware stack to fail fast
+// Rejects disallowed methods early before authentication runs.
 #[derive(Clone)]
 pub struct MethodValidationLayer {
-    allowed_methods: HashSet<String>,
+    allowed_methods: Arc<HashSet<String>>,
 }
 
 impl MethodValidationLayer {
-    pub fn new(allowed_methods: Vec<String>) -> Self {
-        Self { allowed_methods: allowed_methods.into_iter().collect() }
+    pub fn new(allowed_methods: Arc<HashSet<String>>) -> Self {
+        Self { allowed_methods }
     }
 }
 
 #[derive(Clone)]
 pub struct MethodValidationService<S> {
     inner: S,
-    allowed_methods: HashSet<String>,
+    allowed_methods: Arc<HashSet<String>>,
 }
 
 impl<S> tower::Layer<S> for MethodValidationLayer {
@@ -99,14 +103,15 @@ where
 
     fn poll_ready(
         &mut self,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
+        // Individual clones acquire readiness via oneshot in call().
+        std::task::Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, request: Request<Body>) -> Self::Future {
         let allowed_methods = self.allowed_methods.clone();
-        let mut inner = self.inner.clone();
+        let inner = self.inner.clone();
 
         Box::pin(async move {
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
@@ -121,7 +126,7 @@ where
 
             let new_body = Body::from(body_bytes);
             let new_request = Request::from_parts(parts, new_body);
-            inner.call(new_request).await
+            inner.oneshot(new_request).await
         })
     }
 }
@@ -155,7 +160,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_method_validation_disallowed_method() {
-        let allowed_methods = vec!["liveness".to_string(), "getConfig".to_string()];
+        let allowed_methods =
+            Arc::new(vec!["liveness".to_string(), "getConfig".to_string()].into_iter().collect());
         let layer = MethodValidationLayer::new(allowed_methods);
         let mut service = layer.layer(MockService);
 
@@ -169,7 +175,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_method_validation_malformed_json() {
-        let allowed_methods = vec!["liveness".to_string(), "getConfig".to_string()];
+        let allowed_methods =
+            Arc::new(vec!["liveness".to_string(), "getConfig".to_string()].into_iter().collect());
         let layer = MethodValidationLayer::new(allowed_methods);
         let mut service = layer.layer(MockService);
 
@@ -183,7 +190,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_method_validation_missing_method_field() {
-        let allowed_methods = vec!["liveness".to_string(), "getConfig".to_string()];
+        let allowed_methods =
+            Arc::new(vec!["liveness".to_string(), "getConfig".to_string()].into_iter().collect());
         let layer = MethodValidationLayer::new(allowed_methods);
         let mut service = layer.layer(MockService);
 
@@ -197,12 +205,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_method_validation_multiple_allowed_methods() {
-        let allowed_methods = vec![
-            "liveness".to_string(),
-            "getConfig".to_string(),
-            "signTransaction".to_string(),
-            "estimateTransactionFee".to_string(),
-        ];
+        let allowed_methods = Arc::new(
+            vec![
+                "liveness".to_string(),
+                "getConfig".to_string(),
+                "signTransaction".to_string(),
+                "estimateTransactionFee".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
         let layer = MethodValidationLayer::new(allowed_methods);
         let mut service = layer.layer(MockService);
 

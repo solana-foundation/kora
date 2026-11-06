@@ -11,6 +11,7 @@ pub const MAX_TRANSACTION_SIZE: usize = 1232;
 
 pub const X_RECAPTCHA_TOKEN: &str = "x-recaptcha-token";
 pub const X_API_KEY: &str = "x-api-key";
+pub const LIVENESS_PATH: &str = "/liveness";
 pub const X_HMAC_SIGNATURE: &str = "x-hmac-signature";
 pub const X_TIMESTAMP: &str = "x-timestamp";
 pub const DEFAULT_MAX_TIMESTAMP_AGE: i64 = 300;
