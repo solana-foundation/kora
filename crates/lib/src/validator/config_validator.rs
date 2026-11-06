@@ -132,8 +132,8 @@ mod tests {
     use crate::{
         config::{
             default_allowed_transaction_versions, AuthConfig, BundleConfig, CacheConfig, Config,
-            EnabledMethods, FeePayerPolicy, KoraConfig, LighthouseConfig, MetricsConfig,
-            NonceInstructionPolicy, PluginsConfig, ProgramsConfig, SplTokenConfig,
+            EnabledMethods, ExternalDecisionConfig, FeePayerPolicy, KoraConfig, LighthouseConfig,
+            MetricsConfig, NonceInstructionPolicy, PluginsConfig, ProgramsConfig, SplTokenConfig,
             SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
             Token2022InstructionPolicy, TransactionPluginType, TransferHookPolicy,
             UsageLimitConfig, ValidationConfig, CORS_WILDCARD,
@@ -758,6 +758,47 @@ mod tests {
             .unwrap_err()
             .iter()
             .any(|e| e.contains("GasSwap plugin cannot be used with Free pricing")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_external_decision_section_without_the_plugin_enabled_warns() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.external_decision = Some(ExternalDecisionConfig {
+            url: "https://decisions.example.com/decide".to_string(),
+            timeout_ms: 2_000,
+        });
+
+        let _ = update_config(config.clone());
+        let rpc_client = RpcMockBuilder::new().build();
+        let warnings = ConfigValidator::validate_with_result(&rpc_client, true).await.unwrap();
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("external_decision is not in kora.plugins.enabled")));
+
+        config.kora.plugins.enabled = vec![TransactionPluginType::ExternalDecision];
+        let _ = update_config(config);
+        let warnings = ConfigValidator::validate_with_result(&rpc_client, true).await.unwrap();
+        assert!(!warnings
+            .iter()
+            .any(|w| w.contains("external_decision is not in kora.plugins.enabled")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_external_decision_plugin_requires_its_section() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.enabled = vec![TransactionPluginType::ExternalDecision];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.unwrap_err().iter().any(
+            |e| e.contains("ExternalDecision plugin requires [kora.plugins.external_decision]")
+        ));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use super::ConfigValidator;
 use crate::{
-    config::{classify_cors_origins, Config, CorsOriginsClassification},
+    config::{classify_cors_origins, Config, CorsOriginsClassification, TransactionPluginType},
     constant::{MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
     plugin::TransactionPluginRunner,
     validator::cache_validator::CacheValidator,
@@ -88,6 +88,16 @@ impl ConfigValidator {
             if !unique_plugins.insert(plugin.clone()) {
                 warnings.push(format!("Duplicate transaction plugin configured: {:?}", plugin));
             }
+        }
+
+        if config.kora.plugins.external_decision.is_some()
+            && !config.kora.plugins.enabled.contains(&TransactionPluginType::ExternalDecision)
+        {
+            warnings.push(
+                "[kora.plugins.external_decision] is set but external_decision is not in \
+                 kora.plugins.enabled, so no transaction is sent to it"
+                    .to_string(),
+            );
         }
 
         let (plugin_errors, plugin_warnings) = TransactionPluginRunner::validate_config(config);

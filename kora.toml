@@ -198,8 +198,15 @@ rules = []
 
 [kora.plugins]
 # Enabled transaction plugins for sign/signAndSend flows.
-# Available values: "gas_swap"
+# Available values: "gas_swap", "deploy_authority", "external_decision"
 enabled = []
+
+# Required by "external_decision": the fee payer signs only after this endpoint answers
+# {"decision": "allow"}. A bearer token, if the endpoint needs one, goes in
+# KORA_EXTERNAL_DECISION_TOKEN.
+# [kora.plugins.external_decision]
+# url = "https://decisions.example.com/v1/decide"
+# timeout_ms = 2000
 
 [kora.bundle]
 enabled = false
