@@ -1,6 +1,6 @@
 ---
 name: kora-operator
-description: "Kora paymaster node operator guide. Use when the user asks about: configuring kora.toml (rate limits, validation, allowed programs/tokens, fee payer policy, pricing, auth, caching, bundles, lighthouse), setting up signers.toml (memory/Turnkey/Privy/Vault, pool strategies), running Kora (kora rpc start, config validate, CLI, justfile), deploying to Docker/Railway, fee calculation (margin/fixed/free pricing), Jito bundle config, Lighthouse fee payer protection, reCAPTCHA bot protection, Prometheus monitoring, usage limits with rules, or API key/HMAC authentication setup. Not for client SDK integration (use kora-client)."
+description: "Kora paymaster node operator guide. Use when the user asks about: configuring kora.toml (rate limits, validation, allowed programs/tokens, fee payer policy, pricing, auth, caching, bundles, lighthouse), setting up signers.toml (memory/Turnkey/Privy/Vault, pool strategies), running Kora (kora rpc start, config validate, CLI, justfile), deploying to Docker/Railway, fee calculation (margin/fixed/free pricing), Jito bundle config, Lighthouse fee payer protection, transaction plugins (gas_swap, deploy_authority, an external decision endpoint), reCAPTCHA bot protection, Prometheus monitoring, usage limits with rules, or API key/HMAC authentication setup. Not for client SDK integration (use kora-client)."
 ---
 
 # Kora Node Operator Guide
@@ -25,7 +25,7 @@ fastest way to check a real file. Prefer both over any enumeration written down 
 ## Getting running
 
 Two files are required: `kora.toml` (validation, auth, pricing, caching, methods, bundles,
-lighthouse, metrics) and `signers.toml` (keys, types, selection strategy).
+lighthouse, plugins, metrics) and `signers.toml` (keys, types, selection strategy).
 
 ```bash
 kora --config kora.toml config validate

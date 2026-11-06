@@ -10,9 +10,11 @@ use crate::{
 };
 
 mod plugin_deploy_authority;
+mod plugin_external_decision;
 mod plugin_gas_swap;
 
 use plugin_deploy_authority::DeployAuthorityPlugin;
+use plugin_external_decision::ExternalDecisionPlugin;
 use plugin_gas_swap::GasSwapPlugin;
 
 #[derive(Debug, Clone, Copy)]
@@ -82,6 +84,9 @@ impl TransactionPluginRunner {
                 }
                 TransactionPluginType::DeployAuthority => {
                     plugins.push(Box::new(DeployAuthorityPlugin));
+                }
+                TransactionPluginType::ExternalDecision => {
+                    plugins.push(Box::new(ExternalDecisionPlugin));
                 }
             }
         }
