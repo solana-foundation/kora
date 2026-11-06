@@ -15,6 +15,9 @@ pub const TS_FREE_WALLET_PUBKEY: &str = "HrQpAeuWRcajWzJ3FSe5UApiSX2Pp2nNdBDj7eZ
 /// Transfer hook program ID
 pub const TRANSFER_HOOK_PROGRAM_ID: &str = "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA";
 
+/// The transfer hook program at a second address.
+pub const SECOND_FORWARDER_PROGRAM_ID: &str = "SecondForwarder1111111111111111111111111111";
+
 /// Transfer hook program binary path (relative to workspace root)
 pub const TRANSFER_HOOK_PROGRAM_PATH: &str =
     "tests/src/common/transfer-hook-example/transfer_hook_example.so";

@@ -50,7 +50,7 @@ jobs:
       # external is excluded: it hits the live Jupiter API.
       TARGETS: >-
         usage_limit rpc tokens adversarial auth payment_address multi_signer
-        fee_payer_policy free_signing lighthouse loader_v3_deploy
+        fee_payer_policy free_signing lighthouse loader_v3_deploy create_account_only_via
         typescript_basic typescript_auth typescript_free
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

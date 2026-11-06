@@ -149,5 +149,6 @@ pub fn create_resolved_with_loaded_keys(
     resolved.transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
     resolved.all_account_keys = all_account_keys;
     resolved.all_instructions = Vec::new();
+    resolved.instruction_origins = Vec::new();
     resolved
 }
