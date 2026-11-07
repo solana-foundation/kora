@@ -18,6 +18,8 @@ use crate::{
 use super::{PluginExecutionContext, TransactionPlugin};
 
 const MAX_DENY_REASON_CHARS: usize = 200;
+// A decision is a few bytes; a provider's own evidence alongside it fits well under this.
+const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 
 // Redirects are not followed, so the transaction and the token only reach the configured URL.
 static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
@@ -76,9 +78,17 @@ fn token_error(token: Option<&str>) -> Option<String> {
     })
 }
 
+// Control characters, and the invisible ones that reorder or hide text where the client shows it:
+// direction marks and overrides, zero-width characters and tag characters.
+fn is_hidden(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{061C}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{2069}' | '\u{FEFF}' | '\u{E0000}'..='\u{E007F}')
+}
+
 fn deny_reason(reason: &str) -> String {
     let reason: String =
-        reason.chars().filter(|c| !c.is_control()).take(MAX_DENY_REASON_CHARS).collect();
+        reason.chars().filter(|c| !is_hidden(*c)).take(MAX_DENY_REASON_CHARS).collect();
     sanitize_error!(reason)
 }
 
@@ -97,11 +107,12 @@ impl ExternalDecisionPlugin {
     async fn request_decision(
         config: &ExternalDecisionConfig,
         body: &DecisionRequest,
+        token: Option<&str>,
     ) -> Result<Decision, String> {
         let url = Url::parse(&config.url).map_err(|_| "the url is not a valid URL".to_string())?;
         let mut request =
             client_for(&url).post(url).timeout(Duration::from_millis(config.timeout_ms)).json(body);
-        if let Some(token) = ExternalDecisionConfig::resolved_token() {
+        if let Some(token) = token {
             request = request.bearer_auth(token);
         }
 
@@ -113,10 +124,18 @@ impl ExternalDecisionPlugin {
             return Err(format!("endpoint returned HTTP {}", status.as_u16()));
         }
 
-        let bytes = response
-            .bytes()
+        let mut response = response;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
             .await
-            .map_err(|e| format!("failed to read response body: {}", e.without_url()))?;
+            .map_err(|e| format!("failed to read response body: {}", e.without_url()))?
+        {
+            if bytes.len() + chunk.len() > MAX_RESPONSE_BYTES {
+                return Err(format!("response larger than {MAX_RESPONSE_BYTES} bytes"));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
         // An object only: serde also reads a tagged enum from an array such as ["allow"].
         if bytes.trim_ascii_start().first() != Some(&b'{') {
             return Err("unrecognized response: not a JSON object".to_string());
@@ -148,7 +167,8 @@ impl TransactionPlugin for ExternalDecisionPlugin {
             method: context.method_name(),
         };
 
-        match Self::request_decision(decision_config, &body).await {
+        let token = ExternalDecisionConfig::resolved_token();
+        match Self::request_decision(decision_config, &body, token.as_deref()).await {
             Ok(Decision::Allow) => Ok(()),
             Ok(Decision::Deny { reason }) => {
                 let denied = match reason.as_deref().map(deny_reason).filter(|r| !r.is_empty()) {
@@ -234,7 +254,6 @@ mod tests {
     };
     use mockito::{Matcher, Server};
     use serde_json::json;
-    use serial_test::serial;
     use solana_message::{Message, VersionedMessage};
     use solana_system_interface::instruction::transfer;
     use std::time::Instant;
@@ -337,7 +356,42 @@ mod tests {
         };
         assert!(message.contains("denied by the decision endpoint: drains fee payer[2Jxxx"));
         assert!(!message.chars().any(|c| c.is_control()));
-        assert!(!message.contains(&"x".repeat(MAX_DENY_REASON_CHARS)));
+        let reason = message
+            .split_once("denied by the decision endpoint: ")
+            .and_then(|(_, rest)| rest.rsplit_once(" (context:"))
+            .map(|(reason, _)| reason)
+            .unwrap();
+        assert_eq!(reason.chars().count(), MAX_DENY_REASON_CHARS);
+    }
+
+    #[tokio::test]
+    async fn external_decision_deny_reason_drops_hidden_characters() {
+        let (server, _mock) = answering(
+            200,
+            &json!({"decision": "deny", "reason": "fee\u{202E}payer\u{200B} drain\u{E0041}\u{2066}ed"})
+                .to_string(),
+        )
+        .await;
+        let config = config_with(&format!("{}/decide", server.url()), 2_000);
+
+        let err = run(&config, &Pubkey::new_unique()).await.unwrap_err();
+
+        let KoraError::InvalidTransaction(message) = err else {
+            panic!("expected InvalidTransaction, got {err:?}");
+        };
+        assert!(message.contains("denied by the decision endpoint: feepayer drained"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn external_decision_refuses_a_body_past_the_size_cap() {
+        let padding = "x".repeat(MAX_RESPONSE_BYTES);
+        let (server, _mock) =
+            answering(200, &json!({"decision": "allow", "padding": padding}).to_string()).await;
+        let config = config_with(&format!("{}/decide", server.url()), 2_000);
+
+        let err = run(&config, &Pubkey::new_unique()).await.unwrap_err();
+
+        assert!(matches!(err, KoraError::InternalServerError(_)), "{err:?}");
     }
 
     #[tokio::test]
@@ -456,12 +510,16 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
-    async fn external_decision_sends_the_token_from_the_environment_only_when_set() {
+    async fn external_decision_sends_the_token_only_when_set() {
         let mut server = Server::new_async().await;
-        let config = config_with(&format!("{}/decide", server.url()), 2_000);
+        let config =
+            ExternalDecisionConfig { url: format!("{}/decide", server.url()), timeout_ms: 2_000 };
+        let body = DecisionRequest {
+            transaction: String::new(),
+            fee_payer: Pubkey::new_unique().to_string(),
+            method: "signTransaction",
+        };
 
-        std::env::set_var(ExternalDecisionConfig::TOKEN_ENV, "test-decision-token");
         let with_token = server
             .mock("POST", "/decide")
             .match_header("authorization", "Bearer test-decision-token")
@@ -470,9 +528,10 @@ mod tests {
             .expect(1)
             .create_async()
             .await;
-        let result = run(&config, &Pubkey::new_unique()).await;
-        std::env::remove_var(ExternalDecisionConfig::TOKEN_ENV);
-        assert!(result.is_ok(), "{result:?}");
+        let result =
+            ExternalDecisionPlugin::request_decision(&config, &body, Some("test-decision-token"))
+                .await;
+        assert!(matches!(result, Ok(Decision::Allow)));
         with_token.assert_async().await;
         with_token.remove_async().await;
 
@@ -484,8 +543,8 @@ mod tests {
             .expect(1)
             .create_async()
             .await;
-        let result = run(&config, &Pubkey::new_unique()).await;
-        assert!(result.is_ok(), "{result:?}");
+        let result = ExternalDecisionPlugin::request_decision(&config, &body, None).await;
+        assert!(matches!(result, Ok(Decision::Allow)));
         without_token.assert_async().await;
     }
 
@@ -502,7 +561,8 @@ mod tests {
             method: "signTransaction",
         };
 
-        let Err(detail) = ExternalDecisionPlugin::request_decision(&config, &body).await else {
+        let Err(detail) = ExternalDecisionPlugin::request_decision(&config, &body, None).await
+        else {
             panic!("expected a transport error");
         };
 

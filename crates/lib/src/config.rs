@@ -812,7 +812,7 @@ impl ExternalDecisionConfig {
     pub(crate) const TOKEN_ENV: &'static str = "KORA_EXTERNAL_DECISION_TOKEN";
 
     pub(crate) fn resolved_token() -> Option<String> {
-        env::var(Self::TOKEN_ENV).ok().filter(|token| !token.is_empty())
+        AuthConfig::normalize_optional_secret(env::var(Self::TOKEN_ENV).ok())
     }
 }
 
