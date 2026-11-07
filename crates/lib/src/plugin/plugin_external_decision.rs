@@ -1,7 +1,7 @@
 use std::{sync::LazyLock, time::Duration};
 
 use async_trait::async_trait;
-use reqwest::{redirect::Policy, Client, StatusCode};
+use reqwest::{header::HeaderValue, redirect::Policy, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -24,6 +24,16 @@ static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
     Client::builder().redirect(Policy::none()).build().expect("Failed to build reqwest client")
 });
 
+// A loopback endpoint is reached directly. A proxy from the environment (HTTP_PROXY, ALL_PROXY)
+// would otherwise receive the plain-HTTP request, token included, and answer in its place.
+static LOOPBACK_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
+        .redirect(Policy::none())
+        .no_proxy()
+        .build()
+        .expect("Failed to build reqwest client")
+});
+
 #[derive(Serialize)]
 struct DecisionRequest {
     transaction: String,
@@ -38,6 +48,14 @@ enum Decision {
     Deny { reason: Option<String> },
 }
 
+fn client_for(url: &Url) -> &'static Client {
+    if is_loopback(url) {
+        &LOOPBACK_CLIENT
+    } else {
+        &HTTP_CLIENT
+    }
+}
+
 fn is_loopback(url: &Url) -> bool {
     match url.host() {
         Some(Host::Domain(domain)) => domain == "localhost",
@@ -47,17 +65,29 @@ fn is_loopback(url: &Url) -> bool {
     }
 }
 
+/// Why a token cannot be sent, if it cannot (a trailing newline from a mounted secret, say).
+fn token_error(token: Option<&str>) -> Option<String> {
+    let token = token?;
+    HeaderValue::from_str(&format!("Bearer {token}")).err().map(|_| {
+        format!(
+            "ExternalDecision plugin: {} is not a valid HTTP header value",
+            ExternalDecisionConfig::TOKEN_ENV
+        )
+    })
+}
+
 fn deny_reason(reason: &str) -> String {
     let reason: String =
         reason.chars().filter(|c| !c.is_control()).take(MAX_DENY_REASON_CHARS).collect();
     sanitize_error!(reason)
 }
 
-/// Asks an operator-run HTTP endpoint whether the fee payer may sign a transaction that has
-/// already passed Kora's own validation. The endpoint receives the transaction as the client
-/// submitted it, the fee payer, and the RPC method. Only an HTTP 200 answer of
-/// `{"decision": "allow"}` lets the transaction through; a deny, a timeout, a transport error,
-/// any other status, or any other body refuses it.
+/// Asks an operator-run HTTP endpoint whether the fee payer may sign a transaction. Like the other
+/// plugins, it runs after `validate_transaction` and before the payment, fee and transfer-hook
+/// checks, so the endpoint can be asked about a transaction Kora then refuses. The endpoint
+/// receives the transaction as the client submitted it, the fee payer, and the RPC method. Only
+/// an HTTP 200 answer of `{"decision": "allow"}` lets the transaction through; a deny, a timeout,
+/// a transport error, any other status, or any other body refuses it.
 ///
 /// Use case: a risk or policy service that catches fee payer abuse the structural checks miss,
 /// without tying Kora to a particular provider.
@@ -68,22 +98,29 @@ impl ExternalDecisionPlugin {
         config: &ExternalDecisionConfig,
         body: &DecisionRequest,
     ) -> Result<Decision, String> {
-        let mut request = HTTP_CLIENT
-            .post(&config.url)
-            .timeout(Duration::from_millis(config.timeout_ms))
-            .json(body);
+        let url = Url::parse(&config.url).map_err(|_| "the url is not a valid URL".to_string())?;
+        let mut request =
+            client_for(&url).post(url).timeout(Duration::from_millis(config.timeout_ms)).json(body);
         if let Some(token) = ExternalDecisionConfig::resolved_token() {
             request = request.bearer_auth(token);
         }
 
-        let response = request.send().await.map_err(|e| format!("request failed: {e}"))?;
+        // Errors are logged without their url, which may carry a credential.
+        let response =
+            request.send().await.map_err(|e| format!("request failed: {}", e.without_url()))?;
         let status = response.status();
         if status != StatusCode::OK {
             return Err(format!("endpoint returned HTTP {}", status.as_u16()));
         }
 
-        let bytes =
-            response.bytes().await.map_err(|e| format!("failed to read response body: {e}"))?;
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| format!("failed to read response body: {}", e.without_url()))?;
+        // An object only: serde also reads a tagged enum from an array such as ["allow"].
+        if bytes.trim_ascii_start().first() != Some(&b'{') {
+            return Err("unrecognized response: not a JSON object".to_string());
+        }
         serde_json::from_slice(&bytes).map_err(|e| format!("unrecognized response: {e}"))
     }
 }
@@ -167,6 +204,10 @@ impl TransactionPlugin for ExternalDecisionPlugin {
                 }
             }
             Err(_) => errors.push("ExternalDecision plugin url is not a valid URL".to_string()),
+        }
+
+        if let Some(error) = token_error(ExternalDecisionConfig::resolved_token().as_deref()) {
+            errors.push(error);
         }
 
         if decision_config.timeout_ms == 0
@@ -335,6 +376,9 @@ mod tests {
             r#"{"allow":true}"#,
             r#"{"decision":"deny","decision":"allow"}"#,
             r#"[{"decision":"allow"}]"#,
+            r#"["allow"]"#,
+            r#" ["allow"]"#,
+            r#"["deny","reason"]"#,
         ] {
             let (server, _mock) = answering(200, body).await;
             let config = config_with(&format!("{}/decide", server.url()), 2_000);
@@ -443,6 +487,50 @@ mod tests {
         let result = run(&config, &Pubkey::new_unique()).await;
         assert!(result.is_ok(), "{result:?}");
         without_token.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn external_decision_failure_detail_does_not_carry_the_url() {
+        let address = TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
+        let config = ExternalDecisionConfig {
+            url: format!("http://{address}/hooks/kora.decide/secret-path-token;key=secret"),
+            timeout_ms: 2_000,
+        };
+        let body = DecisionRequest {
+            transaction: String::new(),
+            fee_payer: Pubkey::new_unique().to_string(),
+            method: "signTransaction",
+        };
+
+        let Err(detail) = ExternalDecisionPlugin::request_decision(&config, &body).await else {
+            panic!("expected a transport error");
+        };
+
+        assert!(detail.starts_with("request failed"), "{detail}");
+        assert!(!detail.contains("secret"), "{detail}");
+    }
+
+    #[test]
+    fn external_decision_reaches_a_loopback_endpoint_without_an_environment_proxy() {
+        for url in
+            ["http://127.0.0.1:9000/decide", "http://localhost/decide", "http://[::1]/decide"]
+        {
+            let url = Url::parse(url).unwrap();
+            assert!(std::ptr::eq(client_for(&url), &*LOOPBACK_CLIENT), "{url}");
+        }
+        let remote = Url::parse("https://decisions.example.com/decide").unwrap();
+        assert!(std::ptr::eq(client_for(&remote), &*HTTP_CLIENT));
+    }
+
+    #[test]
+    fn external_decision_config_rejects_a_token_that_is_not_a_header_value() {
+        assert_eq!(token_error(None), None);
+        assert_eq!(token_error(Some("abc123")), None);
+        for token in ["abc123\n", "abc\r\n123"] {
+            let error = token_error(Some(token)).unwrap();
+            assert!(error.contains(ExternalDecisionConfig::TOKEN_ENV));
+            assert!(!error.contains("abc"));
+        }
     }
 
     fn config_errors(config: &Config) -> Vec<String> {
