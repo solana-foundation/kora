@@ -1,7 +1,7 @@
 use std::{sync::LazyLock, time::Duration};
 
 use async_trait::async_trait;
-use reqwest::{header::HeaderValue, redirect::Policy, Client, StatusCode};
+use reqwest::{header::HeaderValue, redirect::Policy, Client, ClientBuilder, StatusCode};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -21,20 +21,17 @@ const MAX_DENY_REASON_CHARS: usize = 200;
 // A decision is a few bytes; a provider's own evidence alongside it fits well under this.
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 
-// Redirects are not followed, so the transaction and the token only reach the configured URL.
-static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
-    Client::builder().redirect(Policy::none()).build().expect("Failed to build reqwest client")
-});
-
-// A loopback endpoint is reached directly. A proxy from the environment (HTTP_PROXY, ALL_PROXY)
+// Redirects are not followed, so the transaction and the token only reach the configured URL. A
+// loopback endpoint is reached directly: a proxy (HTTP_PROXY or ALL_PROXY from the environment)
 // would otherwise receive the plain-HTTP request, token included, and answer in its place.
-static LOOPBACK_CLIENT: LazyLock<Client> = LazyLock::new(|| {
-    Client::builder()
-        .redirect(Policy::none())
-        .no_proxy()
-        .build()
-        .expect("Failed to build reqwest client")
-});
+fn build_client(builder: ClientBuilder, loopback: bool) -> Client {
+    let builder = builder.redirect(Policy::none());
+    let builder = if loopback { builder.no_proxy() } else { builder };
+    builder.build().expect("Failed to build reqwest client")
+}
+
+static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| build_client(Client::builder(), false));
+static LOOPBACK_CLIENT: LazyLock<Client> = LazyLock::new(|| build_client(Client::builder(), true));
 
 #[derive(Serialize)]
 struct DecisionRequest {
@@ -78,23 +75,38 @@ fn token_error(token: Option<&str>) -> Option<String> {
     })
 }
 
-// Control characters, and the invisible ones that reorder or hide text where the client shows it:
-// direction marks and overrides, zero-width characters and tag characters.
+// Control characters, and every character that does not show (Unicode's default-ignorable code
+// points: direction marks and overrides, zero-width characters, variation selectors, fillers, tag
+// characters) or hides the text it delimits (interlinear annotation marks). Where the client shows
+// a reason, they can reorder or hide it, or carry text a model reads and a person does not.
 fn is_hidden(c: char) -> bool {
     c.is_control()
-        || matches!(c, '\u{061C}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
-            | '\u{2060}'..='\u{2069}' | '\u{FEFF}' | '\u{E0000}'..='\u{E007F}')
+        || matches!(c, '\u{00AD}' | '\u{034F}' | '\u{061C}' | '\u{115F}'..='\u{1160}'
+            | '\u{17B4}'..='\u{17B5}' | '\u{180B}'..='\u{180F}' | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{206F}' | '\u{3164}'
+            | '\u{FE00}'..='\u{FE0F}' | '\u{FEFF}' | '\u{FFA0}' | '\u{FFF0}'..='\u{FFFB}'
+            | '\u{1BCA0}'..='\u{1BCA3}' | '\u{1D173}'..='\u{1D17A}' | '\u{E0000}'..='\u{E0FFF}')
 }
 
+// Line breaks and other spaces become a space (a line or paragraph separator starts a new line
+// wherever the reason is shown), hidden characters are dropped, and the cap applies to what the
+// client receives, once secrets are redacted: a cut before it could leave part of a key unredacted.
 fn deny_reason(reason: &str) -> String {
-    let reason: String =
-        reason.chars().filter(|c| !is_hidden(*c)).take(MAX_DENY_REASON_CHARS).collect();
-    sanitize_error!(reason)
+    let shown: String = reason
+        .chars()
+        .filter_map(|c| match c {
+            c if c.is_whitespace() => Some(' '),
+            c if is_hidden(c) => None,
+            c => Some(c),
+        })
+        .collect();
+    sanitize_error!(shown).chars().take(MAX_DENY_REASON_CHARS).collect()
 }
 
 /// Asks an operator-run HTTP endpoint whether the fee payer may sign a transaction. Like the other
 /// plugins, it runs after `validate_transaction` and before the payment, fee and transfer-hook
-/// checks, so the endpoint can be asked about a transaction Kora then refuses. The endpoint
+/// checks (in a bundle, after the transfer-hook check), so the endpoint can be asked about a
+/// transaction Kora then refuses. The endpoint
 /// receives the transaction as the client submitted it, the fee payer, and the RPC method. Only
 /// an HTTP 200 answer of `{"decision": "allow"}` lets the transaction through; a deny, a timeout,
 /// a transport error, any other status, or any other body refuses it.
@@ -140,7 +152,16 @@ impl ExternalDecisionPlugin {
         if bytes.trim_ascii_start().first() != Some(&b'{') {
             return Err("unrecognized response: not a JSON object".to_string());
         }
-        serde_json::from_slice(&bytes).map_err(|e| format!("unrecognized response: {e}"))
+        // serde's message quotes the body (an unknown decision, for one): only its position is
+        // logged, so the endpoint cannot write a line of its own into Kora's log.
+        serde_json::from_slice(&bytes).map_err(|e| {
+            format!(
+                "unrecognized response: {:?} error at line {} column {}",
+                e.classify(),
+                e.line(),
+                e.column()
+            )
+        })
     }
 }
 
@@ -167,8 +188,11 @@ impl TransactionPlugin for ExternalDecisionPlugin {
             method: context.method_name(),
         };
 
-        let token = ExternalDecisionConfig::resolved_token();
-        match Self::request_decision(decision_config, &body, token.as_deref()).await {
+        let decision = match ExternalDecisionConfig::resolved_token() {
+            Ok(token) => Self::request_decision(decision_config, &body, token.as_deref()).await,
+            Err(error) => Err(error),
+        };
+        match decision {
             Ok(Decision::Allow) => Ok(()),
             Ok(Decision::Deny { reason }) => {
                 let denied = match reason.as_deref().map(deny_reason).filter(|r| !r.is_empty()) {
@@ -226,8 +250,9 @@ impl TransactionPlugin for ExternalDecisionPlugin {
             Err(_) => errors.push("ExternalDecision plugin url is not a valid URL".to_string()),
         }
 
-        if let Some(error) = token_error(ExternalDecisionConfig::resolved_token().as_deref()) {
-            errors.push(error);
+        match ExternalDecisionConfig::resolved_token() {
+            Ok(token) => errors.extend(token_error(token.as_deref())),
+            Err(error) => errors.push(format!("ExternalDecision plugin: {error}")),
         }
 
         if decision_config.timeout_ms == 0
@@ -257,7 +282,10 @@ mod tests {
     use solana_message::{Message, VersionedMessage};
     use solana_system_interface::instruction::transfer;
     use std::time::Instant;
-    use tokio::net::TcpListener;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
 
     const ALL_CONTEXTS: [PluginExecutionContext; 4] = [
         PluginExecutionContext::SignTransaction,
@@ -354,7 +382,7 @@ mod tests {
         let KoraError::InvalidTransaction(message) = err else {
             panic!("expected InvalidTransaction, got {err:?}");
         };
-        assert!(message.contains("denied by the decision endpoint: drains fee payer[2Jxxx"));
+        assert!(message.contains("denied by the decision endpoint: drains fee payer  [2Jxxx"));
         assert!(!message.chars().any(|c| c.is_control()));
         let reason = message
             .split_once("denied by the decision endpoint: ")
@@ -368,7 +396,7 @@ mod tests {
     async fn external_decision_deny_reason_drops_hidden_characters() {
         let (server, _mock) = answering(
             200,
-            &json!({"decision": "deny", "reason": "fee\u{202E}payer\u{200B} drain\u{E0041}\u{2066}ed"})
+            &json!({"decision": "deny", "reason": "fee\u{202E}payer\u{200B} drain\u{E0041}\u{2066}ed\u{2028}by\u{00AD} \u{FE0F}a\u{E0100}\u{3164}\u{FFF9}n\u{1D173} endpoint"})
                 .to_string(),
         )
         .await;
@@ -379,7 +407,70 @@ mod tests {
         let KoraError::InvalidTransaction(message) = err else {
             panic!("expected InvalidTransaction, got {err:?}");
         };
-        assert!(message.contains("denied by the decision endpoint: feepayer drained"), "{message}");
+        assert!(
+            message.contains("denied by the decision endpoint: feepayer drained by an endpoint"),
+            "{message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn external_decision_deny_reason_is_capped_after_redaction() {
+        // A key cut by the cap before redaction kept its first 31 hex characters, too few to redact.
+        let key = "4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318";
+        let (server, _mock) = answering(
+            200,
+            &json!({"decision": "deny", "reason": format!("{}{key}", "z".repeat(169))}).to_string(),
+        )
+        .await;
+        let config = config_with(&format!("{}/decide", server.url()), 2_000);
+
+        let err = run(&config, &Pubkey::new_unique()).await.unwrap_err();
+
+        let KoraError::InvalidTransaction(message) = err else {
+            panic!("expected InvalidTransaction, got {err:?}");
+        };
+        assert!(!message.contains(&key[..8]), "{message}");
+
+        // Redaction can lengthen a reason: the cap holds for what the client receives.
+        let (server, _mock) = answering(
+            200,
+            &json!({"decision": "deny", "reason": "http://a/ ".repeat(20)}).to_string(),
+        )
+        .await;
+        let config = config_with(&format!("{}/decide", server.url()), 2_000);
+        let KoraError::InvalidTransaction(message) =
+            run(&config, &Pubkey::new_unique()).await.unwrap_err()
+        else {
+            panic!("expected InvalidTransaction");
+        };
+        let reason = message
+            .split_once("denied by the decision endpoint: ")
+            .and_then(|(_, rest)| rest.rsplit_once(" (context:"))
+            .map(|(reason, _)| reason)
+            .unwrap();
+        assert!(reason.chars().count() <= MAX_DENY_REASON_CHARS, "{reason}");
+    }
+
+    #[tokio::test]
+    async fn external_decision_failure_detail_does_not_quote_the_body() {
+        // serde's error quotes an unknown decision: a line break in it would forge a log line.
+        let (server, _mock) =
+            answering(200, &json!({"decision": "x\nINFO forged log line"}).to_string()).await;
+        let config =
+            ExternalDecisionConfig { url: format!("{}/decide", server.url()), timeout_ms: 2_000 };
+        let body = DecisionRequest {
+            transaction: String::new(),
+            fee_payer: Pubkey::new_unique().to_string(),
+            method: "signTransaction",
+        };
+
+        let Err(detail) = ExternalDecisionPlugin::request_decision(&config, &body, None).await
+        else {
+            panic!("expected an unrecognized response");
+        };
+
+        assert!(detail.starts_with("unrecognized response: "), "{detail}");
+        assert!(!detail.contains('\n') && !detail.contains("forged"), "{detail}");
     }
 
     #[tokio::test]
@@ -570,8 +661,8 @@ mod tests {
         assert!(!detail.contains("secret"), "{detail}");
     }
 
-    #[test]
-    fn external_decision_reaches_a_loopback_endpoint_without_an_environment_proxy() {
+    #[tokio::test]
+    async fn external_decision_reaches_a_loopback_endpoint_without_a_proxy() {
         for url in
             ["http://127.0.0.1:9000/decide", "http://localhost/decide", "http://[::1]/decide"]
         {
@@ -580,6 +671,53 @@ mod tests {
         }
         let remote = Url::parse("https://decisions.example.com/decide").unwrap();
         assert!(std::ptr::eq(client_for(&remote), &*HTTP_CLIENT));
+
+        // A proxy that answers allow to anything, and an endpoint that denies. The proxy is set on
+        // the builder rather than in the environment, which other tests share.
+        let proxy = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_url = format!("http://{}", proxy.local_addr().unwrap());
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = proxy.accept().await {
+                let mut request = [0u8; 4096];
+                let _ = stream.read(&mut request).await;
+                let body = r#"{"decision":"allow"}"#;
+                let answer = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(answer.as_bytes()).await;
+            }
+        });
+        let (server, _mock) = answering(200, r#"{"decision":"deny"}"#).await;
+        let answer = |loopback: bool| {
+            let client = build_client(
+                Client::builder().proxy(reqwest::Proxy::all(&proxy_url).unwrap()),
+                loopback,
+            );
+            let url = format!("{}/decide", server.url());
+            async move { client.post(url).send().await.unwrap().text().await.unwrap() }
+        };
+
+        assert_eq!(answer(true).await, r#"{"decision":"deny"}"#, "the loopback client goes direct");
+        assert_eq!(answer(false).await, r#"{"decision":"allow"}"#, "the proxy would have answered");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_decision_token_that_is_not_utf8_is_an_error() {
+        use std::{env::VarError, ffi::OsString, os::unix::ffi::OsStringExt};
+
+        assert_eq!(ExternalDecisionConfig::token_from(Err(VarError::NotPresent)), Ok(None));
+        assert_eq!(ExternalDecisionConfig::token_from(Ok(String::new())), Ok(None));
+        assert_eq!(
+            ExternalDecisionConfig::token_from(Ok("abc123".to_string())),
+            Ok(Some("abc123".to_string()))
+        );
+        // Before this fix such a token was read as no token, and requests went out without it.
+        let not_utf8 = VarError::NotUnicode(OsString::from_vec(b"secret\xff".to_vec()));
+        let error = ExternalDecisionConfig::token_from(Err(not_utf8)).unwrap_err();
+        assert!(error.contains(ExternalDecisionConfig::TOKEN_ENV));
+        assert!(!error.contains("secret"));
     }
 
     #[test]

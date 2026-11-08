@@ -811,8 +811,22 @@ impl ExternalDecisionConfig {
     /// Sent as a bearer token to the decision endpoint when set.
     pub(crate) const TOKEN_ENV: &'static str = "KORA_EXTERNAL_DECISION_TOKEN";
 
-    pub(crate) fn resolved_token() -> Option<String> {
-        AuthConfig::normalize_optional_secret(env::var(Self::TOKEN_ENV).ok())
+    /// The token, when set. A value that is not valid UTF-8 is an error, not a missing token: the
+    /// request would otherwise go out without the token the operator set.
+    pub(crate) fn resolved_token() -> Result<Option<String>, String> {
+        Self::token_from(env::var(Self::TOKEN_ENV))
+    }
+
+    pub(crate) fn token_from(
+        value: Result<String, env::VarError>,
+    ) -> Result<Option<String>, String> {
+        match value {
+            Ok(token) => Ok(AuthConfig::normalize_optional_secret(Some(token))),
+            Err(env::VarError::NotPresent) => Ok(None),
+            Err(env::VarError::NotUnicode(_)) => {
+                Err(format!("{} is not valid UTF-8", Self::TOKEN_ENV))
+            }
+        }
     }
 }
 
