@@ -100,9 +100,10 @@ pub struct VersionedTransactionResolved {
     pub all_account_keys: Vec<Pubkey>,
 
     // Includes all instructions, including inner instructions
-    pub all_instructions: Vec<Instruction>,
+    all_instructions: Vec<Instruction>,
 
-    pub(crate) instruction_origins: Vec<InstructionOrigin>,
+    // One entry per `all_instructions` entry; only `new` and `push_inner_instruction` write either
+    instruction_origins: Vec<InstructionOrigin>,
 
     // Parsed instructions by type
     parsed_system_instructions:
@@ -231,7 +232,7 @@ impl VersionedTransactionResolved {
         Ok(Self::new(transaction.clone(), all_account_keys, all_instructions))
     }
 
-    fn new(
+    pub(crate) fn new(
         transaction: VersionedTransaction,
         all_account_keys: Vec<Pubkey>,
         all_instructions: Vec<Instruction>,
@@ -248,6 +249,18 @@ impl VersionedTransactionResolved {
             parsed_bpf_loader_upgradeable_instructions: OnceLock::new(),
             parsed_token2022_security_instructions: OnceLock::new(),
         }
+    }
+
+    /// Returns the top-level instructions followed by the CPIs simulation surfaced.
+    pub fn all_instructions(&self) -> &[Instruction] {
+        &self.all_instructions
+    }
+
+    /// Returns each entry of `all_instructions` with its origin.
+    pub(crate) fn instructions_with_origins(
+        &self,
+    ) -> impl Iterator<Item = (&Instruction, &InstructionOrigin)> {
+        self.all_instructions.iter().zip(&self.instruction_origins)
     }
 
     /// Appends a CPI surfaced by simulation under the top-level instruction at `parent_index`.

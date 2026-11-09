@@ -25,16 +25,8 @@ impl CreateAccountOnlyViaPlugin {
         programs: &HashSet<Pubkey>,
         fee_payer: &Pubkey,
     ) -> Result<(), KoraError> {
-        let all_instructions = &transaction.all_instructions;
-        let origins = &transaction.instruction_origins;
-        if all_instructions.len() != origins.len() {
-            return Err(KoraError::InvalidTransaction(format!(
-                "Plugin create_account_only_via resolved {} instructions but {} instruction origins",
-                all_instructions.len(),
-                origins.len()
-            )));
-        }
-        for (index, (instruction, origin)) in all_instructions.iter().zip(origins).enumerate() {
+        let all_instructions = transaction.all_instructions();
+        for (index, (instruction, origin)) in transaction.instructions_with_origins().enumerate() {
             let Some(creation) = Self::fee_payer_funded_creation(instruction, fee_payer)? else {
                 continue;
             };
@@ -512,27 +504,6 @@ mod tests {
             )
             .await
             .expect("a creation the fee payer does not fund is outside the rule");
-    }
-
-    #[tokio::test]
-    async fn only_via_rejects_instruction_without_origin() {
-        let fixture = Fixture::setup(true);
-        let message = VersionedMessage::Legacy(Message::new(
-            &[fixture.call(fixture.listed_program)],
-            Some(&fixture.fee_payer),
-        ));
-        let mut transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        transaction.all_instructions.push(fixture.fee_payer_creates_account());
-
-        let err = fixture
-            .validate(&mut transaction)
-            .await
-            .expect_err("an instruction without an origin must not pass the rule");
-        assert!(
-            err.to_string().contains("resolved 2 instructions but 1 instruction origins"),
-            "unexpected error: {err}"
-        );
     }
 
     #[tokio::test]

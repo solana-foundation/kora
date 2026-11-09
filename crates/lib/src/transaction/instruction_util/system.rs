@@ -90,7 +90,7 @@ impl IxUtils {
             Vec<ParsedSystemInstructionData>,
         > = HashMap::new();
 
-        for instruction in transaction.all_instructions.iter() {
+        for instruction in transaction.all_instructions().iter() {
             if let Some(data) = Self::parse_system_instruction(instruction)? {
                 parsed_instructions.entry(data.instruction_type()).or_default().push(data);
             }

@@ -141,7 +141,7 @@ impl BundleProcessor {
             if let Some(context) = plugin_context {
                 plugin_runner.run(&resolved_tx, config, rpc_client, &fee_payer, context).await?;
             }
-            all_bundle_instructions.extend(resolved_tx.all_instructions.clone());
+            all_bundle_instructions.extend(resolved_tx.all_instructions().iter().cloned());
             resolved_transactions.push(resolved_tx);
         }
 

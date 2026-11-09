@@ -65,7 +65,7 @@ impl IxUtils {
             Vec<ParsedALTInstructionData>,
         > = HashMap::new();
 
-        for instruction in &transaction.all_instructions {
+        for instruction in transaction.all_instructions() {
             if instruction.program_id != ADDRESS_LOOKUP_TABLE_PROGRAM_ID {
                 continue;
             }

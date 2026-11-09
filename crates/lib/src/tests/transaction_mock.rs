@@ -145,10 +145,9 @@ pub fn create_resolved_with_loaded_keys(
     message: VersionedMessage,
     all_account_keys: Vec<Pubkey>,
 ) -> VersionedTransactionResolved {
-    let mut resolved = create_mock_resolved_transaction();
-    resolved.transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-    resolved.all_account_keys = all_account_keys;
-    resolved.all_instructions = Vec::new();
-    resolved.instruction_origins = Vec::new();
-    resolved
+    VersionedTransactionResolved::new(
+        TransactionUtil::new_unsigned_versioned_transaction(message),
+        all_account_keys,
+        Vec::new(),
+    )
 }

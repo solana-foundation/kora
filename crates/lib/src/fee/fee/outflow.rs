@@ -80,7 +80,7 @@ impl FeeConfigUtil {
         config: &Config,
     ) -> Result<u64, KoraError> {
         let ata_creations = TokenUtil::find_fee_payer_ata_creations(
-            &transaction.all_instructions,
+            transaction.all_instructions(),
             fee_payer_pubkey,
         );
         if ata_creations.is_empty() {

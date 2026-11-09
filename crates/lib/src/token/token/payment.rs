@@ -199,7 +199,7 @@ impl TokenUtil {
 
         let all_instructions = bundle_instructions
             .map(|instructions| instructions.to_vec())
-            .unwrap_or_else(|| transaction_resolved.all_instructions.clone());
+            .unwrap_or_else(|| transaction_resolved.all_instructions().to_vec());
 
         for instruction in transaction_resolved
             .get_or_parse_spl_instructions()?

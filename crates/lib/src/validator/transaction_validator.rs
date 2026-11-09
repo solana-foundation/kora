@@ -91,7 +91,7 @@ impl TransactionValidator {
     ) -> Result<(), KoraError> {
         self.validate_transaction_version(&transaction_resolved.transaction)?;
 
-        if transaction_resolved.all_instructions.is_empty() {
+        if transaction_resolved.all_instructions().is_empty() {
             return Err(KoraError::InvalidTransaction(
                 "Transaction contains no instructions".to_string(),
             ));
@@ -124,7 +124,7 @@ impl TransactionValidator {
     ) -> Result<(), KoraError> {
         let compute_budget_program_id = solana_compute_budget_interface::id();
         let has_non_compute_instruction = transaction_resolved
-            .all_instructions
+            .all_instructions()
             .iter()
             .any(|ix| ix.program_id != compute_budget_program_id);
 
@@ -149,7 +149,7 @@ impl TransactionValidator {
 
         let compute_budget_program_id = solana_compute_budget_interface::id();
         if transaction_resolved
-            .all_instructions
+            .all_instructions()
             .iter()
             .any(|ix| ix.program_id == compute_budget_program_id)
         {
@@ -225,7 +225,7 @@ impl TransactionValidator {
         if self.allow_all_programs {
             return Ok(());
         }
-        for instruction in &transaction_resolved.all_instructions {
+        for instruction in transaction_resolved.all_instructions() {
             if !self.allowed_programs.contains(&instruction.program_id) {
                 return Err(KoraError::InvalidTransaction(format!(
                     "Program {} is not in the allowed list",
@@ -245,7 +245,7 @@ impl TransactionValidator {
         }
 
         let called = transaction_resolved
-            .all_instructions
+            .all_instructions()
             .iter()
             .any(|ix| self.require_one_of_programs.contains(&ix.program_id));
         if !called {
@@ -299,7 +299,7 @@ impl TransactionValidator {
         }
 
         let has_fee_payer_ata_create = !TokenUtil::find_fee_payer_ata_creations(
-            &transaction_resolved.all_instructions,
+            transaction_resolved.all_instructions(),
             &self.fee_payer_pubkey,
         )
         .is_empty();
@@ -336,7 +336,7 @@ impl TransactionValidator {
         &self,
         transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
-        for instruction in &transaction_resolved.all_instructions {
+        for instruction in transaction_resolved.all_instructions() {
             if self.disallowed_accounts.contains(&instruction.program_id) {
                 return Err(KoraError::InvalidTransaction(format!(
                     "Program {} is disallowed",
@@ -5184,7 +5184,9 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[reallocate_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        transaction.all_instructions.push(transfer(&fee_payer, &token_account, rent_lamports));
+        transaction
+            .push_inner_instruction(0, Some(0), transfer(&fee_payer, &token_account, rent_lamports))
+            .unwrap();
 
         validator.validate_transaction(config, &mut transaction, &rpc_client).await
     }
