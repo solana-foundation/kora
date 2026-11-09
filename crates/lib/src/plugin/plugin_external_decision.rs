@@ -18,6 +18,8 @@ use crate::{
 use super::{PluginExecutionContext, TransactionPlugin};
 
 const MAX_DENY_REASON_CHARS: usize = 200;
+// The shortest hex run redaction treats as a secret (`sanitize_error!`).
+const KEY_HEX_CHARS: usize = 32;
 // A decision is a few bytes; a provider's own evidence alongside it fits well under this.
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 
@@ -64,6 +66,14 @@ fn is_loopback(url: &Url) -> bool {
     }
 }
 
+/// What config validation reports about the token as resolved: one that cannot be read or sent.
+fn token_problem(token: &Result<Option<String>, String>) -> Option<String> {
+    match token {
+        Ok(token) => token_error(token.as_deref()),
+        Err(error) => Some(format!("ExternalDecision plugin: {error}")),
+    }
+}
+
 /// Why a token cannot be sent, if it cannot (a trailing newline from a mounted secret, say).
 fn token_error(token: Option<&str>) -> Option<String> {
     let token = token?;
@@ -88,18 +98,37 @@ fn is_hidden(c: char) -> bool {
             | '\u{1BCA0}'..='\u{1BCA3}' | '\u{1D173}'..='\u{1D17A}' | '\u{E0000}'..='\u{E0FFF}')
 }
 
+// Line breaks and tabs, which `is_hidden` also counts as control characters.
+fn is_break(c: char) -> bool {
+    matches!(c, '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | '\u{85}' | '\u{2028}' | '\u{2029}')
+}
+
 // Line breaks and other spaces become a space (a line or paragraph separator starts a new line
-// wherever the reason is shown), hidden characters are dropped, and the cap applies to what the
-// client receives, once secrets are redacted: a cut before it could leave part of a key unredacted.
+// wherever the reason is shown), except a break inside a hex run as long as a key, which is
+// dropped: a key wrapped over lines (as `xxd -p` prints it) stays one run, so redaction still sees
+// it. Hidden characters are dropped, and the cap applies to what the client receives, once secrets
+// are redacted: a cut before it could leave part of a key unredacted.
 fn deny_reason(reason: &str) -> String {
-    let shown: String = reason
-        .chars()
-        .filter_map(|c| match c {
-            c if c.is_whitespace() => Some(' '),
-            c if is_hidden(c) => None,
-            c => Some(c),
-        })
-        .collect();
+    let visible: Vec<char> =
+        reason.chars().filter(|&c| c.is_whitespace() || !is_hidden(c)).collect();
+    // For each position: the hex digits in a row from it, and the run that follows its breaks.
+    let mut hex_from = vec![0usize; visible.len() + 1];
+    let mut hex_after_breaks = vec![0usize; visible.len() + 1];
+    for (i, &c) in visible.iter().enumerate().rev() {
+        hex_from[i] = if c.is_ascii_hexdigit() { hex_from[i + 1] + 1 } else { 0 };
+        hex_after_breaks[i] = if is_break(c) { hex_after_breaks[i + 1] } else { hex_from[i] };
+    }
+    let mut shown = String::with_capacity(reason.len());
+    let mut hex_before = 0usize;
+    for (i, &c) in visible.iter().enumerate() {
+        let after = hex_after_breaks[i + 1];
+        if is_break(c) && hex_before > 0 && after > 0 && hex_before + after >= KEY_HEX_CHARS {
+            continue;
+        }
+        let c = if c.is_whitespace() { ' ' } else { c };
+        hex_before = if c.is_ascii_hexdigit() { hex_before + 1 } else { 0 };
+        shown.push(c);
+    }
     sanitize_error!(shown).chars().take(MAX_DENY_REASON_CHARS).collect()
 }
 
@@ -116,6 +145,16 @@ fn deny_reason(reason: &str) -> String {
 pub(super) struct ExternalDecisionPlugin;
 
 impl ExternalDecisionPlugin {
+    /// The decision, asked with the token as resolved: a token that cannot be read asks nothing.
+    async fn decide(
+        config: &ExternalDecisionConfig,
+        body: &DecisionRequest,
+        token: Result<Option<String>, String>,
+    ) -> Result<Decision, String> {
+        let token = token?;
+        Self::request_decision(config, body, token.as_deref()).await
+    }
+
     async fn request_decision(
         config: &ExternalDecisionConfig,
         body: &DecisionRequest,
@@ -188,10 +227,8 @@ impl TransactionPlugin for ExternalDecisionPlugin {
             method: context.method_name(),
         };
 
-        let decision = match ExternalDecisionConfig::resolved_token() {
-            Ok(token) => Self::request_decision(decision_config, &body, token.as_deref()).await,
-            Err(error) => Err(error),
-        };
+        let decision =
+            Self::decide(decision_config, &body, ExternalDecisionConfig::resolved_token()).await;
         match decision {
             Ok(Decision::Allow) => Ok(()),
             Ok(Decision::Deny { reason }) => {
@@ -250,10 +287,7 @@ impl TransactionPlugin for ExternalDecisionPlugin {
             Err(_) => errors.push("ExternalDecision plugin url is not a valid URL".to_string()),
         }
 
-        match ExternalDecisionConfig::resolved_token() {
-            Ok(token) => errors.extend(token_error(token.as_deref())),
-            Err(error) => errors.push(format!("ExternalDecision plugin: {error}")),
-        }
+        errors.extend(token_problem(&ExternalDecisionConfig::resolved_token()));
 
         if decision_config.timeout_ms == 0
             || decision_config.timeout_ms > MAX_EXTERNAL_DECISION_TIMEOUT_MS
@@ -449,6 +483,26 @@ mod tests {
             .map(|(reason, _)| reason)
             .unwrap();
         assert!(reason.chars().count() <= MAX_DENY_REASON_CHARS, "{reason}");
+    }
+
+    #[test]
+    fn external_decision_deny_reason_keeps_a_key_wrapped_over_lines_whole() {
+        let key = "4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318";
+        // Before this fix the break became a space before redaction, and 31 hex characters showed.
+        for wrapped in [
+            format!("leaked key {}\n{}", &key[..31], &key[31..]),
+            format!("leaked key {}\r\n{}", &key[..60], &key[60..]),
+            format!("leaked key {}\t{}\u{2028}{}", &key[..20], &key[20..40], &key[40..]),
+        ] {
+            let reason = deny_reason(&wrapped);
+            assert!(!reason.contains(&key[60..]) && !reason.contains(&key[..8]), "{reason}");
+            assert!(reason.starts_with("leaked key "), "{reason}");
+        }
+        // Breaks anywhere else still become spaces.
+        assert_eq!(
+            deny_reason("on the list\nsince today\r\n2 hits"),
+            "on the list since today  2 hits"
+        );
     }
 
     #[tokio::test]
@@ -700,6 +754,45 @@ mod tests {
 
         assert_eq!(answer(true).await, r#"{"decision":"deny"}"#, "the loopback client goes direct");
         assert_eq!(answer(false).await, r#"{"decision":"allow"}"#, "the proxy would have answered");
+    }
+
+    #[tokio::test]
+    async fn external_decision_token_that_cannot_be_read_asks_nothing() {
+        let mut server = Server::new_async().await;
+        let config =
+            ExternalDecisionConfig { url: format!("{}/decide", server.url()), timeout_ms: 2_000 };
+        let body = DecisionRequest {
+            transaction: String::new(),
+            fee_payer: Pubkey::new_unique().to_string(),
+            method: "signTransaction",
+        };
+        let never = server
+            .mock("POST", "/decide")
+            .with_status(200)
+            .with_body(r#"{"decision":"allow"}"#)
+            .expect(0)
+            .create_async()
+            .await;
+
+        let error = "KORA_EXTERNAL_DECISION_TOKEN is not valid UTF-8".to_string();
+        let result = ExternalDecisionPlugin::decide(&config, &body, Err(error.clone())).await;
+        assert!(matches!(result, Err(ref detail) if *detail == error));
+        never.assert_async().await;
+        // And validation reports it, by the variable's name only.
+        assert_eq!(
+            token_problem(&Err(error.clone())),
+            Some(format!("ExternalDecision plugin: {error}"))
+        );
+        assert_eq!(token_problem(&Ok(None)), None);
+        assert!(token_problem(&Ok(Some("abc\n".to_string()))).is_some());
+    }
+
+    #[test]
+    fn external_decision_loopback_client_has_no_proxy() {
+        // reqwest lists a client's proxies in its Debug output, the environment's included, and
+        // `no_proxy` empties that list: the static the plugin uses for loopback must have none.
+        assert!(!format!("{:?}", *LOOPBACK_CLIENT).contains("proxies"));
+        assert!(format!("{:?}", *HTTP_CLIENT).contains("proxies"));
     }
 
     #[cfg(unix)]
