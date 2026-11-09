@@ -63,6 +63,10 @@ path = "typescript_free/main.rs"
 name = "loader_v3_deploy"
 path = "loader_v3_deploy/main.rs"
 
+[[test]]
+name = "create_account_only_via"
+path = "create_account_only_via/main.rs"
+
 [dependencies]
 kora-lib = { path = "../crates/lib" }
 solana-sdk = { workspace = true }

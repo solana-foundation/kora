@@ -118,7 +118,7 @@ impl IxUtils {
             Vec<ParsedBpfLoaderUpgradeableInstructionData>,
         > = HashMap::new();
 
-        for instruction in &transaction.all_instructions {
+        for instruction in transaction.all_instructions() {
             if instruction.program_id != BPF_LOADER_UPGRADEABLE_PROGRAM_ID {
                 continue;
             }

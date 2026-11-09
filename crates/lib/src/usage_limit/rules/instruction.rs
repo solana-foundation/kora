@@ -176,7 +176,7 @@ impl InstructionRule {
     ) {
         let kora_signer = ctx.kora_signer;
 
-        for instruction in ctx.transaction.all_instructions.iter() {
+        for instruction in ctx.transaction.all_instructions().iter() {
             for (idx, rule) in rules {
                 if instruction.program_id != rule.program {
                     continue;

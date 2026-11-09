@@ -666,7 +666,7 @@ impl IxUtils {
             Vec<ParsedSPLInstructionData>,
         > = HashMap::new();
 
-        let expanded_instructions = Self::expand_spl_token_batches(&transaction.all_instructions)?;
+        let expanded_instructions = Self::expand_spl_token_batches(transaction.all_instructions())?;
 
         for instruction in &expanded_instructions {
             let program_id = instruction.program_id;

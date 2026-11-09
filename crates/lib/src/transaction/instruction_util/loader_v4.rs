@@ -85,7 +85,7 @@ impl IxUtils {
             Vec<ParsedLoaderV4InstructionData>,
         > = HashMap::new();
 
-        for instruction in &transaction.all_instructions {
+        for instruction in transaction.all_instructions() {
             if instruction.program_id != LOADER_V4_PROGRAM_ID {
                 continue;
             }

@@ -26,7 +26,7 @@ impl GasSwapPlugin {
     ) -> Result<(), KoraError> {
         let compute_budget_id = solana_compute_budget_interface::id();
         let non_budget_count = transaction
-            .all_instructions
+            .all_instructions()
             .iter()
             .filter(|ix| ix.program_id != compute_budget_id)
             .count();

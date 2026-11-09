@@ -975,6 +975,47 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_validate_with_result_create_account_only_via_programs_without_plugin() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.create_account_only_via.programs = vec![SYSTEM_PROGRAM_ID.to_string()];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let errors = ConfigValidator::validate_with_result(&rpc_client, true).await.unwrap_err();
+
+        assert!(errors.iter().any(|e| e.contains(
+            "[kora.plugins.create_account_only_via] programs is set but create_account_only_via \
+             is not in [kora.plugins] enabled"
+        )));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_create_account_only_via_programs_checked_like_require_one_of(
+    ) {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        let not_allowed = Pubkey::new_unique().to_string();
+        config.kora.plugins.create_account_only_via.programs =
+            vec!["not-a-pubkey".to_string(), not_allowed.clone()];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let errors = ConfigValidator::validate_with_result(&rpc_client, true).await.unwrap_err();
+
+        assert!(errors.iter().any(|e| e
+            == "Invalid base58 pubkey format in [kora.plugins.create_account_only_via] programs: 'not-a-pubkey'"));
+        assert!(errors.iter().any(|e| *e
+            == format!(
+                "Program {not_allowed} in [kora.plugins.create_account_only_via] programs must also be in allowed_programs"
+            )));
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_require_one_of_programs_allows_compute_budget_program() {
         let mut config = ConfigMockBuilder::new().build();
         config.kora.cache.enabled = false;

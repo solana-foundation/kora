@@ -781,6 +781,7 @@ impl CacheConfig {
 pub enum TransactionPluginType {
     GasSwap,
     DeployAuthority,
+    CreateAccountOnlyVia,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
@@ -788,6 +789,15 @@ pub enum TransactionPluginType {
 pub struct PluginsConfig {
     /// List of enabled transaction plugins, executed for sign/signAndSend flows
     pub enabled: Vec<TransactionPluginType>,
+    /// Settings for the `create_account_only_via` plugin
+    pub create_account_only_via: CreateAccountOnlyViaConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct CreateAccountOnlyViaConfig {
+    /// Programs whose CPIs are the only place the fee payer may fund account creation
+    pub programs: Vec<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]

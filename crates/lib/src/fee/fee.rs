@@ -119,7 +119,7 @@ impl FeeConfigUtil {
 
         let all_instructions: &[Instruction] = match bundle_instructions {
             Some(instrs) => instrs,
-            None => &resolved_transaction.all_instructions,
+            None => resolved_transaction.all_instructions(),
         };
 
         for instruction in &spl_transfers {

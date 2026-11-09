@@ -1,0 +1,665 @@
+use async_trait::async_trait;
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
+use spl_associated_token_account_interface::program::ID as ATA_PROGRAM_ID;
+use std::collections::HashSet;
+
+use crate::{
+    config::Config,
+    error::KoraError,
+    token::token::TokenUtil,
+    transaction::{
+        InstructionOrigin, IxUtils, ParsedSystemInstructionData, VersionedTransactionResolved,
+    },
+    validator::parse_pubkey_set,
+};
+
+use super::{PluginExecutionContext, TransactionPlugin};
+
+pub(super) struct CreateAccountOnlyViaPlugin;
+
+impl CreateAccountOnlyViaPlugin {
+    fn validate_creations(
+        transaction: &VersionedTransactionResolved,
+        programs: &HashSet<Pubkey>,
+        fee_payer: &Pubkey,
+    ) -> Result<(), KoraError> {
+        let all_instructions = transaction.all_instructions();
+        for (index, (instruction, origin)) in transaction.instructions_with_origins().enumerate() {
+            let Some(creation) = Self::fee_payer_funded_creation(instruction, fee_payer)? else {
+                continue;
+            };
+            let location = match origin {
+                InstructionOrigin::TopLevel => "a top-level instruction".to_string(),
+                InstructionOrigin::Inner { caller_index: None, .. } => {
+                    "a CPI whose direct caller could not be determined".to_string()
+                }
+                InstructionOrigin::Inner { caller_index: Some(caller_index), .. } => {
+                    let caller = all_instructions[*caller_index].program_id;
+                    // The ATA Create above this call is judged on its own caller.
+                    if programs.contains(&caller)
+                        || (caller == ATA_PROGRAM_ID && instruction.program_id == SYSTEM_PROGRAM_ID)
+                    {
+                        continue;
+                    }
+                    format!("a CPI from program {caller}")
+                }
+            };
+            return Err(KoraError::InvalidTransaction(format!(
+                "Plugin create_account_only_via lets the fee payer fund account creation only \
+                 inside a CPI made directly by a listed program; instruction {index} ('{creation}') is {location}"
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Names the account creation `instruction` performs with the fee payer as funder, if any.
+    fn fee_payer_funded_creation(
+        instruction: &Instruction,
+        fee_payer: &Pubkey,
+    ) -> Result<Option<&'static str>, KoraError> {
+        if let Some(ParsedSystemInstructionData::SystemCreateAccount { payer, .. }) =
+            IxUtils::parse_system_instruction(instruction)?
+        {
+            return Ok((payer == *fee_payer).then_some("System Create Account"));
+        }
+        Ok(TokenUtil::parse_ata_creation_instruction(instruction)
+            .filter(|ata| ata.payer == *fee_payer)
+            .map(|_| "Associated Token Account Create"))
+    }
+}
+
+#[async_trait]
+impl TransactionPlugin for CreateAccountOnlyViaPlugin {
+    async fn validate(
+        &self,
+        transaction: &VersionedTransactionResolved,
+        config: &Config,
+        _rpc_client: &RpcClient,
+        fee_payer: &Pubkey,
+        _context: PluginExecutionContext,
+    ) -> Result<(), KoraError> {
+        let programs = parse_pubkey_set(&config.kora.plugins.create_account_only_via.programs)?;
+        Self::validate_creations(transaction, &programs, fee_payer)
+    }
+
+    fn validate_config(&self, config: &Config) -> (Vec<String>, Vec<String>) {
+        let programs = &config.kora.plugins.create_account_only_via.programs;
+        let mut errors = Vec::new();
+        if programs.is_empty() {
+            errors.push(
+                "CreateAccountOnlyVia plugin requires at least one program in \
+                 [kora.plugins.create_account_only_via] programs"
+                    .to_string(),
+            );
+        }
+
+        let mut warnings = Vec::new();
+        if !config.validation.fee_payer_policy.system.allow_create_account {
+            warnings.push(
+                "CreateAccountOnlyVia plugin has no effect while \
+                 [validation.fee_payer_policy.system] allow_create_account=false: the fee payer \
+                 cannot fund any account creation"
+                    .to_string(),
+            );
+        }
+        if config.validation.fee_payer_policy.system.allow_transfer {
+            warnings.push(
+                "CreateAccountOnlyVia plugin does not cover \
+                 [validation.fee_payer_policy.system] allow_transfer=true: a fee payer Transfer \
+                 followed by Allocate and Assign creates an account outside the listed programs"
+                    .to_string(),
+            );
+        }
+
+        (errors, warnings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{super::TransactionPluginRunner, *};
+    use crate::{
+        config::{FeePayerPolicy, TransactionPluginType},
+        constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR,
+        oracle::PriceSource,
+        tests::{common::RpcMockBuilder, config_mock::ConfigMockBuilder},
+        transaction::TransactionUtil,
+        validator::transaction_validator::TransactionValidator,
+    };
+    use proptest::prelude::*;
+    use solana_message::{Message, VersionedMessage};
+    use solana_sdk::{instruction::AccountMeta, transaction::VersionedTransaction};
+    use solana_system_interface::instruction::{create_account, create_account_with_seed};
+    use spl_associated_token_account_interface::instruction::{
+        create_associated_token_account, create_associated_token_account_idempotent,
+    };
+    use std::sync::Arc;
+
+    struct Fixture {
+        config: Config,
+        fee_payer: Pubkey,
+        listed_program: Pubkey,
+        unlisted_program: Pubkey,
+        rpc_client: Arc<RpcClient>,
+    }
+
+    impl Fixture {
+        fn setup(plugin_enabled: bool) -> Self {
+            let fee_payer = Pubkey::new_unique();
+            let listed_program = Pubkey::new_unique();
+            let unlisted_program = Pubkey::new_unique();
+            let mut policy = FeePayerPolicy::default();
+            policy.system.allow_create_account = true;
+            let mut config = ConfigMockBuilder::new()
+                .with_price_source(PriceSource::Mock)
+                .with_allowed_programs(vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    spl_associated_token_account_interface::program::id().to_string(),
+                    listed_program.to_string(),
+                    unlisted_program.to_string(),
+                ])
+                .with_max_allowed_lamports(10_000_000)
+                .with_fee_payer_policy(policy)
+                .build();
+            if plugin_enabled {
+                config.kora.plugins.enabled = vec![TransactionPluginType::CreateAccountOnlyVia];
+                config.kora.plugins.create_account_only_via.programs =
+                    vec![listed_program.to_string()];
+            }
+            let rpc_client = RpcMockBuilder::new()
+                .with_custom_mock(
+                    solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                    serde_json::json!(2_039_280),
+                )
+                .build();
+            Self { config, fee_payer, listed_program, unlisted_program, rpc_client }
+        }
+
+        fn call(&self, program: Pubkey) -> Instruction {
+            Instruction { program_id: program, accounts: vec![], data: vec![] }
+        }
+
+        fn fee_payer_creates_account(&self) -> Instruction {
+            create_account(&self.fee_payer, &Pubkey::new_unique(), 1_000, 8, &SYSTEM_PROGRAM_ID)
+        }
+
+        fn fee_payer_creates_ata(&self) -> Instruction {
+            create_associated_token_account(
+                &self.fee_payer,
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &spl_token_interface::id(),
+            )
+        }
+
+        /// Runs the validator and then the plugins, as the sign flow does.
+        async fn validate(
+            &self,
+            transaction: &mut VersionedTransactionResolved,
+        ) -> Result<(), KoraError> {
+            TransactionValidator::new(&self.config, self.fee_payer)?
+                .validate_transaction(&self.config, transaction, &self.rpc_client)
+                .await?;
+            TransactionPluginRunner::from_config(&self.config)
+                .run(
+                    transaction,
+                    &self.config,
+                    &self.rpc_client,
+                    &self.fee_payer,
+                    PluginExecutionContext::SignTransaction,
+                )
+                .await
+        }
+
+        /// Validates `top_level` plus `inner` as `(parent, caller, instruction)`.
+        async fn validate_with(
+            &self,
+            top_level: &[Instruction],
+            inner: &[(usize, Option<usize>, Instruction)],
+        ) -> Result<(), KoraError> {
+            let message = VersionedMessage::Legacy(Message::new(top_level, Some(&self.fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            for (parent_index, caller_index, instruction) in inner {
+                transaction
+                    .push_inner_instruction(*parent_index, *caller_index, instruction.clone())
+                    .unwrap();
+            }
+            self.validate(&mut transaction).await
+        }
+    }
+
+    fn assert_only_via_rejection(result: Result<(), KoraError>, location: &str) {
+        let err = result.expect_err("fee payer funded creation outside the listed CPI");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Plugin create_account_only_via lets the fee payer fund account creation")
+                && msg.contains(location),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn only_via_rejects_top_level_fee_payer_create_account() {
+        let fixture = Fixture::setup(true);
+
+        assert_only_via_rejection(
+            fixture.validate_with(&[fixture.fee_payer_creates_account()], &[]).await,
+            "instruction 0 ('System Create Account') is a top-level instruction",
+        );
+    }
+
+    #[tokio::test]
+    async fn only_via_accepts_create_account_inside_listed_program_cpi() {
+        let fixture = Fixture::setup(true);
+
+        fixture
+            .validate_with(
+                &[fixture.call(fixture.listed_program)],
+                &[(0, Some(0), fixture.fee_payer_creates_account())],
+            )
+            .await
+            .expect("CPI from the listed program may fund account creation");
+    }
+
+    #[tokio::test]
+    async fn only_via_accepts_nested_ata_and_system_create_under_listed_program() {
+        let fixture = Fixture::setup(true);
+
+        fixture
+            .validate_with(
+                &[fixture.call(fixture.listed_program)],
+                &[
+                    (0, Some(0), fixture.fee_payer_creates_ata()),
+                    (0, Some(0), fixture.fee_payer_creates_account()),
+                ],
+            )
+            .await
+            .expect("nested CPIs under the listed program may fund account creation");
+    }
+
+    #[tokio::test]
+    async fn only_via_rejects_top_level_fee_payer_ata_create() {
+        let fixture = Fixture::setup(true);
+
+        assert_only_via_rejection(
+            fixture
+                .validate_with(
+                    &[fixture.call(fixture.listed_program), fixture.fee_payer_creates_ata()],
+                    &[],
+                )
+                .await,
+            "instruction 1 ('Associated Token Account Create') is a top-level instruction",
+        );
+    }
+
+    #[tokio::test]
+    async fn only_via_rejects_sibling_top_level_create_when_program_called() {
+        let fixture = Fixture::setup(true);
+
+        assert_only_via_rejection(
+            fixture
+                .validate_with(
+                    &[fixture.call(fixture.listed_program), fixture.fee_payer_creates_account()],
+                    &[],
+                )
+                .await,
+            "instruction 1 ('System Create Account') is a top-level instruction",
+        );
+    }
+
+    #[tokio::test]
+    async fn only_via_rejects_create_account_inside_unlisted_program_cpi() {
+        let fixture = Fixture::setup(true);
+
+        assert_only_via_rejection(
+            fixture
+                .validate_with(
+                    &[fixture.call(fixture.listed_program), fixture.call(fixture.unlisted_program)],
+                    &[(1, Some(1), fixture.fee_payer_creates_account())],
+                )
+                .await,
+            &format!("is a CPI from program {}", fixture.unlisted_program),
+        );
+    }
+
+    #[tokio::test]
+    async fn only_via_rejects_parsed_ata_cpi_from_simulation() {
+        let fixture = Fixture::setup(true);
+        let ata_instruction = create_associated_token_account_idempotent(
+            &fixture.fee_payer,
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &spl_token_interface::id(),
+        );
+        let ata_message = Message::new(std::slice::from_ref(&ata_instruction), None);
+        let parsed_ata = solana_transaction_status::parse_instruction::parse(
+            &ata_instruction.program_id,
+            &ata_message.instructions[0],
+            &solana_message::AccountKeys::new(&ata_message.account_keys, None),
+            Some(2),
+        )
+        .unwrap();
+
+        let mut unlisted_call = fixture.call(fixture.unlisted_program);
+        unlisted_call.accounts = ata_instruction.accounts.clone();
+        unlisted_call.accounts.push(AccountMeta::new_readonly(ata_instruction.program_id, false));
+        let message = VersionedMessage::Legacy(Message::new(
+            &[fixture.call(fixture.listed_program), unlisted_call],
+            Some(&fixture.fee_payer),
+        ));
+        let transaction = VersionedTransaction {
+            signatures: vec![Default::default(); message.header().num_required_signatures as usize],
+            message,
+        };
+
+        let simulation_rpc = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::SimulateTransaction,
+                serde_json::json!({
+                    "context": { "slot": 1 },
+                    "value": {
+                        "err": null,
+                        "logs": [],
+                        "accounts": null,
+                        "unitsConsumed": 1000,
+                        "innerInstructions": [{
+                            "index": 1,
+                            "instructions": [
+                                solana_transaction_status_client_types::UiInstruction::Parsed(
+                                    solana_transaction_status_client_types::UiParsedInstruction::Parsed(
+                                        parsed_ata,
+                                    ),
+                                ),
+                            ],
+                        }],
+                    },
+                }),
+            )
+            .build();
+        let mut resolved = VersionedTransactionResolved::from_transaction(
+            &transaction,
+            &fixture.config,
+            &simulation_rpc,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_only_via_rejection(
+            fixture.validate(&mut resolved).await,
+            &format!(
+                "instruction 2 ('Associated Token Account Create') is a CPI from program {}",
+                fixture.unlisted_program
+            ),
+        );
+    }
+
+    #[tokio::test]
+    async fn only_via_credits_the_direct_caller_not_the_listed_top_level() {
+        let fixture = Fixture::setup(true);
+
+        assert_only_via_rejection(
+            fixture
+                .validate_with(
+                    &[fixture.call(fixture.listed_program)],
+                    &[
+                        (0, Some(0), fixture.call(fixture.unlisted_program)),
+                        (0, Some(1), fixture.fee_payer_creates_account()),
+                    ],
+                )
+                .await,
+            &format!(
+                "instruction 2 ('System Create Account') is a CPI from program {}",
+                fixture.unlisted_program
+            ),
+        );
+    }
+
+    #[tokio::test]
+    async fn only_via_rejects_creation_with_unknown_caller() {
+        let fixture = Fixture::setup(true);
+
+        assert_only_via_rejection(
+            fixture
+                .validate_with(
+                    &[fixture.call(fixture.listed_program)],
+                    &[(0, None, fixture.fee_payer_creates_account())],
+                )
+                .await,
+            "a CPI whose direct caller could not be determined",
+        );
+    }
+
+    #[tokio::test]
+    async fn only_via_judges_ata_system_create_by_the_ata_callers() {
+        let fixture = Fixture::setup(true);
+        let ata_program = spl_associated_token_account_interface::program::id();
+        assert_eq!(fixture.fee_payer_creates_ata().program_id, ata_program);
+
+        fixture
+            .validate_with(
+                &[fixture.call(fixture.listed_program)],
+                &[
+                    (0, Some(0), fixture.fee_payer_creates_ata()),
+                    (0, Some(1), fixture.fee_payer_creates_account()),
+                ],
+            )
+            .await
+            .expect("listed -> ATA -> System is judged on the ATA create's caller");
+
+        assert_only_via_rejection(
+            fixture
+                .validate_with(
+                    &[fixture.call(fixture.unlisted_program)],
+                    &[
+                        (0, Some(0), fixture.fee_payer_creates_ata()),
+                        (0, Some(1), fixture.fee_payer_creates_account()),
+                    ],
+                )
+                .await,
+            &format!(
+                "instruction 1 ('Associated Token Account Create') is a CPI from program {}",
+                fixture.unlisted_program
+            ),
+        );
+    }
+
+    #[tokio::test]
+    async fn only_via_ata_exception_covers_only_system_creations() {
+        let fixture = Fixture::setup(true);
+
+        assert_only_via_rejection(
+            fixture
+                .validate_with(
+                    &[fixture.call(fixture.listed_program)],
+                    &[
+                        (0, Some(0), fixture.fee_payer_creates_ata()),
+                        (0, Some(1), fixture.fee_payer_creates_ata()),
+                    ],
+                )
+                .await,
+            "instruction 2 ('Associated Token Account Create') is a CPI from program",
+        );
+    }
+
+    #[tokio::test]
+    async fn only_via_ignores_creations_funded_by_others() {
+        let fixture = Fixture::setup(true);
+
+        fixture
+            .validate_with(
+                &[create_account(
+                    &Pubkey::new_unique(),
+                    &Pubkey::new_unique(),
+                    1_000,
+                    8,
+                    &SYSTEM_PROGRAM_ID,
+                )],
+                &[],
+            )
+            .await
+            .expect("a creation the fee payer does not fund is outside the rule");
+    }
+
+    #[tokio::test]
+    async fn only_via_disabled_plugin_keeps_top_level_create_allowed() {
+        let fixture = Fixture::setup(false);
+
+        fixture
+            .validate_with(
+                &[fixture.fee_payer_creates_account(), fixture.fee_payer_creates_ata()],
+                &[],
+            )
+            .await
+            .expect("without the plugin, allow_create_account alone decides");
+    }
+
+    #[test]
+    fn only_via_validate_config_reports_errors_and_warnings() {
+        let listed = SYSTEM_PROGRAM_ID.to_string();
+        let cases: [(Vec<String>, bool, bool, &str); 3] = [
+            (vec![], true, false, "requires at least one program"),
+            (vec![listed.clone()], false, false, "has no effect while"),
+            (vec![listed.clone()], true, true, "does not cover"),
+        ];
+        for (programs, allow_create_account, allow_transfer, expected) in cases {
+            let mut config =
+                ConfigMockBuilder::new().with_allowed_programs(vec![listed.clone()]).build();
+            config.validation.fee_payer_policy.system.allow_create_account = allow_create_account;
+            config.validation.fee_payer_policy.system.allow_transfer = allow_transfer;
+            config.kora.plugins.create_account_only_via.programs = programs.clone();
+
+            let (errors, warnings) = CreateAccountOnlyViaPlugin.validate_config(&config);
+
+            assert!(
+                errors.iter().chain(&warnings).any(|m| m.contains(expected)),
+                "{programs:?}, allow_create_account={allow_create_account}, \
+                 allow_transfer={allow_transfer}: {errors:?} {warnings:?}"
+            );
+        }
+
+        let mut config =
+            ConfigMockBuilder::new().with_allowed_programs(vec![listed.clone()]).build();
+        config.validation.fee_payer_policy.system.allow_create_account = true;
+        config.validation.fee_payer_policy.system.allow_transfer = false;
+        config.kora.plugins.create_account_only_via.programs = vec![listed];
+        assert_eq!(CreateAccountOnlyViaPlugin.validate_config(&config), (vec![], vec![]));
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum Creation {
+        CreateAccount,
+        CreateAccountWithSeed,
+        CreateAccountAllowPrefund,
+        AtaCreate,
+        AtaCreateIdempotent,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    enum Placement {
+        TopLevel,
+        InnerUnderListed,
+        InnerUnderUnlisted,
+    }
+
+    const CREATIONS: &[Creation] = &[
+        Creation::CreateAccount,
+        Creation::CreateAccountWithSeed,
+        Creation::CreateAccountAllowPrefund,
+        Creation::AtaCreate,
+        Creation::AtaCreateIdempotent,
+    ];
+
+    const PLACEMENTS: &[Placement] =
+        &[Placement::TopLevel, Placement::InnerUnderListed, Placement::InnerUnderUnlisted];
+
+    fn creation_funded_by(kind: Creation, funder: &Pubkey) -> Instruction {
+        match kind {
+            Creation::CreateAccount => {
+                create_account(funder, &Pubkey::new_unique(), 1_000, 8, &SYSTEM_PROGRAM_ID)
+            }
+            Creation::CreateAccountWithSeed => create_account_with_seed(
+                funder,
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                "seed",
+                1_000,
+                8,
+                &SYSTEM_PROGRAM_ID,
+            ),
+            Creation::CreateAccountAllowPrefund => Instruction {
+                program_id: SYSTEM_PROGRAM_ID,
+                accounts: vec![
+                    AccountMeta::new(Pubkey::new_unique(), true),
+                    AccountMeta::new(*funder, true),
+                ],
+                data: bincode::serialize(&(DISCRIMINATOR, 1_000u64, 8u64, SYSTEM_PROGRAM_ID))
+                    .unwrap(),
+            },
+            Creation::AtaCreate => create_associated_token_account(
+                funder,
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &spl_token_interface::id(),
+            ),
+            Creation::AtaCreateIdempotent => create_associated_token_account_idempotent(
+                funder,
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &spl_token_interface::id(),
+            ),
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(512))]
+
+        #[test]
+        fn only_via_rejects_exactly_fee_payer_funded_creations_outside_listed_cpis(
+            kind in prop::sample::select(CREATIONS),
+            placement in prop::sample::select(PLACEMENTS),
+            funder_is_fee_payer in any::<bool>(),
+        ) {
+            let fee_payer = Pubkey::new_unique();
+            let listed = Pubkey::new_unique();
+            let unlisted = Pubkey::new_unique();
+            let funder = if funder_is_fee_payer { fee_payer } else { Pubkey::new_unique() };
+
+            let call = |program: Pubkey| Instruction { program_id: program, accounts: vec![], data: vec![] };
+            let creation = creation_funded_by(kind, &funder);
+            let mut top_level = vec![call(listed), call(unlisted)];
+            let parent_index = match placement {
+                Placement::TopLevel => {
+                    top_level.push(creation.clone());
+                    None
+                }
+                Placement::InnerUnderListed => Some(0),
+                Placement::InnerUnderUnlisted => Some(1),
+            };
+            let message = VersionedMessage::Legacy(Message::new(&top_level, Some(&fee_payer)));
+            let mut resolved =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            if let Some(parent_index) = parent_index {
+                resolved.push_inner_instruction(parent_index, Some(parent_index), creation).unwrap();
+            }
+
+            let result = CreateAccountOnlyViaPlugin::validate_creations(
+                &resolved,
+                &HashSet::from([listed]),
+                &fee_payer,
+            );
+            let expected_ok = !funder_is_fee_payer || placement == Placement::InnerUnderListed;
+            prop_assert_eq!(
+                result.is_ok(),
+                expected_ok,
+                "{:?} at {:?}, funder_is_fee_payer={}: {:?}",
+                kind, placement, funder_is_fee_payer, result
+            );
+        }
+    }
+}
