@@ -1,24 +1,28 @@
 use crate::{
     config::{classify_cors_origins, CorsOriginsClassification},
-    constant::{X_API_KEY, X_HMAC_SIGNATURE, X_RECAPTCHA_TOKEN, X_TIMESTAMP},
+    constant::{LIVENESS_PATH, X_API_KEY, X_HMAC_SIGNATURE, X_RECAPTCHA_TOKEN, X_TIMESTAMP},
     metrics::run_metrics_server_if_required,
     rpc_server::{
         auth::{ApiKeyAuthLayer, HmacAuthLayer},
+        global_rate_limit::GlobalRateLimitLayer,
         middleware_utils::MethodValidationLayer,
         recaptcha::RecaptchaLayer,
         recaptcha_util::RecaptchaConfig,
         rpc::KoraRpc,
     },
-    usage_limit::UsageTracker,
 };
 
 use crate::state::drain_background_tasks;
 
 #[cfg(not(test))]
 use crate::state::get_config;
+#[cfg(not(test))]
+use crate::usage_limit::UsageTracker;
 
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
+#[cfg(test)]
+use crate::tests::usage_mock::UsageTracker;
 use http::{header, HeaderValue, Method};
 use jsonrpsee::{
     server::{
@@ -27,7 +31,7 @@ use jsonrpsee::{
     types::ErrorObjectOwned,
     RpcModule,
 };
-use std::{iter::empty, net::SocketAddr, time::Duration};
+use std::{collections::HashSet, iter::empty, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
 use tower::{
     buffer::BufferLayer,
@@ -146,7 +150,6 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
 
     let allow_origins = build_allow_origin(&config.kora.cors_allow_origins);
 
-    // Build middleware stack with tracing and CORS
     let cors = CorsLayer::new()
         .allow_origin(allow_origins)
         .allow_methods([Method::POST, Method::GET])
@@ -161,10 +164,11 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
 
     let rpc_client = rpc.get_rpc_client().clone();
 
-    let (metrics_handle, metrics_layers, balance_tracker_handle) =
-        run_metrics_server_if_required(port, rpc_client).await?;
+    let allowed_methods: Arc<HashSet<String>> =
+        Arc::new(config.kora.enabled_methods.get_enabled_method_names().into_iter().collect());
 
-    let allowed_methods = config.kora.enabled_methods.get_enabled_method_names();
+    let (metrics_handle, metrics_layers, balance_tracker_handle) =
+        run_metrics_server_if_required(port, rpc_client, allowed_methods.clone()).await?;
 
     let recaptcha_config = config.kora.auth.resolved_recaptcha_secret().map(|secret| {
         RecaptchaConfig::new(
@@ -174,16 +178,35 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         )
     });
 
+    let record_metrics = metrics_layers.is_some();
+    let (http_metrics_layer, metrics_handler_layer) = match metrics_layers {
+        Some(layers) => (layers.http_metrics_layer, layers.metrics_handler_layer),
+        None => (None, None),
+    };
+    let exempt_metrics_path =
+        metrics_handler_layer.as_ref().map(|layer| layer.endpoint().to_string());
+
     let middleware = ServiceBuilder::new()
-        // Add metrics handler first (before other layers) so it can intercept /metrics
-        .layer(ProxyGetRequestLayer::new([("/liveness", "liveness")])?)
-        .layer(rate_limit_layer(config.kora.rate_limit))
-        .option_layer(
-            metrics_layers.as_ref().and_then(|layers| layers.metrics_handler_layer.clone()),
-        )
+        // Outermost layer ensures all responses (including 429 rejections) carry CORS headers.
         .layer(cors)
-        .layer(MethodValidationLayer::new(allowed_methods.clone()))
-        .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
+        // Drops excess traffic before body reads to protect against upload-stalling attacks.
+        .option_layer(
+            config
+                .kora
+                .global_rate_limit
+                .map(|limit| GlobalRateLimitLayer::new(limit, record_metrics, exempt_metrics_path)),
+        )
+        // Translates GET /liveness into an internal RPC call.
+        .layer(ProxyGetRequestLayer::new([(LIVENESS_PATH, "liveness")])?)
+        // Connection-scoped rate limiter wrapped in a buffer to manage per-connection concurrency.
+        .layer(rate_limit_layer(config.kora.rate_limit))
+        // Handles Prometheus scraping without global rate limit interference.
+        .option_layer(metrics_handler_layer)
+        // Sheds unallowed methods before auth and latency instrumentation.
+        .layer(MethodValidationLayer::new(allowed_methods))
+        // Placed inside rate limiter so duration excludes permit wait time.
+        .option_layer(http_metrics_layer)
+        // Authentication and abuse prevention layers.
         .option_layer(config.kora.auth.resolved_api_keys().map(ApiKeyAuthLayer::new))
         .option_layer(
             config
@@ -310,15 +333,19 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
 mod tests {
     use super::*;
     use crate::{
-        config::{AuthConfig, EnabledMethods, CORS_WILDCARD},
+        config::{AuthConfig, EnabledMethods, MetricsConfig, CORS_WILDCARD},
+        metrics::HttpMetrics,
         tests::{
             common::setup_or_get_test_signer,
             config_mock::{ConfigMockBuilder, KoraConfigBuilder},
             rpc_mock::RpcMockBuilder,
         },
     };
+    use bytes::Bytes;
+    use futures_util::stream::{self, StreamExt};
+    use reqwest::{header::ORIGIN, Client};
     use serial_test::serial;
-    use std::{env, net::TcpListener};
+    use std::{env, net::TcpListener, time::Duration};
 
     #[tokio::test]
     #[serial]
@@ -334,12 +361,9 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().build();
 
         // This should not panic and should start successfully
-        let result = run_rpc_server(KoraRpc::new(rpc_client), port).await;
-        match result {
-            Ok(_) => (),
-            Err(e) if e.to_string().contains("already initialized") => (),
-            Err(e) => panic!("Server failed to start: {:?}", e),
-        }
+        let handles =
+            run_rpc_server(KoraRpc::new(rpc_client), port).await.expect("Server failed to start");
+        handles.shutdown().await;
     }
 
     #[tokio::test]
@@ -605,5 +629,276 @@ mod tests {
         let allow_origin_mixed = build_allow_origin(&mixed);
         let mixed_debug_str = format!("{:?}", allow_origin_mixed);
         assert!(mixed_debug_str.contains(r#"Const("*")"#));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_global_rate_limit_bypasses_liveness_and_metrics() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let kora_config = KoraConfigBuilder::new().with_global_rate_limit(Some(1)).build();
+        let metrics_config = MetricsConfig {
+            enabled: true,
+            port,
+            endpoint: "/metrics".to_string(),
+            ..Default::default()
+        };
+
+        let _m = ConfigMockBuilder::new()
+            .with_kora(kora_config)
+            .with_metrics(metrics_config)
+            .build_and_setup();
+
+        let _ = setup_or_get_test_signer();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let handles = run_rpc_server(KoraRpc::new(rpc_client), port).await.unwrap();
+        let client = Client::new();
+        let base_url = format!("http://127.0.0.1:{}", port);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let payload = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getConfig"
+        });
+
+        // Assert health checks remain responsive and don't drain the global token bucket.
+        let res_liveness = client
+            .get(format!("{}/liveness", base_url))
+            .send()
+            .await
+            .expect("Liveness request failed");
+        assert_eq!(res_liveness.status().as_u16(), 200, "Liveness should succeed");
+
+        // Exhaust the global rate limiter's token bucket.
+        let res1 = client.post(&base_url).json(&payload).send().await.expect("Request failed");
+        assert_eq!(res1.status().as_u16(), 200, "RPC request should succeed");
+
+        let counter = &HttpMetrics::get().http_rejections_total;
+        let before = counter
+            .get_metric_with_label_values(&["unknown", "rate_limit"])
+            .map(|c| c.get())
+            .unwrap_or(0.0);
+
+        // Assert standard RPC requests are load-shed when the global limit is reached.
+        let res2 = client.post(&base_url).json(&payload).send().await.expect("Request failed");
+        assert_eq!(res2.status().as_u16(), 429, "RPC request should be rate limited");
+
+        let after = counter
+            .get_metric_with_label_values(&["unknown", "rate_limit"])
+            .map(|c| c.get())
+            .unwrap_or(0.0);
+        assert_eq!(
+            after - before,
+            1.0,
+            "http_rejections_total{{method=\"unknown\",reason=\"rate_limit\"}} should have incremented by 1"
+        );
+
+        // Assert health checks still succeed even while the rate limiter is actively rejecting RPC traffic.
+        let res_liveness_during_limit = client
+            .get(format!("{}/liveness", base_url))
+            .send()
+            .await
+            .expect("Liveness request failed");
+        assert_eq!(
+            res_liveness_during_limit.status().as_u16(),
+            200,
+            "Liveness must continue to succeed during active rate limiting"
+        );
+
+        // Assert monitoring remains accessible even during active load-shedding.
+        let res_metrics = client
+            .get(format!("{}/metrics", base_url))
+            .send()
+            .await
+            .expect("Metrics request failed");
+        assert_eq!(res_metrics.status().as_u16(), 200, "Metrics should bypass rate limit");
+
+        let metrics_text = res_metrics.text().await.unwrap();
+        assert!(
+            metrics_text.contains("http_rejections_total"),
+            "Metrics should contain http_rejections_total"
+        );
+
+        handles.shutdown().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_global_rate_limit_cors_on_429() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let kora_config = KoraConfigBuilder::new()
+            .with_global_rate_limit(Some(1))
+            .with_cors_allow_origins(vec!["https://example.com".to_string()])
+            .build();
+
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let handles = run_rpc_server(KoraRpc::new(rpc_client), port).await.unwrap();
+        let client = Client::new();
+        let base_url = format!("http://127.0.0.1:{}", port);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let payload = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getConfig"
+        });
+
+        // First request succeeds and drains the bucket
+        let res1 = client
+            .post(&base_url)
+            .header(ORIGIN, "https://example.com")
+            .json(&payload)
+            .send()
+            .await
+            .expect("Request failed");
+        assert_eq!(res1.status().as_u16(), 200, "First RPC request should succeed");
+        assert!(
+            res1.headers().contains_key("access-control-allow-origin"),
+            "Success should have CORS header"
+        );
+
+        // Second request is rate limited (429) but must STILL have CORS headers
+        let res2 = client
+            .post(&base_url)
+            .header(ORIGIN, "https://example.com")
+            .json(&payload)
+            .send()
+            .await
+            .expect("Request failed");
+        assert_eq!(res2.status().as_u16(), 429, "Second RPC request should be rate limited");
+        assert_eq!(
+            res2.headers().get("access-control-allow-origin").and_then(|h| h.to_str().ok()),
+            Some("https://example.com"),
+            "429 rejection MUST include matching CORS headers"
+        );
+
+        handles.shutdown().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_http_metrics_cardinality_bound() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let kora_config = KoraConfigBuilder::new().build();
+
+        let _m = ConfigMockBuilder::new()
+            .with_kora(kora_config)
+            .with_metrics(MetricsConfig {
+                enabled: true,
+                endpoint: "/metrics".to_string(),
+                port,
+                ..Default::default()
+            })
+            .build_and_setup();
+        let _ = setup_or_get_test_signer();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let handles = run_rpc_server(KoraRpc::new(rpc_client), port).await.unwrap();
+        let client = Client::new();
+        let base_url = format!("http://127.0.0.1:{}", port);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let payload = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "SOME_ARBITRARY_UNBOUNDED_STRING"
+        });
+
+        let res = client.post(&base_url).json(&payload).send().await.expect("Request failed");
+        assert_eq!(res.status().as_u16(), 405);
+
+        let res_metrics = client
+            .get(format!("{}/metrics", base_url))
+            .send()
+            .await
+            .expect("Metrics request failed");
+
+        let metrics_text = res_metrics.text().await.unwrap();
+        assert!(
+            !metrics_text.contains("SOME_ARBITRARY_UNBOUNDED_STRING"),
+            "Arbitrary strings must not be recorded as labels"
+        );
+
+        handles.shutdown().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_global_rate_limit_immediate_429_on_stalled_body() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let kora_config = KoraConfigBuilder::new().with_global_rate_limit(Some(1)).build();
+        let metrics_config = MetricsConfig {
+            enabled: true,
+            port,
+            endpoint: "/metrics".to_string(),
+            ..Default::default()
+        };
+
+        let _m = ConfigMockBuilder::new()
+            .with_kora(kora_config)
+            .with_metrics(metrics_config)
+            .build_and_setup();
+
+        let _ = setup_or_get_test_signer();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let handles = run_rpc_server(KoraRpc::new(rpc_client), port).await.unwrap();
+        let client = Client::new();
+        let base_url = format!("http://127.0.0.1:{}", port);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let payload = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getConfig"
+        });
+
+        // Exhaust the 1 token in the bucket.
+        let res1 = client.post(&base_url).json(&payload).send().await.expect("Request failed");
+        assert_eq!(res1.status().as_u16(), 200);
+
+        // Prepare a stalled stream body: yields one chunk then stays pending.
+        let (_stall_tx, stall_rx) = tokio::sync::oneshot::channel::<()>();
+        let stalled_stream =
+            stream::once(async { Ok::<_, std::io::Error>(Bytes::from(r#"{"jsonrpc":"2.0","#)) })
+                .chain(stream::once(async move {
+                    let _ = stall_rx.await;
+                    Ok::<_, std::io::Error>(Bytes::from(r#""id":2}"#))
+                }));
+
+        let stalled_body = reqwest::Body::wrap_stream(stalled_stream);
+
+        // The 429 response must arrive within ~1s without waiting for the body to complete.
+        let res2 = tokio::time::timeout(
+            Duration::from_secs(1),
+            client.post(&base_url).body(stalled_body).send(),
+        )
+        .await
+        .expect("Server stalled waiting for request body instead of rejecting immediately")
+        .expect("Request failed");
+
+        assert_eq!(res2.status().as_u16(), 429);
+
+        handles.shutdown().await;
     }
 }

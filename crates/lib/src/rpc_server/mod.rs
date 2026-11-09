@@ -1,5 +1,6 @@
 pub mod args;
 pub mod auth;
+pub mod global_rate_limit;
 pub mod method;
 pub mod middleware_utils;
 #[cfg(feature = "docs")]
