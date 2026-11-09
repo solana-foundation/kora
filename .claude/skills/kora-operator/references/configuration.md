@@ -11,6 +11,7 @@ Complete reference for all kora.toml sections and fields.
 - [Enabled Methods](#enabled-methods)
 - [Bundle Configuration](#bundle-configuration)
 - [Lighthouse Protection](#lighthouse-protection)
+- [Transaction Plugins](#transaction-plugins)
 - [Validation](#validation)
 - [Token-2022 Extensions](#token-2022-extensions)
 - [Fee Payer Policy](#fee-payer-policy)
@@ -170,6 +171,31 @@ L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95
 ```
 
 When enabled, the returned transaction message may be modified (balance assertion added), invalidating client signatures. Client must re-sign after receiving the modified transaction.
+
+---
+
+## Transaction Plugins
+
+```toml
+[kora.plugins]
+enabled = ["external_decision"]   # also "gas_swap", "deploy_authority"
+
+[kora.plugins.external_decision]
+url = "https://decisions.example.com/v1/decide"
+timeout_ms = 2000                 # 1 to 10000, default 2000
+```
+
+Plugins run on `signTransaction`, `signAndSendTransaction`, `signBundle` and `signAndSendBundle`, after `validate_transaction` (program, account and fee payer policy) and before the payment, fee and transfer-hook checks and signing (in a bundle, the transfer-hook check comes first). Fee estimation methods skip them.
+
+**`external_decision`** POSTs each transaction to an endpoint the operator runs, with a JSON body:
+
+```json
+{"transaction": "<base64 transaction as the client sent it>", "fee_payer": "<pubkey>", "method": "signTransaction"}
+```
+
+The fee payer signs only when the endpoint answers HTTP 200 with `{"decision": "allow"}`. `{"decision": "deny", "reason": "..."}` rejects the transaction and returns the reason to the client (line breaks as spaces, except inside a hex run as long as a key, so a key wrapped over lines is still redacted; control and invisible characters removed; secrets redacted; at most 200 characters). A timeout, a connection error, a redirect, any other status, or any other body also rejects it: the plugin fails closed. Other fields in the answer are ignored, up to 64 KiB of body. In a bundle, each transaction gets its own request. The endpoint can be asked about a transaction Kora then refuses (an unpaid one, for example), so a provider that charges per call is charged for those too. It sees the transaction as the client sent it: before Kora replaces the blockhash (when the client sent no signatures) or appends a Lighthouse assertion, and with address lookup tables unresolved.
+
+`url` must be `https`, or `http` on a loopback host. A loopback endpoint is reached directly; an `https` one through the proxy in `HTTPS_PROXY`/`ALL_PROXY` if one is set (TLS still ends at the endpoint). If the endpoint needs a credential, set `KORA_EXTERNAL_DECISION_TOKEN`; it is sent as `Authorization: Bearer <token>`, and a value that is not a valid header (a trailing newline, say) or not UTF-8 fails config validation. Never put the credential in the url. A `[kora.plugins.external_decision]` table without `"external_decision"` in `enabled` is only a warning, and no transaction reaches the endpoint.
 
 ---
 

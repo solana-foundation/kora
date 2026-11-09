@@ -12,9 +12,9 @@ use crate::{
     bundle::JitoConfig,
     constant::{
         DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL, DEFAULT_CACHE_PRICE_TTL,
-        DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
-        DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
-        DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_PROTECTED_METHODS,
+        DEFAULT_EXTERNAL_DECISION_TIMEOUT_MS, DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS,
+        DEFAULT_MAX_REQUEST_BODY_SIZE, DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT,
+        DEFAULT_METRICS_PORT, DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_PROTECTED_METHODS,
         DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
     },
     error::KoraError,
@@ -781,6 +781,7 @@ impl CacheConfig {
 pub enum TransactionPluginType {
     GasSwap,
     DeployAuthority,
+    ExternalDecision,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
@@ -788,6 +789,45 @@ pub enum TransactionPluginType {
 pub struct PluginsConfig {
     /// List of enabled transaction plugins, executed for sign/signAndSend flows
     pub enabled: Vec<TransactionPluginType>,
+    /// Decision endpoint for the `external_decision` plugin
+    pub external_decision: Option<ExternalDecisionConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExternalDecisionConfig {
+    /// Endpoint that must allow each transaction before the fee payer signs it
+    pub url: String,
+    /// Request timeout in milliseconds. Default: 2000.
+    #[serde(default = "default_external_decision_timeout_ms")]
+    pub timeout_ms: u64,
+}
+
+fn default_external_decision_timeout_ms() -> u64 {
+    DEFAULT_EXTERNAL_DECISION_TIMEOUT_MS
+}
+
+impl ExternalDecisionConfig {
+    /// Sent as a bearer token to the decision endpoint when set.
+    pub(crate) const TOKEN_ENV: &'static str = "KORA_EXTERNAL_DECISION_TOKEN";
+
+    /// The token, when set. A value that is not valid UTF-8 is an error, not a missing token: the
+    /// request would otherwise go out without the token the operator set.
+    pub(crate) fn resolved_token() -> Result<Option<String>, String> {
+        Self::token_from(env::var(Self::TOKEN_ENV))
+    }
+
+    pub(crate) fn token_from(
+        value: Result<String, env::VarError>,
+    ) -> Result<Option<String>, String> {
+        match value {
+            Ok(token) => Ok(AuthConfig::normalize_optional_secret(Some(token))),
+            Err(env::VarError::NotPresent) => Ok(None),
+            Err(env::VarError::NotUnicode(_)) => {
+                Err(format!("{} is not valid UTF-8", Self::TOKEN_ENV))
+            }
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
@@ -1683,6 +1723,36 @@ allow_reallocate = true
         let result =
             ConfigBuilder::new().with_custom_section("[unknown_section]\nfoo = 1\n").build_config();
         assert_unknown_field_error(result, "unknown_section");
+    }
+
+    #[test]
+    fn test_external_decision_plugin_parsing() {
+        let config = ConfigBuilder::new()
+            .with_custom_section(
+                r#"[kora.plugins]
+enabled = ["external_decision"]
+
+[kora.plugins.external_decision]
+url = "https://decisions.example.com/decide"
+"#,
+            )
+            .build_config()
+            .unwrap();
+
+        assert_eq!(config.kora.plugins.enabled, vec![TransactionPluginType::ExternalDecision]);
+        let decision = config.kora.plugins.external_decision.unwrap();
+        assert_eq!(decision.url, "https://decisions.example.com/decide");
+        assert_eq!(decision.timeout_ms, DEFAULT_EXTERNAL_DECISION_TIMEOUT_MS);
+    }
+
+    #[test]
+    fn test_deny_unknown_fields_external_decision_key() {
+        let result = ConfigBuilder::new()
+            .with_custom_section(
+                "[kora.plugins.external_decision]\nurl = \"https://decisions.example.com\"\ntoken = \"x\"\n",
+            )
+            .build_config();
+        assert_unknown_field_error(result, "token");
     }
 
     #[test]

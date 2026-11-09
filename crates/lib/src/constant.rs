@@ -24,6 +24,8 @@ pub const DEFAULT_PROTECTED_METHODS: &[&str] =
 pub const JUPITER_API_URL: &str = "https://api.jup.ag";
 pub const RECAPTCHA_VERIFY_URL: &str = "https://www.google.com/recaptcha/api/siteverify";
 pub const RECAPTCHA_TIMEOUT_SECS: u64 = 5;
+pub const DEFAULT_EXTERNAL_DECISION_TIMEOUT_MS: u64 = 2_000;
+pub const MAX_EXTERNAL_DECISION_TIMEOUT_MS: u64 = 10_000;
 
 pub const LIGHTHOUSE_PROGRAM_ID: Pubkey = pubkey!("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
 
