@@ -522,6 +522,13 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                  deploys."
                     .to_string(),
             );
+        } else if !registry_gating_enabled(config) {
+            warnings.push(format!(
+                "DeployAuthority plugin: the deploy registry ({DEPLOY_REGISTRY_PROGRAM_ID}) is not \
+                 in allowed_programs, so any caller can upgrade, extend, close, rewrite or \
+                 retract any program the fee payer is the authority of. Allowlist the registry \
+                 to limit changes to each program's registered owner."
+            ));
         }
 
         (errors, warnings)
@@ -822,12 +829,39 @@ mod tests {
     #[test]
     fn validate_config_no_warning_when_any_allow_flag_true() {
         let plugin = DeployAuthorityPlugin;
-        let mut config = config_with_loader_v4_allowed();
+        let mut config = ConfigMockBuilder::new()
+            .with_allowed_programs(vec![
+                LOADER_V4_PROGRAM_ID.to_string(),
+                DEPLOY_REGISTRY_PROGRAM_ID.to_string(),
+            ])
+            .build();
+        enable_deploy_authority_plugin(&mut config);
         config.validation.fee_payer_policy.loader_v4.allow_write = true;
 
         let (errors, warnings) = plugin.validate_config(&config);
         assert!(errors.is_empty(), "got errors: {errors:?}");
         assert!(warnings.is_empty(), "expected no warnings, got: {warnings:?}");
+    }
+
+    #[test]
+    fn validate_config_warns_when_registry_not_allowlisted() {
+        let plugin = DeployAuthorityPlugin;
+        let mut v4 = config_with_loader_v4_allowed();
+        v4.validation.fee_payer_policy.loader_v4.allow_write = true;
+        let mut v3 = ConfigMockBuilder::new()
+            .with_allowed_programs(vec![BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()])
+            .build();
+        enable_deploy_authority_plugin(&mut v3);
+        v3.validation.fee_payer_policy.bpf_loader_upgradeable.allow_upgrade = true;
+
+        for config in [v4, v3] {
+            let (errors, warnings) = plugin.validate_config(&config);
+            assert!(errors.is_empty(), "got errors: {errors:?}");
+            assert!(
+                warnings.iter().any(|w| w.contains("deploy registry") && w.contains("any caller")),
+                "got warnings: {warnings:?}"
+            );
+        }
     }
 
     // ----------------------------------------------------------------------------
@@ -1221,7 +1255,10 @@ mod tests {
     fn validate_config_ok_when_only_v3_is_configured() {
         let plugin = DeployAuthorityPlugin;
         let mut config = ConfigMockBuilder::new()
-            .with_allowed_programs(vec![BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()])
+            .with_allowed_programs(vec![
+                BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string(),
+                DEPLOY_REGISTRY_PROGRAM_ID.to_string(),
+            ])
             .build();
         enable_deploy_authority_plugin(&mut config);
         config.validation.fee_payer_policy.bpf_loader_upgradeable.allow_write = true;
@@ -1238,7 +1275,10 @@ mod tests {
         // never see a loader instruction" warning even though the plugin would actually run.
         let new_config = || {
             let mut config = ConfigMockBuilder::new()
-                .with_allowed_programs(vec![BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()])
+                .with_allowed_programs(vec![
+                    BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string(),
+                    DEPLOY_REGISTRY_PROGRAM_ID.to_string(),
+                ])
                 .build();
             enable_deploy_authority_plugin(&mut config);
             config

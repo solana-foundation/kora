@@ -151,7 +151,7 @@ impl ConfigValidator {
                 "Users can make the fee payer write arbitrary bytes into program accounts it is the authority for";
 
             loader_v4, allow_copy, "Loader-v4 Copy instructions",
-                "Users can make the fee payer copy data between program accounts it is the authority for";
+                "Users can make the fee payer copy bytes from any program into program accounts it is the authority for, which is as powerful as allow_write";
 
             loader_v4, allow_set_program_length, "Loader-v4 SetProgramLength instructions",
                 "Users can make the fee payer resize program accounts. A drainage guard keeps refunds flowing back to the fee payer, but enabling this still lets users force-grow accounts and consume fee-payer rent";
