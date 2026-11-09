@@ -351,10 +351,6 @@ impl IxUtils {
         }
     }
 
-    /// Simulating with the inner-instructions flag makes the RPC pre-parse SPL/System
-    /// instructions into "Parsed" form, but Kora's parsing logic expects "Compiled"
-    /// instructions; there's no RPC option to disable this, so we reconstruct (unparse) them.
-    /// Reference: https://github.com/anza-xyz/agave/blob/68032b576dc4c14b31c15974c6734ae1513980a3/transaction-status/src/parse_system.rs#L11
     /// Returns the stack height simulation reports for `ui_instruction`.
     pub fn stack_height(ui_instruction: &UiInstruction) -> Option<u32> {
         match ui_instruction {
@@ -366,6 +362,10 @@ impl IxUtils {
         }
     }
 
+    /// Simulating with the inner-instructions flag makes the RPC pre-parse SPL/System
+    /// instructions into "Parsed" form, but Kora's parsing logic expects "Compiled"
+    /// instructions; there's no RPC option to disable this, so we reconstruct (unparse) them.
+    /// Reference: https://github.com/anza-xyz/agave/blob/68032b576dc4c14b31c15974c6734ae1513980a3/transaction-status/src/parse_system.rs#L11
     pub fn reconstruct_instruction_from_ui(
         ui_instruction: &UiInstruction,
         all_account_keys: &mut Vec<Pubkey>,
