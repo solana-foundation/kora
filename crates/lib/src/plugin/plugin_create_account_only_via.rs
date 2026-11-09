@@ -335,7 +335,7 @@ mod tests {
             &Pubkey::new_unique(),
             &spl_token_interface::id(),
         );
-        let ata_message = Message::new(&[ata_instruction.clone()], None);
+        let ata_message = Message::new(std::slice::from_ref(&ata_instruction), None);
         let parsed_ata = solana_transaction_status::parse_instruction::parse(
             &ata_instruction.program_id,
             &ata_message.instructions[0],
