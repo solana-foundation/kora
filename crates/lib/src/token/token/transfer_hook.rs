@@ -9,6 +9,7 @@ use crate::{
     transaction::{
         ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionResolved,
     },
+    validator::parse_pubkey_set,
     CacheUtil,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -49,16 +50,20 @@ impl TokenUtil {
     }
 
     /// Validate that every Token2022 transfer in the transaction uses a mint with immutable
-    /// transfer-hook authority (or no transfer-hook extension).
+    /// transfer-hook authority (or no transfer-hook extension). Mints in `allowed_tokens` are
+    /// exempt when `transfer_hook_policy` permits mutable authorities on this flow; every other
+    /// mint must have an immutable authority under any policy.
     pub async fn validate_token2022_transfer_hooks_in_transaction(
         config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         validation_flow: TransferHookValidationFlow,
     ) -> Result<(), KoraError> {
-        if !Self::should_reject_mutable_transfer_hook(config, validation_flow) {
-            return Ok(());
-        }
+        let exempt_mints = if Self::should_reject_mutable_transfer_hook(config, validation_flow) {
+            HashSet::new()
+        } else {
+            parse_pubkey_set(&config.validation.allowed_tokens)?
+        };
 
         let token_program = Token2022Program::new();
         let mut validated_mints = HashSet::new();
@@ -91,7 +96,7 @@ impl TokenUtil {
                 source_state.mint()
             };
 
-            if !validated_mints.insert(transfer_mint) {
+            if exempt_mints.contains(&transfer_mint) || !validated_mints.insert(transfer_mint) {
                 continue;
             }
 

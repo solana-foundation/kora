@@ -175,8 +175,10 @@ pub(super) fn validate_token2022_extensions(
         TransferHookPolicy::AllowAll => {
             warnings.push(
                 "⚠️  SECURITY: transfer_hook_policy is 'allow_all'. \
-                Mutable transfer-hook authorities are permitted on ALL signing flows. \
-                Risk: A malicious hook authority can swap the hook program to drain your fee payer. \
+                Mutable transfer-hook authorities on allowed_tokens mints are permitted on ALL \
+                signing flows. \
+                Risk: A malicious hook authority of an allowed token can swap the hook program to \
+                drain your fee payer. \
                 Consider setting transfer_hook_policy = \"deny_all\"."
                     .to_string(),
             );
@@ -184,7 +186,8 @@ pub(super) fn validate_token2022_extensions(
         TransferHookPolicy::DenyMutableForDelayedSigning => {
             warnings.push(
                 "⚠️  SECURITY: transfer_hook_policy is 'deny_mutable_for_delayed_signing'. \
-                Mutable transfer-hook authorities are permitted on signAndSendTransaction / signAndSendBundle. \
+                Mutable transfer-hook authorities on allowed_tokens mints are permitted on \
+                signAndSendTransaction / signAndSendBundle. \
                 Risk: A hook authority can swap the hook program between signing and execution. \
                 Consider setting transfer_hook_policy = \"deny_all\" for maximum protection."
                     .to_string(),

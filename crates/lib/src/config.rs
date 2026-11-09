@@ -561,6 +561,9 @@ pub struct Token2022Config {
     parsed_blocked_account_extensions: Option<Vec<ExtensionType>>,
 }
 
+/// Which signing flows accept a mutable TransferHook authority on mints listed in
+/// `allowed_tokens`. Transfers of any other mint with a mutable authority are rejected under
+/// every policy.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
@@ -568,10 +571,11 @@ pub enum TransferHookPolicy {
     /// Reject mutable TransferHook authority on all signing flows.
     #[default]
     DenyAll,
-    /// Reject mutable TransferHook authority only on delayed-signing flows
-    /// (signTransaction/signBundle). Allow on immediate sign-and-send flows.
+    /// Reject mutable TransferHook authority on delayed-signing flows
+    /// (signTransaction/signBundle). On immediate sign-and-send flows, allow it only for
+    /// `allowed_tokens` mints.
     DenyMutableForDelayedSigning,
-    /// Allow mutable TransferHook authority on all flows.
+    /// Allow mutable TransferHook authority for `allowed_tokens` mints on all flows.
     AllowAll,
 }
 
