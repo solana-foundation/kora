@@ -304,8 +304,11 @@ instruction. Such a program can make a creation directly on behalf of any caller
 accepts it because the listed program made the call.
 The plugin runs on the signing methods. Each listed program must also be in `allowed_programs`;
 `kora config validate` fails when one is not, when the list is empty, or when the list is set
-without enabling the plugin, and warns while `allow_create_account = false`. The listed programs decide which
+without enabling the plugin, and warns while `allow_create_account = false` or `allow_transfer = true`. The listed programs decide which
 accounts the fee payer funds, bounded per request by `max_allowed_lamports`.
+
+The guarantee needs `allow_transfer = false`. With transfers allowed, a top-level fee payer
+`Transfer` followed by `Allocate` and `Assign` creates an account the plugin does not see.
 
 ---
 

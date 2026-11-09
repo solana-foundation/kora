@@ -113,6 +113,14 @@ impl TransactionPlugin for CreateAccountOnlyViaPlugin {
                     .to_string(),
             );
         }
+        if config.validation.fee_payer_policy.system.allow_transfer {
+            warnings.push(
+                "CreateAccountOnlyVia plugin does not cover \
+                 [validation.fee_payer_policy.system] allow_transfer=true: a fee payer Transfer \
+                 followed by Allocate and Assign creates an account outside the listed programs"
+                    .to_string(),
+            );
+        }
 
         (errors, warnings)
     }
@@ -543,27 +551,31 @@ mod tests {
     #[test]
     fn only_via_validate_config_reports_errors_and_warnings() {
         let listed = SYSTEM_PROGRAM_ID.to_string();
-        let cases: [(Vec<String>, bool, &str); 2] = [
-            (vec![], true, "requires at least one program"),
-            (vec![listed.clone()], false, "has no effect while"),
+        let cases: [(Vec<String>, bool, bool, &str); 3] = [
+            (vec![], true, false, "requires at least one program"),
+            (vec![listed.clone()], false, false, "has no effect while"),
+            (vec![listed.clone()], true, true, "does not cover"),
         ];
-        for (programs, allow_create_account, expected) in cases {
+        for (programs, allow_create_account, allow_transfer, expected) in cases {
             let mut config =
                 ConfigMockBuilder::new().with_allowed_programs(vec![listed.clone()]).build();
             config.validation.fee_payer_policy.system.allow_create_account = allow_create_account;
+            config.validation.fee_payer_policy.system.allow_transfer = allow_transfer;
             config.kora.plugins.create_account_only_via.programs = programs.clone();
 
             let (errors, warnings) = CreateAccountOnlyViaPlugin.validate_config(&config);
 
             assert!(
                 errors.iter().chain(&warnings).any(|m| m.contains(expected)),
-                "{programs:?}, allow_create_account={allow_create_account}: {errors:?} {warnings:?}"
+                "{programs:?}, allow_create_account={allow_create_account}, \
+                 allow_transfer={allow_transfer}: {errors:?} {warnings:?}"
             );
         }
 
         let mut config =
             ConfigMockBuilder::new().with_allowed_programs(vec![listed.clone()]).build();
         config.validation.fee_payer_policy.system.allow_create_account = true;
+        config.validation.fee_payer_policy.system.allow_transfer = false;
         config.kora.plugins.create_account_only_via.programs = vec![listed];
         assert_eq!(CreateAccountOnlyViaPlugin.validate_config(&config), (vec![], vec![]));
     }
