@@ -83,6 +83,26 @@ impl DeployState {
     }
 }
 
+pub trait ChunkWriterState: Send {
+    fn written_chunks(&self) -> usize;
+    fn set_written_chunks(&mut self, count: usize);
+    fn save(&self, path: &Path) -> Result<()>;
+}
+
+impl ChunkWriterState for DeployState {
+    fn written_chunks(&self) -> usize {
+        self.written_chunks
+    }
+
+    fn set_written_chunks(&mut self, count: usize) {
+        self.written_chunks = count;
+    }
+
+    fn save(&self, path: &Path) -> Result<()> {
+        self.save(path)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -33,7 +33,7 @@ use solana_sdk::{
 };
 use solana_transaction::versioned::VersionedTransaction;
 
-use crate::state::DeployState;
+use crate::state::{ChunkWriterState, DeployState};
 
 // Write instruction data is a u32 enum tag, a u32 offset and a u64 length prefix before the bytes.
 const WRITE_INSTRUCTION_HEADER_LEN: usize = 16;
@@ -161,7 +161,7 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
         .with_context(|| format!("reading {}", cfg.program_so.display()))?;
     let current_program_hash = hash(&bytes).to_string();
 
-    let (program, buffer, program_data, kora_pubkey, mut written_chunks, mut state) =
+    let (program, buffer, program_data, kora_pubkey, _, mut state) =
         load_or_init_state(&ctx, &bytes, &current_program_hash, cfg.resume).await?;
     let chunk_size = resume_chunk_size(&state)
         .with_context(|| format!("deploy state at {}", cfg.state_path.display()))?;
@@ -169,17 +169,8 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
 
     validate_state(&ctx, &buffer, &kora_pubkey, &state, &current_program_hash, chunk_count).await?;
 
-    write_chunks(
-        &ctx,
-        &bytes,
-        &buffer,
-        &kora_pubkey,
-        &mut state,
-        &mut written_chunks,
-        chunk_size,
-        chunk_count,
-    )
-    .await?;
+    let state = state.as_mut().expect("deploy state initialized");
+    write_chunks(&ctx, &bytes, &buffer, &kora_pubkey, state, chunk_size, chunk_count).await?;
 
     finalize_deploy(&ctx, &bytes, &program, &buffer, &kora_pubkey, cfg.wallet, cfg.resume).await?;
 
@@ -366,46 +357,38 @@ async fn validate_state(
 
 /// Writes the program data chunks to the on-chain buffer, saving state progress
 /// after each successful write to allow resuming in case of failure.
-#[allow(clippy::too_many_arguments)]
-async fn write_chunks(
+async fn write_chunks<S: ChunkWriterState>(
     ctx: &DeployCtx<'_>,
     bytes: &[u8],
     buffer: &Keypair,
     kora_pubkey: &Pubkey,
-    state: &mut Option<DeployState>,
-    written_chunks: &mut usize,
+    state: &mut S,
     chunk_size: usize,
     chunk_count: usize,
 ) -> Result<()> {
     let state_path = ctx.state_path;
-    let batches = write_instruction_batches(
-        &buffer.pubkey(),
-        kora_pubkey,
-        bytes,
-        chunk_size,
-        *written_chunks,
-    );
+    let mut written_chunks = state.written_chunks();
+    let batches =
+        write_instruction_batches(&buffer.pubkey(), kora_pubkey, bytes, chunk_size, written_chunks);
     for ixs in batches {
         match submit(ctx.http, ctx.kora_url, ctx.user_id, ctx.rpc, kora_pubkey, &ixs, &[]).await {
             Ok(_) => {
-                *written_chunks += ixs.len();
-                if let Some(ref mut st) = state {
-                    st.written_chunks = *written_chunks;
-                    if let Err(e) = st.save(state_path) {
-                        cleanup_buffer!(
-                            false,
-                            "failed to save chunk state",
-                            |err| {
-                                log::warn!("failed to close buffer: {}; keeping state file for manual recovery", err)
-                            },
-                            ctx,
-                            buffer,
-                            kora_pubkey
-                        );
-                        return Err(e.context("failed to save deploy state after chunk write"));
-                    }
+                written_chunks += ixs.len();
+                state.set_written_chunks(written_chunks);
+                if let Err(e) = state.save(state_path) {
+                    cleanup_buffer!(
+                        false,
+                        "failed to save chunk state",
+                        |err| {
+                            log::warn!("failed to close buffer: {}; keeping state file for manual recovery", err)
+                        },
+                        ctx,
+                        buffer,
+                        kora_pubkey
+                    );
+                    return Err(e.context("failed to save deploy state after chunk write"));
                 }
-                if *written_chunks % 25 < ixs.len() || *written_chunks == chunk_count {
+                if written_chunks % 25 < ixs.len() || written_chunks == chunk_count {
                     log::info!("wrote chunk {}/{}", written_chunks, chunk_count);
                 }
             }
@@ -1193,8 +1176,7 @@ mod inline_tests {
             let _ = std::fs::remove_file(&state_path);
         }
 
-        let mut state = Some(make_state("dummy-hash", 0));
-        let mut written_chunks = 0usize;
+        let mut state = make_state("dummy-hash", 0);
 
         let mut server = mockito::Server::new_async().await;
         let sign_mock =
@@ -1218,20 +1200,11 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
-        let res = write_chunks(
-            &ctx,
-            &bytes,
-            &buffer,
-            &kora_pubkey,
-            &mut state,
-            &mut written_chunks,
-            WRITE_CHUNK_SIZE,
-            3,
-        )
-        .await;
+        let res =
+            write_chunks(&ctx, &bytes, &buffer, &kora_pubkey, &mut state, WRITE_CHUNK_SIZE, 3)
+                .await;
         assert!(res.is_ok());
-        assert_eq!(written_chunks, 3);
-        assert_eq!(state.as_ref().unwrap().written_chunks, 3);
+        assert_eq!(state.written_chunks, 3);
 
         assert!(state_path.exists());
         let loaded_state = DeployState::load(&state_path).unwrap().unwrap();
@@ -1253,8 +1226,7 @@ mod inline_tests {
             let _ = std::fs::remove_file(&state_path);
         }
 
-        let mut state = Some(make_state("dummy-hash", 0));
-        let mut written_chunks = 0usize;
+        let mut state = make_state("dummy-hash", 0);
 
         let mut server = mockito::Server::new_async().await;
 
@@ -1284,22 +1256,13 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
-        let res = write_chunks(
-            &ctx,
-            &bytes,
-            &buffer,
-            &kora_pubkey,
-            &mut state,
-            &mut written_chunks,
-            WRITE_CHUNK_SIZE,
-            4,
-        )
-        .await;
+        let res =
+            write_chunks(&ctx, &bytes, &buffer, &kora_pubkey, &mut state, WRITE_CHUNK_SIZE, 4)
+                .await;
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("failed to write chunk"));
 
-        assert_eq!(written_chunks, 3);
-        assert_eq!(state.as_ref().unwrap().written_chunks, 3);
+        assert_eq!(state.written_chunks, 3);
 
         assert!(!state_path.exists());
 
