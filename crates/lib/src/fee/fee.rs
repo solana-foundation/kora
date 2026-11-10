@@ -234,6 +234,13 @@ impl FeeConfigUtil {
             transfer_hook_validation_flow,
         )
         .await?;
+        TokenUtil::validate_fee_payer_token2022_transfer_mints(
+            config,
+            transaction,
+            rpc_client,
+            fee_payer,
+        )
+        .await?;
 
         match &config.validation.price.model {
             PriceModel::Free => Ok(TotalFeeCalculation::new_fixed(0)),

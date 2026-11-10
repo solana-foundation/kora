@@ -774,6 +774,87 @@ mod tests_token {
         assert!(result.is_ok());
     }
 
+    async fn validate_fee_payer_transfer_against_blocked_transfer_fee_mint(
+        blocked_mint_extensions: Vec<String>,
+        fee_payer_is_owner: bool,
+        with_fee: bool,
+    ) -> Result<(), KoraError> {
+        let _lock = ConfigMockBuilder::new()
+            .with_cache_enabled(false)
+            .with_blocked_token2022_mint_extensions(blocked_mint_extensions)
+            .build_and_setup();
+
+        let fee_payer = Pubkey::new_unique();
+        let owner = if fee_payer_is_owner { fee_payer } else { Pubkey::new_unique() };
+        let mint = Pubkey::new_unique();
+        let program_id = spl_token_2022_interface::id();
+        let (source, destination) = (Pubkey::new_unique(), Pubkey::new_unique());
+        let instruction = if with_fee {
+            spl_token_2022_interface::extension::transfer_fee::instruction::transfer_checked_with_fee(
+                &program_id, &source, &mint, &destination, &owner, &[], 1_000, 6, 0,
+            )
+        } else {
+            spl_token_2022_interface::instruction::transfer_checked(
+                &program_id, &source, &mint, &destination, &owner, &[], 1_000, 6,
+            )
+        }
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction_resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(ExtensionType::TransferFeeConfig)
+            .build_token2022();
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![&mint_account]);
+
+        let config = get_config().unwrap();
+        TokenUtil::validate_fee_payer_token2022_transfer_mints(
+            &config,
+            &mut transaction_resolved,
+            &rpc_client,
+            &fee_payer,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_fee_payer_token2022_transfer_rejects_blocked_mint_extension() {
+        for with_fee in [false, true] {
+            let result = validate_fee_payer_transfer_against_blocked_transfer_fee_mint(
+                vec!["transfer_fee_config".to_string()],
+                true,
+                with_fee,
+            )
+            .await;
+            assert!(
+                matches!(result, Err(KoraError::ValidationError(ref msg)) if msg.contains("Blocked mint extension")),
+                "with_fee={with_fee}: expected blocked mint rejection, got {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fee_payer_token2022_transfer_allows_unblocked_or_foreign_owner() {
+        for with_fee in [false, true] {
+            assert!(validate_fee_payer_transfer_against_blocked_transfer_fee_mint(
+                vec![],
+                true,
+                with_fee
+            )
+            .await
+            .is_ok());
+            assert!(validate_fee_payer_transfer_against_blocked_transfer_fee_mint(
+                vec!["transfer_fee_config".to_string()],
+                false,
+                with_fee
+            )
+            .await
+            .is_ok());
+        }
+    }
+
     #[tokio::test]
     async fn test_validate_token2022_partial_for_ata_creation_allows_mutable_transfer_hook_authority(
     ) {

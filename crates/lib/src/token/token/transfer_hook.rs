@@ -49,6 +49,89 @@ impl TokenUtil {
         Ok(())
     }
 
+    async fn resolve_token2022_transfer_mint(
+        config: &Config,
+        rpc_client: &RpcClient,
+        source_address: &Pubkey,
+        mint: Option<Pubkey>,
+    ) -> Result<Pubkey, KoraError> {
+        if let Some(mint) = mint {
+            return Ok(mint);
+        }
+        let source_account =
+            CacheUtil::get_account(config, rpc_client, source_address, true).await?;
+        let source_state = Token2022Program::new().unpack_token_account(&source_account.data)?;
+        Ok(source_state.mint())
+    }
+
+    /// Reject Token2022 transfers authorized by the fee payer whose mint carries a blocked
+    /// mint extension.
+    pub async fn validate_fee_payer_token2022_transfer_mints(
+        config: &Config,
+        transaction_resolved: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+        fee_payer: &Pubkey,
+    ) -> Result<(), KoraError> {
+        let token2022_config = &config.validation.token_2022;
+        if token2022_config.blocked_mint_extensions.is_empty() {
+            return Ok(());
+        }
+
+        let token_program = Token2022Program::new();
+        let mut validated_mints = HashSet::new();
+
+        let token_transfers = transaction_resolved
+            .get_or_parse_spl_instructions()?
+            .get(&ParsedSPLInstructionType::SplTokenTransfer)
+            .cloned()
+            .unwrap_or_default();
+
+        for transfer in token_transfers {
+            let ParsedSPLInstructionData::SplTokenTransfer {
+                owner,
+                multisig_signers,
+                source_address,
+                mint,
+                is_2022,
+                ..
+            } = transfer
+            else {
+                continue;
+            };
+
+            if !is_2022 || (owner != *fee_payer && !multisig_signers.contains(fee_payer)) {
+                continue;
+            }
+
+            let transfer_mint =
+                Self::resolve_token2022_transfer_mint(config, rpc_client, &source_address, mint)
+                    .await?;
+            if !validated_mints.insert(transfer_mint) {
+                continue;
+            }
+
+            let mint_account =
+                CacheUtil::get_account(config, rpc_client, &transfer_mint, true).await?;
+            let mint_state = token_program.unpack_mint(&transfer_mint, &mint_account.data)?;
+            let mint_with_extensions =
+                mint_state.as_any().downcast_ref::<Token2022Mint>().ok_or_else(|| {
+                    KoraError::SerializationError("Failed to downcast mint state.".to_string())
+                })?;
+
+            if mint_with_extensions
+                .get_extension_types()
+                .iter()
+                .any(|extension_type| token2022_config.is_mint_extension_blocked(*extension_type))
+            {
+                return Err(KoraError::ValidationError(format!(
+                    "Blocked mint extension found on mint account {transfer_mint}",
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Validate that every Token2022 transfer in the transaction uses a mint with immutable
     /// transfer-hook authority (or no transfer-hook extension). Mints in `allowed_tokens` are
     /// exempt when `transfer_hook_policy` permits mutable authorities on this flow; every other
@@ -86,15 +169,9 @@ impl TokenUtil {
                 continue;
             }
 
-            let transfer_mint = if let Some(mint) = mint {
-                mint
-            } else {
-                // Legacy Transfer (without explicit mint) still needs mint-level transfer-hook checks.
-                let source_account =
-                    CacheUtil::get_account(config, rpc_client, &source_address, true).await?;
-                let source_state = token_program.unpack_token_account(&source_account.data)?;
-                source_state.mint()
-            };
+            let transfer_mint =
+                Self::resolve_token2022_transfer_mint(config, rpc_client, &source_address, mint)
+                    .await?;
 
             if exempt_mints.contains(&transfer_mint) || !validated_mints.insert(transfer_mint) {
                 continue;
