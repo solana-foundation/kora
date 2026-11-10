@@ -15,6 +15,7 @@ Audit scope is commit-based. Commits after the audited-through SHA are considere
 
 - `main` is the integration branch and may contain audited and unaudited commits.
 - Stable production releases are immutable tags/releases (for example `v2.3.0`).
+- A release tag may include commits after the audited-through SHA. Compare the tag against that SHA to see its unaudited delta.
 - Audited baselines are tracked by commit SHA plus immutable tags/releases, not by long-lived release branches.
 
 ## Verification Commands

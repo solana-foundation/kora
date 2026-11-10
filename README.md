@@ -18,7 +18,7 @@
   <br />
 </div>
 
-> **Branch Model (Mar 18, 2026):** `main` is the integration branch and may contain audited and unaudited commits. Audit status is tracked per commit/tag in [`audits/AUDIT_STATUS.md`](audits/AUDIT_STATUS.md). Stable production releases are published from tagged audited snapshots.
+> **Branch Model (Mar 18, 2026):** `main` is the integration branch and may contain audited and unaudited commits. Audit status is tracked per commit/tag in [`audits/AUDIT_STATUS.md`](audits/AUDIT_STATUS.md). Releases are published as immutable tags and may include commits after the audited-through commit; check [`audits/AUDIT_STATUS.md`](audits/AUDIT_STATUS.md) for the unaudited delta of a given tag.
 
 **Kora is your Solana signing infrastructure.** Enable gasless transactions where users pay fees in any token—USDC, BONK, or your app's native token—or handle any transaction signing that requires a trusted signer.
 
