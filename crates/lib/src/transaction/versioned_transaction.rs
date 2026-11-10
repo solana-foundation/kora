@@ -9,10 +9,7 @@ use solana_keychain::{Signer, SolanaSigner};
 use solana_message::{
     compiled_instruction::CompiledInstruction, v0::MessageAddressTableLookup, VersionedMessage,
 };
-use solana_sdk::{
-    instruction::Instruction, pubkey::Pubkey, signature::Signature,
-    transaction::VersionedTransaction,
-};
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
 use std::{
     collections::{HashMap, HashSet},
     ops::Deref,
@@ -187,6 +184,20 @@ pub trait VersionedTransactionOps {
 }
 
 impl VersionedTransactionResolved {
+    fn require_verified_signatures_except(&self, fee_payer: &Pubkey) -> Result<(), KoraError> {
+        let verified_signers = self.verified_signers();
+        if self
+            .signer_pubkeys()
+            .iter()
+            .any(|key| key != fee_payer && !verified_signers.contains(key))
+        {
+            return Err(KoraError::InvalidTransaction(
+                "Transaction is missing or has invalid required signatures".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     pub async fn from_transaction(
         transaction: &VersionedTransaction,
         config: &Config,
@@ -469,6 +480,10 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
         validator.validate_transaction(config, self, rpc_client).await?;
 
+        if will_send {
+            self.require_verified_signatures_except(&fee_payer)?;
+        }
+
         let plugin_context = if will_send {
             PluginExecutionContext::SignAndSendTransaction
         } else {
@@ -592,23 +607,8 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         // Validation already simulated the transaction, so the fast modes skip
         // preflight: a second simulation only delays landing and can fail
         // transiently even though the transaction is valid.
-        //
-        // That simulation ran before Kora signed and used the caller's sig_verify
-        // (default false), so it does not cover signature validity — only the
-        // explicit guard below does.
         let skip_preflight_config =
             RpcSendTransactionConfig { skip_preflight: true, ..Default::default() };
-
-        // Skipping preflight also skips the RPC node's signature verification, so a
-        // transaction with an unfilled co-signer slot (possible when validation ran
-        // with sig_verify off) would be accepted by the RPC but dropped silently by
-        // validators. Reject it here so the caller gets an error instead of a
-        // signature for a transaction that can never land.
-        if transaction.signatures.iter().any(|s| *s == Signature::default()) {
-            return Err(KoraError::InvalidTransaction(
-                "Transaction is missing required signatures".to_string(),
-            ));
-        }
 
         match respond_after {
             RespondAfter::Confirmed => {
@@ -945,6 +945,42 @@ mod tests {
             transaction.signer_pubkeys(),
             &[keypair1.pubkey(), keypair2.pubkey(), keypair3.pubkey()]
         );
+    }
+
+    #[test]
+    fn test_require_verified_signatures_rejects_forged_or_missing_co_signer() {
+        let fee_payer = Keypair::new();
+        let co_signer = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new_readonly(co_signer.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer.pubkey())));
+        let resolve = |co_signature: solana_sdk::signature::Signature| {
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction(message.clone());
+            transaction.signatures[1] = co_signature;
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap()
+        };
+
+        let unsigned = TransactionUtil::new_unsigned_versioned_transaction(message.clone());
+        let valid = resolve(co_signer.sign_message(&unsigned.message.serialize()));
+        assert!(valid.require_verified_signatures_except(&fee_payer.pubkey()).is_ok());
+
+        for co_signature in [
+            solana_sdk::signature::Signature::from([0xA5; 64]),
+            solana_sdk::signature::Signature::default(),
+        ] {
+            let err = resolve(co_signature)
+                .require_verified_signatures_except(&fee_payer.pubkey())
+                .expect_err("unverifiable co-signer slot must be rejected");
+            assert!(
+                err.to_string().contains("missing or has invalid required signatures"),
+                "unexpected error: {err}"
+            );
+        }
     }
 
     #[test]

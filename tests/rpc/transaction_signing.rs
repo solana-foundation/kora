@@ -390,7 +390,7 @@ async fn test_sign_and_send_transaction_respond_after_sent_rejects_missing_signa
 
     let error = result.expect_err("Expected rejection for transaction with missing signature");
     assert!(
-        error.to_string().contains("missing required signatures"),
+        error.to_string().contains("missing or has invalid required signatures"),
         "Expected missing-signatures error, got: {error}"
     );
 }
