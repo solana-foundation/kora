@@ -217,6 +217,7 @@ impl TokenUtil {
             if let ParsedSPLInstructionData::SplTokenTransfer {
                 amount,
                 owner,
+                multisig_signers,
                 mint,
                 source_address,
                 ..
@@ -224,6 +225,7 @@ impl TokenUtil {
             | ParsedSPLInstructionData::SplTokenBurn {
                 amount,
                 owner,
+                multisig_signers,
                 mint,
                 source_address,
                 ..
@@ -231,13 +233,13 @@ impl TokenUtil {
             | ParsedSPLInstructionData::SplTokenApprove {
                 amount,
                 owner,
+                multisig_signers,
                 mint,
                 source_address,
                 ..
             } = transfer
             {
-                // Only count outflows (fee payer as source)
-                if *owner == *fee_payer {
+                if *owner == *fee_payer || multisig_signers.contains(fee_payer) {
                     let mint_pubkey = if let Some(m) = mint {
                         *m
                     } else {

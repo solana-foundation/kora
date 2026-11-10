@@ -172,11 +172,11 @@ impl FeeConfigUtil {
         rpc_client: &RpcClient,
         fee_payer: &Pubkey,
         closed_account: &Pubkey,
-        authority: &Pubkey,
+        fee_payer_is_authority: bool,
         recipient: &Pubkey,
         source: &str,
     ) -> Result<(), KoraError> {
-        let is_fee_payer_source = authority == fee_payer || closed_account == fee_payer;
+        let is_fee_payer_source = fee_payer_is_authority || closed_account == fee_payer;
         let is_fee_payer_recipient = recipient == fee_payer;
         if is_fee_payer_source == is_fee_payer_recipient {
             return Ok(());
@@ -320,7 +320,7 @@ impl FeeConfigUtil {
                     rpc_client,
                     fee_payer_pubkey,
                     lookup_table_account,
-                    lookup_table_authority,
+                    lookup_table_authority == fee_payer_pubkey,
                     recipient,
                     "AltCloseLookupTable",
                 )
@@ -398,13 +398,16 @@ impl FeeConfigUtil {
             if let ParsedSPLInstructionData::SplTokenSetAuthority {
                 account,
                 authority,
+                multisig_signers,
                 new_authority,
                 is_token_account_control: true,
                 is_2022,
                 ..
             } = instruction
             {
-                if authority != fee_payer_pubkey || *new_authority == Some(*fee_payer_pubkey) {
+                let fee_payer_signs =
+                    authority == fee_payer_pubkey || multisig_signers.contains(fee_payer_pubkey);
+                if !fee_payer_signs || *new_authority == Some(*fee_payer_pubkey) {
                     continue;
                 }
                 let token_account = rpc_client.get_account(account).await?;
@@ -451,6 +454,7 @@ impl FeeConfigUtil {
         for instruction in close_accounts {
             if let ParsedSPLInstructionData::SplTokenCloseAccount {
                 owner,
+                multisig_signers,
                 account,
                 destination,
                 ..
@@ -461,7 +465,7 @@ impl FeeConfigUtil {
                     rpc_client,
                     fee_payer_pubkey,
                     account,
-                    owner,
+                    owner == fee_payer_pubkey || multisig_signers.contains(fee_payer_pubkey),
                     destination,
                     "SplTokenCloseAccount",
                 )

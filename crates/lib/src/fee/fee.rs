@@ -1742,6 +1742,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_counts_multisig_close_to_third_party() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let multisig = Pubkey::new_unique();
+        let rent_account = AccountMockBuilder::new().with_lamports(2_157_600).build();
+        let config = get_config().unwrap();
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &multisig,
+            &[&fee_payer],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outflow, 2_157_600);
+    }
+
+    #[tokio::test]
     async fn test_calculate_fee_payer_outflow_close_account() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let fee_payer = Pubkey::new_unique();

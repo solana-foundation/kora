@@ -542,6 +542,36 @@ mod tests_token {
     }
 
     #[tokio::test]
+    async fn test_calculate_spl_transfers_value_in_lamports_counts_fee_payer_as_multisig_signer() {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let config = get_config().unwrap();
+
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let spl_transfers = vec![ParsedSPLInstructionData::SplTokenTransfer {
+            amount: 100_000_000,
+            owner: Pubkey::new_unique(),
+            multisig_signers: vec![fee_payer],
+            mint: Some(mint),
+            source_address: Pubkey::new_unique(),
+            destination_address: Pubkey::new_unique(),
+            is_2022: false,
+        }];
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+
+        let spl_outflow_value = TokenUtil::calculate_spl_transfers_value_in_lamports(
+            &spl_transfers,
+            &fee_payer,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(spl_outflow_value, 750_000_000);
+    }
+
+    #[tokio::test]
     async fn test_calculate_spl_transfers_value_in_lamports_token2022_outflow_remains_gross() {
         let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let config = get_config().unwrap();
