@@ -1,7 +1,6 @@
 use crate::{
     rpc_server::middleware_utils::default_sig_verify,
     transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
-    usage_limit::UsageTracker,
     KoraError,
 };
 use serde::{Deserialize, Serialize};
@@ -60,7 +59,6 @@ pub async fn sign_transaction(
     let config = &get_config()?;
 
     let signer = select_request_signer_with_signer_key(request.signer_key.as_deref())?;
-    let fee_payer = signer.pubkey();
 
     let sig_verify = request.sig_verify || config.kora.force_sig_verify;
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
@@ -72,17 +70,9 @@ pub async fn sign_transaction(
     )
     .await?;
 
-    UsageTracker::check_transaction_usage_limit(
-        config,
-        &mut resolved_transaction,
-        request.user_id.as_deref(),
-        &fee_payer,
-        rpc_client,
-    )
-    .await?;
-
-    let (signed_transaction, _, lighthouse_assertion_added) =
-        resolved_transaction.sign_transaction(config, &signer, rpc_client, false).await?;
+    let (signed_transaction, _, lighthouse_assertion_added) = resolved_transaction
+        .sign_transaction(config, &signer, rpc_client, false, request.user_id.as_deref())
+        .await?;
 
     let encoded = TransactionUtil::encode_versioned_transaction(&signed_transaction)?;
 

@@ -1,5 +1,5 @@
 use crate::{
-    bundle::{BundleError, BundleProcessingMode, BundleProcessor, JitoError},
+    bundle::{BundleError, BundleProcessor, JitoError},
     config::Config,
     plugin::PluginExecutionContext,
     rpc_server::middleware_utils::default_sig_verify,
@@ -82,7 +82,7 @@ pub(super) async fn sign_bundle_transactions(
     let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
     let sig_verify = sig_verify || config.kora.force_sig_verify;
-    let processor = BundleProcessor::process_bundle(
+    let mut processor = BundleProcessor::process_bundle(
         &transactions_to_process,
         fee_payer,
         &payment_destination,
@@ -90,7 +90,6 @@ pub(super) async fn sign_bundle_transactions(
         rpc_client,
         sig_verify,
         Some(plugin_context),
-        BundleProcessingMode::CheckUsage(user_id.as_deref()),
     )
     .await?;
 
@@ -113,6 +112,8 @@ pub(super) async fn sign_bundle_transactions(
         )
         .await?;
     }
+
+    processor.check_usage_limit(config, user_id.as_deref(), &fee_payer, rpc_client).await?;
 
     let will_send = matches!(plugin_context, PluginExecutionContext::SignAndSendBundle);
     let signed_resolved =
@@ -651,7 +652,6 @@ mod tests {
             &rpc_client,
             false,
             None,
-            BundleProcessingMode::SkipUsage,
         )
         .await
         .unwrap()

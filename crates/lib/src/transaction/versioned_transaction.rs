@@ -37,6 +37,7 @@ use crate::{
         ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
         Token2022SecurityInstruction, Token2022SecurityParser, TransactionUtil,
     },
+    usage_limit::UsageTracker,
     validator::transaction_validator::TransactionValidator,
     CacheUtil,
 };
@@ -173,6 +174,7 @@ pub trait VersionedTransactionOps {
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
         will_send: bool,
+        user_id: Option<&str>,
     ) -> Result<(VersionedTransaction, String, bool), KoraError>;
     async fn sign_and_send_transaction(
         &mut self,
@@ -180,6 +182,7 @@ pub trait VersionedTransactionOps {
         signer: &std::sync::Arc<Signer>,
         rpc_client: &std::sync::Arc<RpcClient>,
         respond_after: RespondAfter,
+        user_id: Option<&str>,
     ) -> Result<(String, String), KoraError>;
 }
 
@@ -459,6 +462,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         selected_signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
         will_send: bool,
+        user_id: Option<&str>,
     ) -> Result<(VersionedTransaction, String, bool), KoraError> {
         let fee_payer = selected_signer.pubkey();
         let validator = TransactionValidator::new(config, fee_payer)?;
@@ -535,6 +539,9 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             .ok_or_else(|| KoraError::ValidationError("Estimated fee overflow".to_string()))?;
         validator.validate_lamport_fee(estimated_fee)?;
 
+        UsageTracker::check_transaction_usage_limit(config, self, user_id, &fee_payer, rpc_client)
+            .await?;
+
         let lighthouse_assertion_added = LighthouseUtil::add_fee_payer_assertion(
             &mut transaction,
             rpc_client,
@@ -569,10 +576,11 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         signer: &std::sync::Arc<Signer>,
         rpc_client: &std::sync::Arc<RpcClient>,
         respond_after: RespondAfter,
+        user_id: Option<&str>,
     ) -> Result<(String, String), KoraError> {
         // Payment validation is handled in sign_transaction
         let (transaction, encoded, _lighthouse_assertion_added) =
-            self.sign_transaction(config, signer, rpc_client, true).await?;
+            self.sign_transaction(config, signer, rpc_client, true, user_id).await?;
 
         // Validation already simulated the transaction, so the fast modes skip
         // preflight: a second simulation only delays landing and can fail

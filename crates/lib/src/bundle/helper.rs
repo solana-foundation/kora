@@ -30,11 +30,6 @@ pub struct BundleProcessor {
     pub cumulative_solana_fees: Vec<u64>,
 }
 
-pub enum BundleProcessingMode<'a> {
-    CheckUsage(Option<&'a str>),
-    SkipUsage,
-}
-
 fn transfer_hook_validation_flow_for_bundle(
     plugin_context: Option<PluginExecutionContext>,
 ) -> TransferHookValidationFlow {
@@ -94,7 +89,7 @@ impl BundleProcessor {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn process_bundle<'a>(
+    pub async fn process_bundle(
         encoded_txs: &[String],
         fee_payer: Pubkey,
         payment_destination: &Pubkey,
@@ -102,7 +97,6 @@ impl BundleProcessor {
         rpc_client: &Arc<RpcClient>,
         sig_verify: bool,
         plugin_context: Option<PluginExecutionContext>,
-        processing_mode: BundleProcessingMode<'a>,
     ) -> Result<Self, KoraError> {
         let validator = TransactionValidator::new(config, fee_payer)?;
         let plugin_runner = TransactionPluginRunner::from_config(config);
@@ -128,17 +122,6 @@ impl BundleProcessor {
                 Some(&mut alt_cache),
             )
             .await?;
-
-            if let BundleProcessingMode::CheckUsage(user_id) = processing_mode {
-                UsageTracker::check_transaction_usage_limit(
-                    config,
-                    &mut resolved_tx,
-                    user_id,
-                    &fee_payer,
-                    rpc_client,
-                )
-                .await?;
-            }
 
             validator.validate_transaction(config, &mut resolved_tx, rpc_client).await?;
             let outflow =
@@ -257,6 +240,27 @@ impl BundleProcessor {
             total_payment_lamports,
             cumulative_solana_fees,
         })
+    }
+
+    pub async fn check_usage_limit(
+        &mut self,
+        config: &Config,
+        user_id: Option<&str>,
+        fee_payer: &Pubkey,
+        rpc_client: &RpcClient,
+    ) -> Result<(), KoraError> {
+        self.validate_payment()?;
+        for resolved_tx in self.resolved_transactions.iter_mut() {
+            UsageTracker::check_transaction_usage_limit(
+                config,
+                resolved_tx,
+                user_id,
+                fee_payer,
+                rpc_client,
+            )
+            .await?;
+        }
+        Ok(())
     }
 
     fn validate_payment(&self) -> Result<(), KoraError> {

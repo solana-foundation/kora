@@ -3,7 +3,6 @@ use crate::{
     transaction::{
         RespondAfter, TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved,
     },
-    usage_limit::UsageTracker,
     KoraError,
 };
 use serde::{Deserialize, Serialize};
@@ -57,7 +56,6 @@ pub async fn sign_and_send_transaction(
     let config = &get_config()?;
 
     let signer = select_request_signer_with_signer_key(request.signer_key.as_deref())?;
-    let fee_payer = signer.pubkey();
 
     let sig_verify = request.sig_verify || config.kora.force_sig_verify;
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
@@ -69,17 +67,14 @@ pub async fn sign_and_send_transaction(
     )
     .await?;
 
-    UsageTracker::check_transaction_usage_limit(
-        config,
-        &mut resolved_transaction,
-        request.user_id.as_deref(),
-        &fee_payer,
-        rpc_client,
-    )
-    .await?;
-
     let (signature, signed_transaction) = resolved_transaction
-        .sign_and_send_transaction(config, &signer, rpc_client, request.respond_after)
+        .sign_and_send_transaction(
+            config,
+            &signer,
+            rpc_client,
+            request.respond_after,
+            request.user_id.as_deref(),
+        )
         .await?;
 
     Ok(SignAndSendTransactionResponse {
