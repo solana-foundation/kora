@@ -341,6 +341,12 @@ impl SerializableMessage for V1FeeMessage<'_> {
     }
 }
 
+struct ComputeBudgetRequest {
+    compute_unit_price: u64,
+    compute_unit_limit: Option<u32>,
+    default_compute_unit_limit: u32,
+}
+
 impl TransactionFeeUtil {
     pub async fn get_estimate_fee(
         rpc_client: &RpcClient,
@@ -376,37 +382,50 @@ impl TransactionFeeUtil {
     /// `account_keys` must be the resolved key list: the runtime resolves program
     /// ids against lookup-table loaded keys too.
     pub fn get_requested_priority_fee(message: &VersionedMessage, account_keys: &[Pubkey]) -> u64 {
-        Self::requested_priority_fee(message, account_keys, 0)
+        if let VersionedMessage::V1(v1_message) = message {
+            return v1_message.config.priority_fee.unwrap_or(0);
+        }
+        Self::compute_budget_request(message, account_keys).map_or(0, |request| {
+            Self::prioritization_fee(
+                request.compute_unit_price,
+                request
+                    .compute_unit_limit
+                    .unwrap_or(request.default_compute_unit_limit)
+                    .min(MAX_COMPUTE_UNIT_LIMIT),
+            )
+        })
     }
 
     /// Priority fee the Lighthouse assertion adds when it is appended after pricing: without a
-    /// SetComputeUnitLimit, one more instruction raises the default compute unit limit.
+    /// SetComputeUnitLimit, the assertion instruction raises the runtime's default limit by up
+    /// to one per-instruction default. The estimated default may already sit at the cap while
+    /// the runtime's lower builtin allocation does not, so the full increase is charged.
     pub fn get_lighthouse_assertion_fee(
         resolved_transaction: &VersionedTransactionResolved,
         appends_assertion: bool,
     ) -> u64 {
-        if !appends_assertion {
+        let message = &resolved_transaction.transaction.message;
+        if !appends_assertion || matches!(message, VersionedMessage::V1(_)) {
             return 0;
         }
-        let message = &resolved_transaction.transaction.message;
-        let account_keys = &resolved_transaction.all_account_keys;
-        Self::requested_priority_fee(message, account_keys, 1)
-            .saturating_sub(Self::requested_priority_fee(message, account_keys, 0))
+        Self::compute_budget_request(message, &resolved_transaction.all_account_keys)
+            .filter(|request| request.compute_unit_limit.is_none())
+            .map_or(0, |request| {
+                Self::prioritization_fee(
+                    request.compute_unit_price,
+                    DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT,
+                )
+            })
     }
 
-    fn requested_priority_fee(
+    fn compute_budget_request(
         message: &VersionedMessage,
         account_keys: &[Pubkey],
-        appended_instructions: u32,
-    ) -> u64 {
-        if let VersionedMessage::V1(v1_message) = message {
-            return v1_message.config.priority_fee.unwrap_or(0);
-        }
-
+    ) -> Option<ComputeBudgetRequest> {
         let compute_budget_program_id = solana_compute_budget_interface::id();
         let mut compute_unit_price: Option<u64> = None;
         let mut compute_unit_limit: Option<u32> = None;
-        let mut non_compute_budget_instructions = appended_instructions;
+        let mut non_compute_budget_instructions: u32 = 0;
         let mut compute_budget_instructions: u32 = 0;
         for instruction in message.instructions() {
             if account_keys.get(instruction.program_id_index as usize)
@@ -427,25 +446,23 @@ impl TransactionFeeUtil {
             }
         }
 
-        let Some(price) = compute_unit_price.filter(|price| *price > 0) else {
-            return 0;
-        };
-
+        let compute_unit_price = compute_unit_price.filter(|price| *price > 0)?;
         let default_compute_unit_limit = non_compute_budget_instructions
             .saturating_mul(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT)
             .saturating_add(
                 compute_budget_instructions
                     .saturating_mul(MAX_BUILTIN_ALLOCATION_COMPUTE_UNIT_LIMIT),
             );
+        Some(ComputeBudgetRequest {
+            compute_unit_price,
+            compute_unit_limit,
+            default_compute_unit_limit,
+        })
+    }
 
-        ComputeBudgetLimits {
-            compute_unit_price: price,
-            compute_unit_limit: compute_unit_limit
-                .unwrap_or(default_compute_unit_limit)
-                .min(MAX_COMPUTE_UNIT_LIMIT),
-            ..Default::default()
-        }
-        .get_prioritization_fee()
+    fn prioritization_fee(compute_unit_price: u64, compute_unit_limit: u32) -> u64 {
+        ComputeBudgetLimits { compute_unit_price, compute_unit_limit, ..Default::default() }
+            .get_prioritization_fee()
     }
 }
 
@@ -2818,6 +2835,16 @@ mod tests {
             "The appended assertion raises the default limit by one instruction"
         );
         assert_eq!(TransactionFeeUtil::get_lighthouse_assertion_fee(&price_only, false), 0);
+
+        let mut capped_instructions =
+            vec![ComputeBudgetInstruction::set_compute_unit_price(25_000)];
+        capped_instructions.extend((0..7).map(|_| transfer(&payer, &recipient, 1_000)));
+        let capped_estimate = resolve(create_legacy_message(&payer, &capped_instructions));
+        assert_eq!(
+            TransactionFeeUtil::get_lighthouse_assertion_fee(&capped_estimate, true),
+            5_000,
+            "Builtins get a lower runtime allocation, so a capped estimate still owes the assertion"
+        );
 
         let explicit_limit = resolve(create_legacy_message(
             &payer,

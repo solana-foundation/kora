@@ -2927,12 +2927,12 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
-        let handoff = |new_owner: &Pubkey| {
+        let set_authority = |new_authority: Option<&Pubkey>, authority_type| {
             let ix = spl_token_interface::instruction::set_authority(
                 &spl_token_interface::id(),
                 &token_account,
-                Some(new_owner),
-                spl_token_interface::instruction::AuthorityType::AccountOwner,
+                new_authority,
+                authority_type,
                 &fee_payer,
                 &[],
             )
@@ -2940,6 +2940,14 @@ mod tests {
             let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
         };
+        let handoff = |new_owner: &Pubkey| {
+            set_authority(
+                Some(new_owner),
+                spl_token_interface::instruction::AuthorityType::AccountOwner,
+            )
+        };
+        let clear_close_authority =
+            || set_authority(None, spl_token_interface::instruction::AuthorityType::CloseAccount);
         let mint = allowed_mint();
         let funded_account = TokenAccountMockBuilder::new()
             .with_mint(&mint)
@@ -2968,6 +2976,42 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
+
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let mut transaction = handoff(&Pubkey::new_unique());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            result.is_ok(),
+            "an account created in the same transaction holds nothing yet: {result:?}"
+        );
+
+        let rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&funded_account]);
+        let mut transaction = clear_close_authority();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            result.is_ok(),
+            "clearing the close authority returns it to the fee payer owner: {result:?}"
+        );
+
+        let foreign_owned_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&Pubkey::new_unique())
+            .with_amount(600_000)
+            .with_lamports(500_000)
+            .build();
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&foreign_owned_account, &mint_account]);
+        let mut transaction = clear_close_authority();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(
+                &result,
+                Err(KoraError::InvalidTransaction(message))
+                    if message.contains("Total transfer amount 1100000 exceeds maximum allowed 1000000")
+            ),
+            "clearing the close authority hands it to a foreign owner: {result:?}"
+        );
     }
 
     #[tokio::test]

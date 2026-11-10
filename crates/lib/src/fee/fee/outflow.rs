@@ -441,8 +441,13 @@ impl FeeConfigUtil {
                 if !fee_payer_signs || *new_authority == Some(*fee_payer_pubkey) {
                     continue;
                 }
-                let token_account = rpc_client.get_account(account).await?;
-                Self::add_outflow(&mut total, token_account.lamports, "SplTokenSetAuthority")?;
+                let token_account = match rpc_client.get_account(account).await {
+                    Ok(token_account) => token_account,
+                    Err(e) => match KoraError::from(e) {
+                        KoraError::AccountNotFound(_) => continue,
+                        e => return Err(e),
+                    },
+                };
                 let state = TokenType::get_token_program_from_owner(&token_account.owner)?
                     .unpack_token_account(&token_account.data)
                     .map_err(|e| {
@@ -450,6 +455,10 @@ impl FeeConfigUtil {
                             "Failed to unpack token account {account}: {e}"
                         ))
                     })?;
+                if new_authority.is_none() && state.owner() == *fee_payer_pubkey {
+                    continue;
+                }
+                Self::add_outflow(&mut total, token_account.lamports, "SplTokenSetAuthority")?;
                 if state.amount() > 0 {
                     spl_token_outflows.push(ParsedSPLInstructionData::SplTokenApprove {
                         amount: state.amount(),
