@@ -103,7 +103,6 @@ pub mod instruction_indexes {
     pub mod system_assign_with_seed {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
         pub const ACCOUNT_INDEX: usize = 0;
-        pub const AUTHORITY_INDEX: usize = 1;
     }
 
     pub mod system_allocate {
@@ -113,7 +112,6 @@ pub mod instruction_indexes {
 
     pub mod system_allocate_with_seed {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
-        pub const ACCOUNT_INDEX: usize = 1;
     }
 
     pub mod system_initialize_nonce_account {

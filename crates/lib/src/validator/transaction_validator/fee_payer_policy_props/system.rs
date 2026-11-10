@@ -23,8 +23,10 @@ enum SystemRole {
     TransferWithSeed,
     Assign,
     AssignWithSeed,
+    AssignWithSeedDecoy,
     Allocate,
     AllocateWithSeed,
+    AllocateWithSeedDecoy,
     CreateAccountPayer,
     CreateAccountWithSeedPayer,
     CreateAccountWithSeedBase,
@@ -42,8 +44,10 @@ impl DrainRole for SystemRole {
         Self::TransferWithSeed,
         Self::Assign,
         Self::AssignWithSeed,
+        Self::AssignWithSeedDecoy,
         Self::Allocate,
         Self::AllocateWithSeed,
+        Self::AllocateWithSeedDecoy,
         Self::CreateAccountPayer,
         Self::CreateAccountWithSeedPayer,
         Self::CreateAccountWithSeedBase,
@@ -62,8 +66,12 @@ impl DrainRole for SystemRole {
     fn flag(self, policy: &mut FeePayerPolicy) -> &mut bool {
         match self {
             Self::Transfer | Self::TransferWithSeed => &mut policy.system.allow_transfer,
-            Self::Assign | Self::AssignWithSeed => &mut policy.system.allow_assign,
-            Self::Allocate | Self::AllocateWithSeed => &mut policy.system.allow_allocate,
+            Self::Assign | Self::AssignWithSeed | Self::AssignWithSeedDecoy => {
+                &mut policy.system.allow_assign
+            }
+            Self::Allocate | Self::AllocateWithSeed | Self::AllocateWithSeedDecoy => {
+                &mut policy.system.allow_allocate
+            }
             Self::CreateAccountPayer
             | Self::CreateAccountWithSeedPayer
             | Self::CreateAccountWithSeedBase
@@ -92,10 +100,18 @@ impl DrainRole for SystemRole {
             Self::AssignWithSeed => {
                 assign_with_seed(&Pubkey::new_unique(), actor, "seed", &SYSTEM_PROGRAM_ID)
             }
+            Self::AssignWithSeedDecoy => with_decoy_at_base_meta(
+                assign_with_seed(&Pubkey::new_unique(), actor, "seed", &SYSTEM_PROGRAM_ID),
+                actor,
+            ),
             Self::Allocate => allocate(actor, 8),
             Self::AllocateWithSeed => {
                 allocate_with_seed(&Pubkey::new_unique(), actor, "seed", 8, &SYSTEM_PROGRAM_ID)
             }
+            Self::AllocateWithSeedDecoy => with_decoy_at_base_meta(
+                allocate_with_seed(&Pubkey::new_unique(), actor, "seed", 8, &SYSTEM_PROGRAM_ID),
+                actor,
+            ),
             Self::CreateAccountPayer => {
                 create_account(actor, &Pubkey::new_unique(), 1_000, 8, &SYSTEM_PROGRAM_ID)
             }
@@ -137,6 +153,12 @@ impl DrainRole for SystemRole {
             }
         }
     }
+}
+
+fn with_decoy_at_base_meta(mut instruction: Instruction, base: &Pubkey) -> Instruction {
+    instruction.accounts[1] = AccountMeta::new_readonly(Pubkey::new_unique(), true);
+    instruction.accounts.push(AccountMeta::new_readonly(*base, true));
+    instruction
 }
 
 fn create_account_allow_prefund(new_account: &Pubkey, funder: &Pubkey) -> Instruction {

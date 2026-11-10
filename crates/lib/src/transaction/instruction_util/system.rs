@@ -54,6 +54,7 @@ pub enum ParsedSystemInstructionData {
     // Includes allocate and allocate with seed
     SystemAllocate {
         account: Pubkey,
+        owner: Option<Pubkey>,
     },
     SystemInitializeNonceAccount {
         nonce_account: Pubkey,
@@ -175,24 +176,27 @@ impl IxUtils {
                     owner,
                 }
             }
-            Ok(SystemInstruction::AssignWithSeed { owner, .. }) => {
+            Ok(SystemInstruction::AssignWithSeed { base, owner, .. }) => {
                 use instruction_indexes::system_assign_with_seed as ix;
                 validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 ParsedSystemInstructionData::SystemAssign {
                     account: key(ix::ACCOUNT_INDEX),
-                    authority: key(ix::AUTHORITY_INDEX),
+                    authority: base,
                     owner,
                 }
             }
             Ok(SystemInstruction::Allocate { .. }) => {
                 use instruction_indexes::system_allocate as ix;
                 validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                ParsedSystemInstructionData::SystemAllocate { account: key(ix::ACCOUNT_INDEX) }
+                ParsedSystemInstructionData::SystemAllocate {
+                    account: key(ix::ACCOUNT_INDEX),
+                    owner: None,
+                }
             }
-            Ok(SystemInstruction::AllocateWithSeed { .. }) => {
+            Ok(SystemInstruction::AllocateWithSeed { base, owner, .. }) => {
                 use instruction_indexes::system_allocate_with_seed as ix;
                 validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                ParsedSystemInstructionData::SystemAllocate { account: key(ix::ACCOUNT_INDEX) }
+                ParsedSystemInstructionData::SystemAllocate { account: base, owner: Some(owner) }
             }
             Ok(SystemInstruction::InitializeNonceAccount(nonce_authority)) => {
                 use instruction_indexes::system_initialize_nonce_account as ix;

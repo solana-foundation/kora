@@ -332,7 +332,8 @@ pub struct SystemInstructionPolicy {
     /// CreateAccount/CreateAccountWithSeed/CreateAccountAllowPrefund instructions. The fee payer
     /// can never be the account being created.
     pub allow_create_account: bool,
-    /// Allow fee payer to be the account in System Allocate/AllocateWithSeed instructions
+    /// Allow fee payer to be the account in System Allocate, or the seeded base signer in
+    /// AllocateWithSeed instructions
     pub allow_allocate: bool,
     /// Nested policy for nonce account operations
     pub nonce: NonceInstructionPolicy,

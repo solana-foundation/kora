@@ -1767,6 +1767,46 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_allocate_with_seed_owner_checked_against_program_policy() {
+        use solana_system_interface::instruction::allocate_with_seed;
+        let fee_payer = Pubkey::new_unique();
+        let base = Pubkey::new_unique();
+        let off_policy_owner = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        let validate = |owner: Pubkey| {
+            let derived = Pubkey::create_with_seed(&base, "seed", &owner).unwrap();
+            let instruction = allocate_with_seed(&derived, &base, "seed", 8, &owner);
+            let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        setup_config_with_policy(FeePayerPolicy::default());
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut validate(SYSTEM_PROGRAM_ID), &rpc_client)
+            .await
+            .is_ok());
+        assert!(validator
+            .validate_transaction(config, &mut validate(off_policy_owner), &rpc_client)
+            .await
+            .is_err());
+
+        setup_config_with_policy_and_disallowed(
+            FeePayerPolicy::default(),
+            vec![SYSTEM_PROGRAM_ID.to_string(), off_policy_owner.to_string()],
+            vec![off_policy_owner.to_string()],
+        );
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut validate(off_policy_owner), &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_spl_transfers() {
         let fee_payer = Pubkey::new_unique();
 

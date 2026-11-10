@@ -915,6 +915,62 @@ fn test_parse_system_instructions_create_account_with_seed() {
     }
 }
 
+fn seeded_with_decoy_at_base_meta(
+    mut instruction: Instruction,
+    decoy: &Pubkey,
+    base: &Pubkey,
+) -> Instruction {
+    instruction.accounts[1] = AccountMeta::new_readonly(*decoy, true);
+    instruction.accounts.push(AccountMeta::new_readonly(*base, true));
+    instruction
+}
+
+#[test]
+fn test_parse_system_seeded_assign_and_allocate_take_base_from_instruction_data() {
+    use crate::transaction::TransactionUtil;
+    use solana_message::{Message, VersionedMessage};
+    use solana_system_interface::instruction::{allocate_with_seed, assign_with_seed};
+
+    let base = Pubkey::new_unique();
+    let decoy = Pubkey::new_unique();
+    let owner = Pubkey::new_unique();
+    let derived = Pubkey::create_with_seed(&base, "seed", &owner).unwrap();
+
+    let instructions = [
+        seeded_with_decoy_at_base_meta(
+            assign_with_seed(&derived, &base, "seed", &owner),
+            &decoy,
+            &base,
+        ),
+        seeded_with_decoy_at_base_meta(
+            allocate_with_seed(&derived, &base, "seed", 8, &owner),
+            &decoy,
+            &base,
+        ),
+    ];
+    let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&decoy)));
+    let resolved_tx =
+        TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+    let parsed = IxUtils::parse_system_instructions(&resolved_tx).unwrap();
+
+    match parsed.get(&ParsedSystemInstructionType::SystemAssign).unwrap().as_slice() {
+        [ParsedSystemInstructionData::SystemAssign { account, authority, owner: parsed_owner }] => {
+            assert_eq!(*account, derived);
+            assert_eq!(*authority, base);
+            assert_eq!(*parsed_owner, owner);
+        }
+        other => panic!("Expected one SystemAssign, got {other:?}"),
+    }
+    match parsed.get(&ParsedSystemInstructionType::SystemAllocate).unwrap().as_slice() {
+        [ParsedSystemInstructionData::SystemAllocate { account, owner: parsed_owner }] => {
+            assert_eq!(*account, base);
+            assert_eq!(*parsed_owner, Some(owner));
+        }
+        other => panic!("Expected one SystemAllocate, got {other:?}"),
+    }
+}
+
 #[test]
 fn test_create_account_allow_prefund_bincode_tag() {
     // Anchors the hand-coded tag 13: prefund follows UpgradeNonceAccount, so tag 12 here

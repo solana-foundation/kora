@@ -53,10 +53,20 @@ impl TransactionValidator {
         }
 
         deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemAllocate,
-            ParsedSystemInstructionData::SystemAllocate { account } =>
+            ParsedSystemInstructionData::SystemAllocate { account, .. } =>
             *account == self.fee_payer_pubkey,
             unless self.fee_payer_policy.system.allow_allocate,
             "Fee payer cannot be used for 'System Allocate'");
+
+        for instruction in
+            system_instructions.get(&ParsedSystemInstructionType::SystemAllocate).unwrap_or(&vec![])
+        {
+            if let ParsedSystemInstructionData::SystemAllocate { owner: Some(owner), .. } =
+                instruction
+            {
+                self.validate_owner_program("AllocateWithSeed", owner)?;
+            }
+        }
 
         // allow_create_account gates Kora participating as the funder (payer), the seeded base
         // signer, or the account being created (prefund brick). The owner allowlist/blocklist
