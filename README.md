@@ -69,6 +69,8 @@ kora rpc [OPTIONS] # --help for full list of options
 
 **[→ Node Operator Guide](https://launch.solana.com/docs/kora/operators)** - Run a paymaster
 
+**[→ Kora Node Providers](https://solana.com/docs/tools/kora/providers)** - Use a hosted Kora node (for example Openfort or Pimlico) instead of running your own
+
 
 ## TypeScript SDK
 
