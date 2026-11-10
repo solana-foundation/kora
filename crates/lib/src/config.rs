@@ -283,7 +283,7 @@ pub struct ValidationConfig {
     /// for operators who want to keep their mint addresses private.
     #[serde(default)]
     pub cross_cluster_check: bool,
-    #[serde(default = "default_cross_cluster_endpoints")]
+    #[serde(default = "default_cross_cluster_endpoints", skip_serializing)]
     pub cross_cluster_endpoints: Vec<String>,
 }
 

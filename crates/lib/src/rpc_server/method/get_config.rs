@@ -33,9 +33,30 @@ mod tests {
     use super::*;
     use crate::{
         config::ProgramsConfig,
-        tests::{common::setup_or_get_test_signer, config_mock::ConfigMockBuilder},
+        tests::{
+            common::setup_or_get_test_signer,
+            config_mock::{ConfigMockBuilder, ValidationConfigBuilder},
+        },
     };
     use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn test_get_config_omits_cross_cluster_endpoints() {
+        let validation = ValidationConfigBuilder::new()
+            .with_cross_cluster_endpoints(vec![
+                "https://rpc.example.com/v2/PATHSECRET?api-key=QUERYSECRET".to_string(),
+            ])
+            .build();
+        let config = ConfigMockBuilder::new().with_validation(validation).build();
+        state::update_config(config).expect("Failed to update config");
+        let _ = setup_or_get_test_signer();
+
+        let body = serde_json::to_string(&get_config().await.unwrap()).unwrap();
+
+        assert!(!body.contains("cross_cluster_endpoints"));
+        assert!(!body.contains("SECRET"));
+    }
 
     #[tokio::test]
     #[serial]
