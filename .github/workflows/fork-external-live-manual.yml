@@ -8,26 +8,27 @@ on:
         required: true
         type: string
 
-permissions:
-  actions: write
-  contents: read
-  id-token: write
-  issues: write
-  pull-requests: write
+permissions: {}
 
 jobs:
-  external-live:
-    name: Run Fork External Live Tests
+  resolve:
+    name: Resolve Fork PR
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    environment: external-live-tests
+    permissions:
+      pull-requests: read
+    outputs:
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      merge_ref: ${{ steps.pr.outputs.merge_ref }}
     steps:
       - name: Resolve PR context
         id: pr
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
         with:
           script: |
-            const prNumber = Number("${{ inputs.pr_number }}");
+            const prNumber = Number(process.env.PR_NUMBER);
             if (!Number.isInteger(prNumber) || prNumber <= 0) {
               core.setFailed("pr_number must be a positive integer.");
               return;
@@ -44,22 +45,42 @@ jobs:
               return;
             }
 
+            if (!pr.head.repo.fork) {
+              core.setFailed(
+                `PR #${prNumber} is not a fork PR. Use the normal CI workflows for internal branches.`
+              );
+              return;
+            }
+
             core.setOutput("pr_number", String(pr.number));
             core.setOutput("head_sha", pr.head.sha);
-            core.setOutput("is_fork", String(pr.head.repo.fork));
             core.setOutput("merge_ref", `refs/pull/${pr.number}/merge`);
 
-      - name: Ensure PR is from fork
-        if: steps.pr.outputs.is_fork != 'true'
-        run: |
-          echo "PR #${{ steps.pr.outputs.pr_number }} is not a fork PR."
-          echo "Use the normal CI workflows for internal branches."
-          exit 1
-
+  external-live:
+    name: Run Fork External Live Tests
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: external-live-tests
+    permissions:
+      contents: read
+    steps:
       - name: Checkout PR merge ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.pr.outputs.merge_ref }}
+          ref: ${{ needs.resolve.outputs.merge_ref }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Ensure merge ref contains the approved PR head
+        env:
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          merged_head="$(git rev-parse HEAD^2)"
+          if [ "${merged_head}" != "${HEAD_SHA}" ]; then
+            echo "Merge ref head ${merged_head} does not match resolved PR head ${HEAD_SHA}." >&2
+            exit 1
+          fi
 
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
@@ -78,72 +99,72 @@ jobs:
       - name: Build workspace
         run: just build
 
-      - uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
-        with:
-          auth-method: oidc
-          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
-          doppler-project: ${{ vars.DOPPLER_PROJECT || 'kora' }}
-          doppler-config: ${{ vars.DOPPLER_CONFIG_EXTERNAL_LIVE || vars.DOPPLER_CONFIG_CI || 'stg_github' }}
-          inject-env-vars: true
-
-      - name: Ensure Jupiter API key is configured
+      - name: Run external live tests
+        env:
+          JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
         run: |
           if [ -z "${JUPITER_API_KEY}" ]; then
             echo "JUPITER_API_KEY is required for fork external live tests." >&2
             exit 1
           fi
+          cargo test -p tests --test external
 
-      - name: Run external live tests
-        run: cargo test -p tests --test external
-
-      - name: Cleanup test environment
+      - name: Kill a Kora node that outlived its test binary
         if: always()
-        uses: ./.github/actions/cleanup-test-env
+        run: pkill -f "kora" 2>/dev/null || true
 
-
+  record:
+    name: Record Fork Live Approval
+    needs: [resolve, external-live]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      issues: write
+      pull-requests: read
+    steps:
       - name: Verify PR head is unchanged
-        if: success()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         with:
           script: |
-            const prNumber = Number("${{ steps.pr.outputs.pr_number }}");
-            const testedSha = "${{ steps.pr.outputs.head_sha }}";
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: prNumber,
+              pull_number: Number(process.env.PR_NUMBER),
             });
 
-            if (pr.head.sha !== testedSha) {
+            if (pr.head.sha !== process.env.HEAD_SHA) {
               core.setFailed(
-                `PR head changed during manual validation. tested=${testedSha}, current=${pr.head.sha}.`
+                `PR head changed during manual validation. tested=${process.env.HEAD_SHA}, current=${pr.head.sha}.`
               );
-              return;
             }
 
       - name: Record fork live approval marker
-        if: success()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         with:
           script: |
-            const prNumber = Number("${{ steps.pr.outputs.pr_number }}");
-            const headSha = "${{ steps.pr.outputs.head_sha }}";
-            const marker = `fork-external-live-pass:${headSha}`;
+            const marker = `fork-external-live-pass:${process.env.HEAD_SHA}`;
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: prNumber,
+              issue_number: Number(process.env.PR_NUMBER),
               body: `✅ Fork external live tests passed.\n\n${marker}\nrun: ${runUrl}`,
             });
 
       - name: Rerun fork live gate
-        if: success()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         with:
           script: |
-            const headSha = "${{ steps.pr.outputs.head_sha }}";
+            const headSha = process.env.HEAD_SHA;
             const runs = await github.rest.actions.listWorkflowRuns({
               owner: context.repo.owner,
               repo: context.repo.repo,
