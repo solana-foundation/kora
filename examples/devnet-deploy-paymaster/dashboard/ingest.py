@@ -117,7 +117,7 @@ tx_rows, ix_rows = [], []
 for sig in sigs:
     tx = rpc(
         "getTransaction",
-        [sig, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}],
+        [sig, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 1}],
     )
     if tx is None:
         continue
