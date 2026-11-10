@@ -79,8 +79,8 @@ impl ConfigValidator {
             if has_amount_multiplier {
                 warnings.push(format!(
                     "⚠️  SECURITY: Token {} has a ScaledUiAmount or InterestBearingConfig extension. \
-                    Risk: Kora values payments and fee payer outflows from raw token amounts and ignores the UI multiplier, \
-                    so this token can be overvalued or undervalued against its quoted price. \
+                    Risk: Kora applies the UI multiplier when valuing this token, which is only right if the price source \
+                    quotes it per UI token, and the mint authority can move its value by changing the multiplier. \
                     Consider removing this token from allowed_tokens or blocking the extension in [validation.token_2022].",
                     token_str
                 ));

@@ -1,13 +1,22 @@
 use crate::{
-    config::Config, error::KoraError, oracle::TokenPrice, sanitize_error,
-    transaction::ParsedSPLInstructionData, CacheUtil,
+    config::Config,
+    error::KoraError,
+    oracle::TokenPrice,
+    sanitize_error,
+    token::{
+        spl_token_2022::{Token2022Extensions, Token2022Mint},
+        spl_token_2022_util::{MintExtension, ParsedExtension},
+    },
+    transaction::ParsedSPLInstructionData,
+    CacheUtil,
 };
 use rust_decimal::{
     prelude::{FromPrimitive, ToPrimitive},
     Decimal,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
+use solana_sdk::{clock::Clock, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey, sysvar};
+use spl_token_2022_interface::extension::ExtensionType;
 use std::collections::HashMap;
 
 use super::{TokenType, TokenUtil};
@@ -25,7 +34,101 @@ pub(super) fn decimal_scale(decimals: u8) -> Result<Decimal, KoraError> {
         .ok_or_else(|| KoraError::ValidationError("Invalid decimals scale".to_string()))
 }
 
+/// Seconds past the current cluster time a signed transaction may still land in. Bounds how far
+/// an InterestBearing mint's rate can move its UI amount before the payment is processed.
+const LANDING_WINDOW_SECS: i64 = 120;
+
+/// Range of the factor a Token-2022 ScaledUiAmount or InterestBearing mint applies between raw
+/// amounts and the UI amounts oracles quote, across the time the transaction can land in. Value
+/// Kora receives at `lower` and value Kora gives away at `upper`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct UiAmountScale {
+    pub lower: Decimal,
+    pub upper: Decimal,
+}
+
+impl UiAmountScale {
+    pub const UNIT: Self = Self { lower: Decimal::ONE, upper: Decimal::ONE };
+
+    fn from_factors(factors: &[f64]) -> Result<Self, KoraError> {
+        let factors = factors
+            .iter()
+            .map(|factor| {
+                Decimal::from_f64_retain(*factor).filter(|d| d.is_sign_positive() && !d.is_zero())
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| {
+                KoraError::ValidationError("Mint UI amount multiplier is not positive".to_string())
+            })?;
+        let lower = factors.iter().copied().min().unwrap_or(Decimal::ONE);
+        let upper = factors.iter().copied().max().unwrap_or(Decimal::ONE);
+        Ok(Self { lower, upper })
+    }
+
+    pub(super) fn for_mint(mint: &Token2022Mint, unix_timestamp: i64) -> Result<Self, KoraError> {
+        if let Some(ParsedExtension::Mint(MintExtension::ScaledUiAmountConfig(config))) =
+            mint.get_extension(ExtensionType::ScaledUiAmount)
+        {
+            let effective_at: i64 = config.new_multiplier_effective_timestamp.into();
+            let current: f64 = if unix_timestamp >= effective_at {
+                config.new_multiplier.into()
+            } else {
+                config.multiplier.into()
+            };
+            return Self::from_factors(&[current, config.new_multiplier.into()]);
+        }
+
+        if let Some(ParsedExtension::Mint(MintExtension::InterestBearingConfig(config))) =
+            mint.get_extension(ExtensionType::InterestBearingConfig)
+        {
+            let unscaled_ui_amount = decimal_scale(mint.decimals)?
+                .to_f64()
+                .ok_or_else(|| KoraError::ValidationError("Invalid decimals scale".to_string()))?;
+            let probe = 10u64.pow(MAX_SUPPORTED_DECIMALS);
+            let factor_at = |timestamp: i64| -> Result<f64, KoraError> {
+                config
+                    .amount_to_ui_amount(probe, mint.decimals, timestamp)
+                    .and_then(|ui| ui.parse::<f64>().ok())
+                    .map(|ui| ui * unscaled_ui_amount / probe as f64)
+                    .ok_or_else(|| {
+                        KoraError::ValidationError(
+                            "Failed to compute interest-bearing UI amount".to_string(),
+                        )
+                    })
+            };
+            return Self::from_factors(&[
+                factor_at(unix_timestamp)?,
+                factor_at(unix_timestamp.saturating_add(LANDING_WINDOW_SECS))?,
+            ]);
+        }
+
+        Ok(Self::UNIT)
+    }
+}
+
 impl TokenUtil {
+    async fn get_mint_decimals_and_scale(
+        config: &Config,
+        rpc_client: &RpcClient,
+        mint_pubkey: &Pubkey,
+    ) -> Result<(u8, UiAmountScale), KoraError> {
+        let mint = Self::get_mint(config, rpc_client, mint_pubkey).await?;
+        let decimals = mint.decimals();
+        let Some(mint_2022) = mint.as_any().downcast_ref::<Token2022Mint>() else {
+            return Ok((decimals, UiAmountScale::UNIT));
+        };
+        let extension_types = mint_2022.get_extension_types();
+        if !extension_types.contains(&ExtensionType::ScaledUiAmount)
+            && !extension_types.contains(&ExtensionType::InterestBearingConfig)
+        {
+            return Ok((decimals, UiAmountScale::UNIT));
+        }
+
+        let clock_account = rpc_client.get_account(&sysvar::clock::id()).await?;
+        let clock: Clock = bincode::deserialize(&clock_account.data)?;
+        Ok((decimals, UiAmountScale::for_mint(mint_2022, clock.unix_timestamp)?))
+    }
+
     async fn check_price_staleness(
         rpc_client: &RpcClient,
         config: &Config,
@@ -69,7 +172,8 @@ impl TokenUtil {
         config: &Config,
         rpc_client: &RpcClient,
         mints: &[Pubkey],
-    ) -> Result<(HashMap<String, TokenPrice>, HashMap<Pubkey, u8>), KoraError> {
+    ) -> Result<(HashMap<String, TokenPrice>, HashMap<Pubkey, (u8, UiAmountScale)>), KoraError>
+    {
         let mint_addresses: Vec<String> = mints.iter().map(|mint| mint.to_string()).collect();
 
         let prices =
@@ -96,8 +200,8 @@ impl TokenUtil {
 
         let mut mint_decimals = HashMap::new();
         for mint in mints {
-            let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
-            mint_decimals.insert(*mint, decimals);
+            mint_decimals
+                .insert(*mint, Self::get_mint_decimals_and_scale(config, rpc_client, mint).await?);
         }
 
         Ok((prices, mint_decimals))
@@ -108,7 +212,17 @@ impl TokenUtil {
         rpc_client: &RpcClient,
         config: &Config,
     ) -> Result<(TokenPrice, u8), KoraError> {
-        let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
+        let (token_price, decimals, _) =
+            Self::get_token_price_decimals_and_scale(mint, rpc_client, config).await?;
+        Ok((token_price, decimals))
+    }
+
+    async fn get_token_price_decimals_and_scale(
+        mint: &Pubkey,
+        rpc_client: &RpcClient,
+        config: &Config,
+    ) -> Result<(TokenPrice, u8, UiAmountScale), KoraError> {
+        let (decimals, scale) = Self::get_mint_decimals_and_scale(config, rpc_client, mint).await?;
 
         // Get token price in SOL directly (cached when Redis is enabled).
         let token_price =
@@ -123,7 +237,13 @@ impl TokenUtil {
 
         Self::check_price_staleness(rpc_client, config, &token_price, "", None).await?;
 
-        Ok((token_price, decimals))
+        Ok((token_price, decimals, scale))
+    }
+
+    pub(super) fn scaled_price(price: Decimal, factor: Decimal) -> Result<Decimal, KoraError> {
+        price.checked_mul(factor).ok_or_else(|| {
+            KoraError::ValidationError("Scaled token price calculation overflow".to_string())
+        })
     }
 
     pub(super) fn calculate_token_value_in_lamports_from_price(
@@ -162,9 +282,13 @@ impl TokenUtil {
         rpc_client: &RpcClient,
         config: &Config,
     ) -> Result<u64, KoraError> {
-        let (token_price, decimals) =
-            Self::get_token_price_and_decimals(mint, rpc_client, config).await?;
-        Self::calculate_token_value_in_lamports_from_price(amount, token_price.price, decimals)
+        let (token_price, decimals, ui_scale) =
+            Self::get_token_price_decimals_and_scale(mint, rpc_client, config).await?;
+        Self::calculate_token_value_in_lamports_from_price(
+            amount,
+            Self::scaled_price(token_price.price, ui_scale.lower)?,
+            decimals,
+        )
     }
 
     pub async fn calculate_lamports_value_in_token(
@@ -173,8 +297,9 @@ impl TokenUtil {
         rpc_client: &RpcClient,
         config: &Config,
     ) -> Result<u64, KoraError> {
-        let (token_price, decimals) =
-            Self::get_token_price_and_decimals(mint, rpc_client, config).await?;
+        let (token_price, decimals, ui_scale) =
+            Self::get_token_price_decimals_and_scale(mint, rpc_client, config).await?;
+        let price = Self::scaled_price(token_price.price, ui_scale.lower)?;
 
         // Convert lamports to token base units
         let lamports_decimal = Decimal::from_u64(lamports)
@@ -187,13 +312,13 @@ impl TokenUtil {
         // Multiply before divide to preserve precision
         let token_amount = lamports_decimal
             .checked_mul(scale)
-            .and_then(|result| result.checked_div(lamports_per_sol_decimal.checked_mul(token_price.price)?))
+            .and_then(|result| result.checked_div(lamports_per_sol_decimal.checked_mul(price)?))
             .ok_or_else(|| {
-                log::error!("Token value calculation overflow: lamports={}, scale={}, lamports_per_sol_decimal={}, token_price.price={}",
+                log::error!("Token value calculation overflow: lamports={}, scale={}, lamports_per_sol_decimal={}, price={}",
                     lamports,
                     scale,
                     lamports_per_sol_decimal,
-                    token_price.price
+                    price
                 );
                 KoraError::ValidationError("Token value calculation overflow".to_string())
             })?;
@@ -287,14 +412,15 @@ impl TokenUtil {
             let price = prices
                 .get(&mint.to_string())
                 .ok_or_else(|| KoraError::RpcError(format!("No price data for mint {mint}")))?;
-            let decimals = mint_decimals
+            let (decimals, ui_scale) = mint_decimals
                 .get(mint)
                 .ok_or_else(|| KoraError::RpcError(format!("No decimals data for mint {mint}")))?;
+            let outflow_price = Self::scaled_price(price.price, ui_scale.upper)?;
 
             for amount in transfers {
                 let lamports = Self::calculate_token_value_in_lamports_from_price(
                     *amount,
-                    price.price,
+                    outflow_price,
                     *decimals,
                 )?;
 
@@ -306,5 +432,105 @@ impl TokenUtil {
         }
 
         Ok(total_lamports)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spl_token_2022_interface::extension::{
+        interest_bearing_mint::InterestBearingConfig, scaled_ui_amount::ScaledUiAmountConfig,
+    };
+
+    fn mint_with(extension_type: ExtensionType, extension: MintExtension) -> Token2022Mint {
+        Token2022Mint {
+            mint: Pubkey::new_unique(),
+            mint_authority: None,
+            supply: 0,
+            decimals: 6,
+            is_initialized: true,
+            freeze_authority: None,
+            extensions_types: vec![extension_type],
+            extensions: HashMap::from([(extension_type as u16, ParsedExtension::Mint(extension))]),
+        }
+    }
+
+    fn scaled_ui_mint(multiplier: f64, effective_at: i64, new_multiplier: f64) -> Token2022Mint {
+        mint_with(
+            ExtensionType::ScaledUiAmount,
+            MintExtension::ScaledUiAmountConfig(ScaledUiAmountConfig {
+                multiplier: multiplier.into(),
+                new_multiplier_effective_timestamp: effective_at.into(),
+                new_multiplier: new_multiplier.into(),
+                ..Default::default()
+            }),
+        )
+    }
+
+    #[test]
+    fn test_ui_amount_scale_spans_current_and_pending_multiplier() {
+        let scale = UiAmountScale::for_mint(&scaled_ui_mint(0.5, 1_000, 2.0), 999).unwrap();
+        assert_eq!(scale.lower, Decimal::from_f64_retain(0.5).unwrap());
+        assert_eq!(scale.upper, Decimal::from_f64_retain(2.0).unwrap());
+    }
+
+    #[test]
+    fn test_ui_amount_scale_uses_new_multiplier_once_effective() {
+        let scale = UiAmountScale::for_mint(&scaled_ui_mint(0.5, 1_000, 2.0), 1_000).unwrap();
+        assert_eq!(scale.lower, Decimal::from_f64_retain(2.0).unwrap());
+        assert_eq!(scale.upper, scale.lower);
+    }
+
+    #[test]
+    fn test_ui_amount_scale_rejects_non_positive_multiplier() {
+        assert!(UiAmountScale::for_mint(&scaled_ui_mint(0.0, 0, 0.0), 1).is_err());
+    }
+
+    #[test]
+    fn test_ui_amount_scale_tracks_interest_accrued_by_landing() {
+        let one_year = 31_556_736;
+        let mint = mint_with(
+            ExtensionType::InterestBearingConfig,
+            MintExtension::InterestBearingConfig(InterestBearingConfig {
+                initialization_timestamp: 0.into(),
+                last_update_timestamp: 0.into(),
+                pre_update_average_rate: 10_000.into(),
+                current_rate: 10_000.into(),
+                ..Default::default()
+            }),
+        );
+
+        let scale = UiAmountScale::for_mint(&mint, one_year).unwrap();
+
+        let e = Decimal::from_f64_retain(std::f64::consts::E).unwrap();
+        assert!((scale.lower - e).abs() < Decimal::new(1, 3), "lower {}", scale.lower);
+        assert!(scale.upper > scale.lower, "interest keeps accruing until the payment lands");
+    }
+
+    #[test]
+    fn test_ui_amount_scale_is_unit_without_scaling_extension() {
+        let mint = mint_with(
+            ExtensionType::MintCloseAuthority,
+            MintExtension::MintCloseAuthority(Default::default()),
+        );
+        assert_eq!(UiAmountScale::for_mint(&mint, 0).unwrap(), UiAmountScale::UNIT);
+    }
+
+    #[test]
+    fn test_scaled_price_halves_value_of_half_multiplier_mint() {
+        let price = Decimal::new(1, 3);
+        let scale = UiAmountScale::for_mint(&scaled_ui_mint(0.5, i64::MAX, 0.5), 0).unwrap();
+
+        let unscaled =
+            TokenUtil::calculate_token_value_in_lamports_from_price(1_000_000, price, 6).unwrap();
+        let scaled = TokenUtil::calculate_token_value_in_lamports_from_price(
+            1_000_000,
+            TokenUtil::scaled_price(price, scale.lower).unwrap(),
+            6,
+        )
+        .unwrap();
+
+        assert_eq!(unscaled, 1_000_000);
+        assert_eq!(scaled, 500_000);
     }
 }

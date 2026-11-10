@@ -454,7 +454,7 @@ impl TokenUtil {
         for transfer in valid_transfers {
             let ValidTransfer { is_inflow, is_outflow, token_mint, inflow_amount, amount } =
                 transfer;
-            let decimals = *mint_decimals.get(&token_mint).ok_or_else(|| {
+            let (decimals, ui_scale) = *mint_decimals.get(&token_mint).ok_or_else(|| {
                 KoraError::RpcError(format!("No decimals data for mint {token_mint}"))
             })?;
             let price = prices.get(&token_mint.to_string()).ok_or_else(|| {
@@ -464,7 +464,7 @@ impl TokenUtil {
             let inflow_lamports = if is_inflow {
                 Self::calculate_token_value_in_lamports_from_price(
                     inflow_amount,
-                    price.price,
+                    Self::scaled_price(price.price, ui_scale.lower)?,
                     decimals,
                 )?
             } else {
@@ -472,7 +472,11 @@ impl TokenUtil {
             };
 
             let outflow_lamports = if is_outflow {
-                Self::calculate_token_value_in_lamports_from_price(amount, price.price, decimals)?
+                Self::calculate_token_value_in_lamports_from_price(
+                    amount,
+                    Self::scaled_price(price.price, ui_scale.upper)?,
+                    decimals,
+                )?
             } else {
                 0
             };
