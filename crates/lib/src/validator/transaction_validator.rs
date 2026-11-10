@@ -6249,6 +6249,38 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_token2022_pause_and_resume_reject_blocked_pausable_extension() {
+        let mint = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let program_id = spl_token_2022_interface::id();
+        for instruction in [
+            spl_token_2022_interface::extension::pausable::instruction::pause(
+                &program_id,
+                &mint,
+                &authority,
+                &[],
+            )
+            .unwrap(),
+            spl_token_2022_interface::extension::pausable::instruction::resume(
+                &program_id,
+                &mint,
+                &authority,
+                &[],
+            )
+            .unwrap(),
+        ] {
+            assert_blocked_token2022_extension_rejected(
+                instruction,
+                vec![],
+                vec!["pausable".to_string()],
+                "Pausable",
+            )
+            .await;
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_token2022_memo_transfer_rejects_blocked_account_extension() {
         let instruction =
             spl_token_2022_interface::extension::memo_transfer::instruction::enable_required_transfer_memos(

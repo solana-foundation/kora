@@ -517,7 +517,7 @@ impl Token2022SecurityParser {
 
     pub(super) fn parse_pausable_extension(
         instruction: &Instruction,
-    ) -> Result<Option<Token2022SecurityInstruction>, KoraError> {
+    ) -> Result<Token2022SecurityInstruction, KoraError> {
         let pausable_instruction =
             Self::decode_extension_type::<PausableInstruction>(instruction, "Pausable")?;
 
@@ -529,7 +529,7 @@ impl Token2022SecurityParser {
                         "Pausable initialize",
                     )?;
 
-                Ok(Some(Token2022SecurityInstruction {
+                Ok(Token2022SecurityInstruction {
                     instruction_name: "Token2022 InitializePausable",
                     authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                     extension_type: Some(ExtensionType::Pausable),
@@ -542,9 +542,24 @@ impl Token2022SecurityParser {
                         pubkey: initialize.authority,
                         role: Token2022FieldRole::PlantedAuthority,
                     }],
-                }))
+                })
             }
-            PausableInstruction::Pause | PausableInstruction::Resume => Ok(None),
+            PausableInstruction::Pause | PausableInstruction::Resume => {
+                Ok(Token2022SecurityInstruction {
+                    instruction_name: if pausable_instruction == PausableInstruction::Pause {
+                        "Token2022 Pause"
+                    } else {
+                        "Token2022 Resume"
+                    },
+                    authority_kind: Token2022AuthorityKind::ExtensionUpdate,
+                    extension_type: Some(ExtensionType::Pausable),
+                    accounts: Self::instruction_accounts(instruction),
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
+                    update_authority: None,
+                    multisig_signers: vec![],
+                    data_pubkeys: vec![],
+                })
+            }
         }
     }
 

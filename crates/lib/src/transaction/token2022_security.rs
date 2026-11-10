@@ -178,9 +178,7 @@ impl Token2022SecurityParser {
                     parsed.push(Self::parse_scaled_ui_amount_extension(instruction)?);
                 }
                 TokenInstruction::PausableExtension => {
-                    if let Some(parsed_instruction) = Self::parse_pausable_extension(instruction)? {
-                        parsed.push(parsed_instruction);
-                    }
+                    parsed.push(Self::parse_pausable_extension(instruction)?);
                 }
                 TokenInstruction::DefaultAccountStateExtension => {
                     parsed.push(Self::unsupported_fee_payer_account_check(
