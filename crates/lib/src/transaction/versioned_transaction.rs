@@ -131,7 +131,7 @@ pub struct VersionedTransactionResolved {
 
     parsed_token2022_security_instructions: OnceLock<Vec<Token2022SecurityInstruction>>,
 
-    fee_payer_outflow: Option<(Pubkey, i128)>,
+    fee_payer_outflow: Option<(Pubkey, (i128, u64))>,
 }
 
 impl Deref for VersionedTransactionResolved {
@@ -256,13 +256,13 @@ impl VersionedTransactionResolved {
         }
     }
 
-    pub(crate) fn cached_fee_payer_outflow(&self, fee_payer: &Pubkey) -> Option<i128> {
+    pub(crate) fn cached_fee_payer_outflow(&self, fee_payer: &Pubkey) -> Option<(i128, u64)> {
         self.fee_payer_outflow
             .filter(|(cached_fee_payer, _)| cached_fee_payer == fee_payer)
             .map(|(_, outflow)| outflow)
     }
 
-    pub(crate) fn cache_fee_payer_outflow(&mut self, fee_payer: Pubkey, outflow: i128) {
+    pub(crate) fn cache_fee_payer_outflow(&mut self, fee_payer: Pubkey, outflow: (i128, u64)) {
         self.fee_payer_outflow = Some((fee_payer, outflow));
     }
 
@@ -542,11 +542,18 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         UsageTracker::check_transaction_usage_limit(config, self, user_id, &fee_payer, rpc_client)
             .await?;
 
+        let permitted_lamport_outflow = if appends_lighthouse_assertion {
+            FeeConfigUtil::calculate_fee_payer_lamport_outflow(&fee_payer, self, rpc_client, config)
+                .await?
+        } else {
+            0
+        };
         let lighthouse_assertion_added = LighthouseUtil::add_fee_payer_assertion(
             &mut transaction,
             rpc_client,
             &fee_payer,
             estimated_fee,
+            permitted_lamport_outflow,
             &config.kora.lighthouse,
             will_send,
         )

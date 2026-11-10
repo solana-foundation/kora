@@ -200,22 +200,51 @@ impl FeeConfigUtil {
         rpc_client: &RpcClient,
         config: &Config,
     ) -> Result<i128, KoraError> {
-        if let Some(outflow) = transaction.cached_fee_payer_outflow(fee_payer_pubkey) {
-            return Ok(outflow);
-        }
-        let outflow =
-            Self::compute_fee_payer_outflow(fee_payer_pubkey, transaction, rpc_client, config)
-                .await?;
-        transaction.cache_fee_payer_outflow(*fee_payer_pubkey, outflow);
-        Ok(outflow)
+        let (lamport_total, spl_value) =
+            Self::fee_payer_flows(fee_payer_pubkey, transaction, rpc_client, config).await?;
+        lamport_total.checked_add(spl_value as i128).ok_or_else(|| {
+            log::error!("Fee payer outflow overflow: sol={}, spl={}", lamport_total, spl_value);
+            KoraError::ValidationError("Fee payer outflow calculation overflow".to_string())
+        })
     }
 
-    async fn compute_fee_payer_outflow(
+    /// Net SOL the transaction may move out of fee-payer-controlled accounts, without the
+    /// lamport value of SPL token movements, which never leave the fee payer's SOL balance.
+    pub async fn calculate_fee_payer_lamport_outflow(
         fee_payer_pubkey: &Pubkey,
         transaction: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         config: &Config,
-    ) -> Result<i128, KoraError> {
+    ) -> Result<u64, KoraError> {
+        let (lamport_total, _) =
+            Self::fee_payer_flows(fee_payer_pubkey, transaction, rpc_client, config).await?;
+        u64::try_from(lamport_total.max(0)).map_err(|_| {
+            KoraError::ValidationError("Fee payer lamport outflow exceeds u64 range".to_string())
+        })
+    }
+
+    async fn fee_payer_flows(
+        fee_payer_pubkey: &Pubkey,
+        transaction: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+        config: &Config,
+    ) -> Result<(i128, u64), KoraError> {
+        if let Some(flows) = transaction.cached_fee_payer_outflow(fee_payer_pubkey) {
+            return Ok(flows);
+        }
+        let flows =
+            Self::compute_fee_payer_flows(fee_payer_pubkey, transaction, rpc_client, config)
+                .await?;
+        transaction.cache_fee_payer_outflow(*fee_payer_pubkey, flows);
+        Ok(flows)
+    }
+
+    async fn compute_fee_payer_flows(
+        fee_payer_pubkey: &Pubkey,
+        transaction: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+        config: &Config,
+    ) -> Result<(i128, u64), KoraError> {
         // Use i128 to correctly handle net outflow when inflows are processed
         // before outflows. With u64, saturating_sub on 0 would silently discard inflows.
         let mut total: i128 = 0;
@@ -434,20 +463,17 @@ impl FeeConfigUtil {
             }
         }
 
-        if !spl_token_outflows.is_empty() {
-            let spl_outflow = TokenUtil::calculate_spl_transfers_value_in_lamports(
+        let spl_value = if !spl_token_outflows.is_empty() {
+            TokenUtil::calculate_spl_transfers_value_in_lamports(
                 &spl_token_outflows,
                 fee_payer_pubkey,
                 rpc_client,
                 config,
             )
-            .await?;
-
-            total = total.checked_add(spl_outflow as i128).ok_or_else(|| {
-                log::error!("Fee payer outflow overflow: sol={}, spl={}", total, spl_outflow);
-                KoraError::ValidationError("Fee payer outflow calculation overflow".to_string())
-            })?;
-        }
+            .await?
+        } else {
+            0
+        };
 
         // A fee-payer-authorized close to a third party moves the closed account's rent out.
         let close_accounts = spl_instructions
@@ -555,7 +581,7 @@ impl FeeConfigUtil {
             }
         }
 
-        Ok(total)
+        Ok((total, spl_value))
     }
 
     fn fee_payer_moves_lamports_out(

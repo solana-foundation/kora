@@ -1685,6 +1685,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_calculate_fee_payer_lamport_outflow_excludes_token_value() {
+        let mint = Pubkey::new_unique();
+        let _m = ConfigMockBuilder::new()
+            .with_cache_enabled(false)
+            .with_allowed_tokens(vec![mint.to_string()])
+            .build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let burn = spl_token_interface::instruction::burn(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &mint,
+            &fee_payer,
+            &[],
+            100_000_000,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(
+            &[transfer(&fee_payer, &Pubkey::new_unique(), 100_000), burn],
+            Some(&fee_payer),
+        ));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+        let config = get_config().unwrap();
+
+        let total = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        let lamports = FeeConfigUtil::calculate_fee_payer_lamport_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(total, 100_100_000);
+        assert_eq!(lamports, 100_000, "Token value never leaves the fee payer's SOL balance");
+    }
+
+    #[tokio::test]
     async fn test_calculate_fee_payer_outflow_withdraw_excess_lamports() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let fee_payer = Pubkey::new_unique();

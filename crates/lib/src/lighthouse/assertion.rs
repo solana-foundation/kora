@@ -40,6 +40,7 @@ impl LighthouseUtil {
         rpc_client: &RpcClient,
         fee_payer: &Pubkey,
         estimated_fee: u64,
+        permitted_lamport_outflow: u64,
         config: &LighthouseConfig,
         will_send: bool,
     ) -> Result<bool, KoraError> {
@@ -53,6 +54,7 @@ impl LighthouseUtil {
             fee_payer,
             current_balance,
             estimated_fee,
+            permitted_lamport_outflow,
             config,
         )
     }
@@ -76,21 +78,32 @@ impl LighthouseUtil {
         fee_payer: &Pubkey,
         current_balance: u64,
         estimated_fee: u64,
+        permitted_lamport_outflow: u64,
         config: &LighthouseConfig,
     ) -> Result<bool, KoraError> {
-        let min_expected = current_balance.saturating_sub(estimated_fee);
+        let min_expected =
+            Self::min_expected_balance(current_balance, estimated_fee, permitted_lamport_outflow);
 
         if min_expected == 0 {
             log::warn!(
-                "Fee payer {} has balance {} which may be insufficient for estimated fee {}",
+                "Fee payer {} has balance {} which may be insufficient for estimated fee {} plus permitted outflow {}",
                 fee_payer,
                 current_balance,
-                estimated_fee
+                estimated_fee,
+                permitted_lamport_outflow
             );
         }
 
         let assertion_ix = Self::build_fee_payer_assertion(fee_payer, min_expected);
         Self::append_lighthouse_assertion(transaction, assertion_ix, config)
+    }
+
+    fn min_expected_balance(
+        current_balance: u64,
+        estimated_fee: u64,
+        permitted_lamport_outflow: u64,
+    ) -> u64 {
+        current_balance.saturating_sub(estimated_fee).saturating_sub(permitted_lamport_outflow)
     }
 
     fn build_assert_account_info_data(min_lamports: u64) -> Vec<u8> {
@@ -340,6 +353,35 @@ mod tests {
                                 // Bytes 3-10: u64 little-endian (1_000_000 = 0x000F4240)
         assert_eq!(u64::from_le_bytes(data[3..11].try_into().unwrap()), 1_000_000);
         assert_eq!(data[11], 4); // IntegerOperator::GreaterThanOrEqual
+    }
+
+    #[test]
+    fn test_fee_payer_assertion_floor_leaves_room_for_permitted_outflow() {
+        let keypair = Keypair::new();
+        let message = VersionedMessage::Legacy(Message::new(
+            &[Instruction::new_with_bytes(
+                Pubkey::new_unique(),
+                &[],
+                vec![AccountMeta::new(keypair.pubkey(), true)],
+            )],
+            Some(&keypair.pubkey()),
+        ));
+        let mut transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+        let config = LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true };
+
+        LighthouseUtil::add_fee_payer_assertion_for_balance(
+            &mut transaction,
+            &keypair.pubkey(),
+            1_000_000,
+            5_000,
+            1,
+            &config,
+        )
+        .unwrap();
+
+        let assertion = transaction.message.instructions().last().unwrap();
+        let floor = u64::from_le_bytes(assertion.data[3..11].try_into().unwrap());
+        assert_eq!(floor, 994_999);
     }
 
     #[test]
