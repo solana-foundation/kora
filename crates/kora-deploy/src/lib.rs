@@ -80,15 +80,35 @@ pub struct DeployResult {
     pub buffer: Pubkey,
 }
 
-struct DeployCtx<'a, 'b> {
-    cfg: &'b DeployConfig<'a>,
-    http: &'b reqwest::Client,
-    rpc: &'b Arc<RpcClient>,
+struct DeployCtx<'a> {
+    http: &'a reqwest::Client,
+    rpc: &'a Arc<RpcClient>,
+    kora_url: &'a str,
+    user_id: &'a str,
+    state_path: &'a Path,
+    cleanup_on_failure: bool,
+}
+
+impl<'a> DeployCtx<'a> {
+    fn from_config(
+        cfg: &'a DeployConfig<'_>,
+        http: &'a reqwest::Client,
+        rpc: &'a Arc<RpcClient>,
+    ) -> Self {
+        Self {
+            http,
+            rpc,
+            kora_url: cfg.kora_url,
+            user_id: &cfg.user_id,
+            state_path: cfg.state_path.as_path(),
+            cleanup_on_failure: cfg.cleanup_on_failure,
+        }
+    }
 }
 
 macro_rules! cleanup_buffer {
     ($force:expr, $msg:expr, $err_log:expr, $ctx:expr, $buffer:expr, $kora_pubkey:expr) => {
-        if $force || $ctx.cfg.cleanup_on_failure {
+        if $force || $ctx.cleanup_on_failure {
             log::warn!("{}, attempting to close buffer for cleanup...", $msg);
             let close_ix = loader_v3::close_any(
                 &$buffer.pubkey(),
@@ -98,8 +118,8 @@ macro_rules! cleanup_buffer {
             );
             match submit_returning_signature(
                 $ctx.http,
-                $ctx.cfg.kora_url,
-                &$ctx.cfg.user_id,
+                $ctx.kora_url,
+                $ctx.user_id,
                 $ctx.rpc,
                 $kora_pubkey,
                 &[close_ix],
@@ -108,7 +128,7 @@ macro_rules! cleanup_buffer {
             .await
             {
                 Ok(_) => {
-                    let state_path = $ctx.cfg.state_path.as_path();
+                    let state_path = $ctx.state_path;
                     if state_path.exists() {
                         if let Err(err) = fs::remove_file(state_path) {
                             log::warn!(
@@ -135,14 +155,14 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
         cfg.rpc_url.to_string(),
         CommitmentConfig::confirmed(),
     ));
-    let ctx = DeployCtx { cfg, http: &http, rpc: &rpc };
+    let ctx = DeployCtx::from_config(cfg, &http, &rpc);
 
     let bytes = fs::read(cfg.program_so)
         .with_context(|| format!("reading {}", cfg.program_so.display()))?;
     let current_program_hash = hash(&bytes).to_string();
 
     let (program, buffer, program_data, kora_pubkey, mut written_chunks, mut state) =
-        load_or_init_state(&ctx, &bytes, &current_program_hash).await?;
+        load_or_init_state(&ctx, &bytes, &current_program_hash, cfg.resume).await?;
     let chunk_size = resume_chunk_size(&state)
         .with_context(|| format!("deploy state at {}", cfg.state_path.display()))?;
     let chunk_count = bytes.len().div_ceil(chunk_size);
@@ -161,7 +181,7 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
     )
     .await?;
 
-    finalize_deploy(&ctx, &bytes, &program, &buffer, &program_data, &kora_pubkey).await?;
+    finalize_deploy(&ctx, &bytes, &program, &buffer, &kora_pubkey, cfg.wallet, cfg.resume).await?;
 
     Ok(DeployResult {
         kora_pubkey,
@@ -174,12 +194,13 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
 /// Loads the existing deployment state if `--resume` is specified, or initializes
 /// a new deployment state and creates the on-chain buffer if starting fresh.
 async fn load_or_init_state(
-    ctx: &DeployCtx<'_, '_>,
+    ctx: &DeployCtx<'_>,
     bytes: &[u8],
     current_program_hash: &str,
+    resume: bool,
 ) -> Result<(Keypair, Keypair, Pubkey, Pubkey, usize, Option<DeployState>)> {
-    let state_path = ctx.cfg.state_path.as_path();
-    let state = if ctx.cfg.resume {
+    let state_path = ctx.state_path;
+    let state = if resume {
         Some(DeployState::load(state_path)?.ok_or_else(|| {
             anyhow::anyhow!(
                 "--resume was requested, but no state file was found at {}. Cannot resume.",
@@ -209,7 +230,7 @@ async fn load_or_init_state(
         log::info!("resuming deployment from state file, skipping {} chunks", st.written_chunks);
         Ok((program, buffer, program_data, kora_pubkey, st.written_chunks, state))
     } else {
-        let kora_pubkey = fetch_kora_pubkey(ctx.http, ctx.cfg.kora_url).await?;
+        let kora_pubkey = fetch_kora_pubkey(ctx.http, ctx.kora_url).await?;
         let program = Keypair::new();
         let buffer = Keypair::new();
 
@@ -226,16 +247,8 @@ async fn load_or_init_state(
             buffer_lamports,
             bytes.len(),
         )?;
-        submit(
-            ctx.http,
-            ctx.cfg.kora_url,
-            &ctx.cfg.user_id,
-            ctx.rpc,
-            &kora_pubkey,
-            &create_buf,
-            &[&buffer],
-        )
-        .await?;
+        submit(ctx.http, ctx.kora_url, ctx.user_id, ctx.rpc, &kora_pubkey, &create_buf, &[&buffer])
+            .await?;
 
         let program_data = derive_program_data_address(&program.pubkey());
         let new_state = DeployState {
@@ -300,7 +313,7 @@ fn check_state_invariants(
 /// Validates that the loaded deployment state matches the current `.so` file.
 /// Aborts the deployment if a hash mismatch is detected or if the state is corrupted.
 async fn validate_state(
-    ctx: &DeployCtx<'_, '_>,
+    ctx: &DeployCtx<'_>,
     buffer: &Keypair,
     kora_pubkey: &Pubkey,
     state: &Option<DeployState>,
@@ -321,7 +334,7 @@ async fn validate_state(
                     buffer,
                     kora_pubkey
                 );
-                if ctx.cfg.cleanup_on_failure {
+                if ctx.cleanup_on_failure {
                     anyhow::bail!("The .so file has changed (hash mismatch). Cannot resume. Buffer cleanup was attempted.");
                 } else {
                     anyhow::bail!("The .so file has changed (hash mismatch). Cannot resume. Buffer cleanup skipped (--no-cleanup-on-failure was set).");
@@ -339,7 +352,7 @@ async fn validate_state(
                     buffer,
                     kora_pubkey
                 );
-                if ctx.cfg.cleanup_on_failure {
+                if ctx.cleanup_on_failure {
                     anyhow::bail!("State file is corrupted or .so file is smaller: written_chunks ({}) > total chunk count ({}). Cannot resume. Buffer cleanup was attempted.", written, total);
                 } else {
                     anyhow::bail!("State file is corrupted or .so file is smaller: written_chunks ({}) > total chunk count ({}). Cannot resume. Buffer cleanup skipped (--no-cleanup-on-failure was set).", written, total);
@@ -355,7 +368,7 @@ async fn validate_state(
 /// after each successful write to allow resuming in case of failure.
 #[allow(clippy::too_many_arguments)]
 async fn write_chunks(
-    ctx: &DeployCtx<'_, '_>,
+    ctx: &DeployCtx<'_>,
     bytes: &[u8],
     buffer: &Keypair,
     kora_pubkey: &Pubkey,
@@ -364,7 +377,7 @@ async fn write_chunks(
     chunk_size: usize,
     chunk_count: usize,
 ) -> Result<()> {
-    let state_path = ctx.cfg.state_path.as_path();
+    let state_path = ctx.state_path;
     let batches = write_instruction_batches(
         &buffer.pubkey(),
         kora_pubkey,
@@ -373,9 +386,7 @@ async fn write_chunks(
         *written_chunks,
     );
     for ixs in batches {
-        match submit(ctx.http, ctx.cfg.kora_url, &ctx.cfg.user_id, ctx.rpc, kora_pubkey, &ixs, &[])
-            .await
-        {
+        match submit(ctx.http, ctx.kora_url, ctx.user_id, ctx.rpc, kora_pubkey, &ixs, &[]).await {
             Ok(_) => {
                 *written_chunks += ixs.len();
                 if let Some(ref mut st) = state {
@@ -420,14 +431,15 @@ async fn write_chunks(
 /// Finalizes the deployment by issuing the deploy transaction to the upgradeable loader,
 /// and safely handles the case where the transaction succeeded but timed out locally.
 async fn finalize_deploy(
-    ctx: &DeployCtx<'_, '_>,
+    ctx: &DeployCtx<'_>,
     bytes: &[u8],
     program: &Keypair,
     buffer: &Keypair,
-    program_data: &Pubkey,
     kora_pubkey: &Pubkey,
+    wallet: Option<&Keypair>,
+    resume: bool,
 ) -> Result<()> {
-    let state_path = ctx.cfg.state_path.as_path();
+    let state_path = ctx.state_path;
     let program_lamports = ctx
         .rpc
         .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_program())
@@ -441,7 +453,7 @@ async fn finalize_deploy(
         bytes.len(),
     )?;
     let mut deploy_signers: Vec<&Keypair> = vec![program];
-    if let Some(wallet) = ctx.cfg.wallet {
+    if let Some(wallet) = wallet {
         deploy_ixs.push(register_ix(
             &DEFAULT_REGISTRY_PROGRAM,
             kora_pubkey,
@@ -454,9 +466,10 @@ async fn finalize_deploy(
     // Check if the program is live (programdata exists) to handle the timeout-but-success scenario.
     // NOTE: the 36-byte program stub survives forever even after reaping; only programdata
     // disappearing means the program is gone, so we must check programdata, not the stub.
-    let is_already_live = if ctx.cfg.resume {
+    let program_data = derive_program_data_address(&program.pubkey());
+    let is_already_live = if resume {
         ctx.rpc
-            .get_account_with_commitment(program_data, CommitmentConfig::confirmed())
+            .get_account_with_commitment(&program_data, CommitmentConfig::confirmed())
             .await?
             .value
             .is_some()
@@ -476,8 +489,8 @@ async fn finalize_deploy(
     } else {
         match submit(
             ctx.http,
-            ctx.cfg.kora_url,
-            &ctx.cfg.user_id,
+            ctx.kora_url,
+            ctx.user_id,
             ctx.rpc,
             kora_pubkey,
             &deploy_ixs,
@@ -1095,9 +1108,9 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
-        let res = load_or_init_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash").await;
+        let res = load_or_init_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", cfg.resume).await;
         assert!(res.is_ok());
         let (_, _, _, _, written_chunks, state_opt) = res.unwrap();
         assert_eq!(written_chunks, 0);
@@ -1149,9 +1162,9 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
-        let res = load_or_init_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash").await;
+        let res = load_or_init_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", cfg.resume).await;
         match res {
             Err(e) => {
                 let err_msg = e.to_string();
@@ -1203,7 +1216,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
         let res = write_chunks(
             &ctx,
@@ -1269,7 +1282,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
         let res = write_chunks(
             &ctx,
@@ -1301,7 +1314,6 @@ mod inline_tests {
     async fn test_finalize_deploy_already_live_skips_deploy_and_removes_state() {
         let program = Keypair::new();
         let buffer = Keypair::new();
-        let program_data = Pubkey::new_unique();
         let kora_pubkey = Pubkey::new_unique();
         let bytes = vec![1u8, 2, 3];
 
@@ -1331,10 +1343,11 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
         let res =
-            finalize_deploy(&ctx, &bytes, &program, &buffer, &program_data, &kora_pubkey).await;
+            finalize_deploy(&ctx, &bytes, &program, &buffer, &kora_pubkey, cfg.wallet, cfg.resume)
+                .await;
         assert!(res.is_ok());
         assert!(!state_path.exists());
 
@@ -1345,7 +1358,6 @@ mod inline_tests {
     async fn test_finalize_deploy_submits_and_removes_state_on_success() {
         let program = Keypair::new();
         let buffer = Keypair::new();
-        let program_data = Pubkey::new_unique();
         let kora_pubkey = Pubkey::new_unique();
         let bytes = vec![1u8, 2, 3];
 
@@ -1376,10 +1388,11 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
         let res =
-            finalize_deploy(&ctx, &bytes, &program, &buffer, &program_data, &kora_pubkey).await;
+            finalize_deploy(&ctx, &bytes, &program, &buffer, &kora_pubkey, cfg.wallet, cfg.resume)
+                .await;
         assert!(res.is_ok());
         assert!(!state_path.exists());
 
@@ -1392,7 +1405,6 @@ mod inline_tests {
     async fn test_finalize_deploy_submit_failure_triggers_cleanup_and_returns_error() {
         let program = Keypair::new();
         let buffer = Keypair::new();
-        let program_data = Pubkey::new_unique();
         let kora_pubkey = Pubkey::new_unique();
         let bytes = vec![1u8, 2, 3];
 
@@ -1424,10 +1436,11 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
         let res =
-            finalize_deploy(&ctx, &bytes, &program, &buffer, &program_data, &kora_pubkey).await;
+            finalize_deploy(&ctx, &bytes, &program, &buffer, &kora_pubkey, cfg.wallet, cfg.resume)
+                .await;
         assert!(res.is_err());
         let err_msg = res.unwrap_err().to_string();
         assert!(err_msg.contains("Failed to submit deploy transaction for"));
@@ -1470,7 +1483,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
         let res = validate_state(&ctx, &buffer, &kora_pubkey, &state, "new-hash", 5).await;
         assert!(res.is_err());
@@ -1509,7 +1522,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx { cfg: &cfg, http: &http, rpc: &mock_rpc };
+        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
         let res = validate_state(&ctx, &buffer, &kora_pubkey, &state, "same-hash", 10).await;
         assert!(res.is_err());
