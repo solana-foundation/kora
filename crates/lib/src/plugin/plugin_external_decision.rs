@@ -104,31 +104,51 @@ fn is_break(c: char) -> bool {
 }
 
 // Line breaks and other spaces become a space (a line or paragraph separator starts a new line
-// wherever the reason is shown), except a break inside a hex run as long as a key, which is
-// dropped: a key wrapped over lines (as `xxd -p` prints it) stays one run, so redaction still sees
-// it. Hidden characters are dropped, and the cap applies to what the client receives, once secrets
-// are redacted: a cut before it could leave part of a key unredacted.
+// wherever the reason is shown), except the whitespace that wraps a key: hex runs linked by
+// whitespace holding a break (a key wrapped over lines, as `xxd -p` prints it, however short the
+// lines or indented) lose those links once together they hold as many hex digits as a key, so
+// redaction sees the key whole. Hidden characters are dropped, and the cap applies to what the
+// client receives, once secrets are redacted: a cut before it could leave part of a key unredacted.
 fn deny_reason(reason: &str) -> String {
     let visible: Vec<char> =
         reason.chars().filter(|&c| c.is_whitespace() || !is_hidden(c)).collect();
-    // For each position: the hex digits in a row from it, and the run that follows its breaks.
-    let mut hex_from = vec![0usize; visible.len() + 1];
-    let mut hex_after_breaks = vec![0usize; visible.len() + 1];
-    for (i, &c) in visible.iter().enumerate().rev() {
-        hex_from[i] = if c.is_ascii_hexdigit() { hex_from[i + 1] + 1 } else { 0 };
-        hex_after_breaks[i] = if is_break(c) { hex_after_breaks[i + 1] } else { hex_from[i] };
-    }
-    let mut shown = String::with_capacity(reason.len());
-    let mut hex_before = 0usize;
-    for (i, &c) in visible.iter().enumerate() {
-        let after = hex_after_breaks[i + 1];
-        if is_break(c) && hex_before > 0 && after > 0 && hex_before + after >= KEY_HEX_CHARS {
+    let mut joined = vec![false; visible.len()];
+    let mut start = 0;
+    while start < visible.len() {
+        if !visible[start].is_ascii_hexdigit() {
+            start += 1;
             continue;
         }
-        let c = if c.is_whitespace() { ' ' } else { c };
-        hex_before = if c.is_ascii_hexdigit() { hex_before + 1 } else { 0 };
-        shown.push(c);
+        let (mut hex, mut links, mut end) = (0, Vec::new(), start);
+        loop {
+            while end < visible.len() && visible[end].is_ascii_hexdigit() {
+                hex += 1;
+                end += 1;
+            }
+            let mut next = end;
+            while next < visible.len() && visible[next].is_whitespace() {
+                next += 1;
+            }
+            let linked = visible[end..next].iter().any(|&c| is_break(c));
+            if !linked || next == visible.len() || !visible[next].is_ascii_hexdigit() {
+                break;
+            }
+            links.push(end..next);
+            end = next;
+        }
+        if hex >= KEY_HEX_CHARS {
+            for link in links {
+                joined[link].fill(true);
+            }
+        }
+        start = end;
     }
+    let shown: String = visible
+        .iter()
+        .zip(&joined)
+        .filter(|&(_, &joined)| !joined)
+        .map(|(&c, _)| if c.is_whitespace() { ' ' } else { c })
+        .collect();
     sanitize_error!(shown).chars().take(MAX_DENY_REASON_CHARS).collect()
 }
 
@@ -303,6 +323,7 @@ impl TransactionPlugin for ExternalDecisionPlugin {
 }
 
 #[cfg(test)]
+#[serial_test::serial]
 mod tests {
     use super::{super::TransactionPluginRunner, *};
     use crate::{
@@ -498,11 +519,30 @@ mod tests {
             assert!(!reason.contains(&key[60..]) && !reason.contains(&key[..8]), "{reason}");
             assert!(reason.starts_with("leaked key "), "{reason}");
         }
-        // Breaks anywhere else still become spaces.
+        // However short or indented its lines: before this fix only two neighbouring runs that
+        // reached 32 together were joined, and each of these showed the whole key.
+        let pieces = |n: usize| -> Vec<&str> {
+            (0..key.len()).step_by(n).map(|i| &key[i..(i + n).min(key.len())]).collect()
+        };
+        for wrapped in [
+            format!("leaked key\n{}", pieces(8).join("\n")),
+            format!("leaked key {}", pieces(8).join("\t")),
+            format!("leaked key\r\n{}", pieces(15).join("\r\n")),
+            format!("leaked key\n  {}", pieces(30).join("\n  ")),
+            format!("leaked key {} \n{}", &key[..31], &key[31..]),
+            format!("leaked key {}\n{}\n{}", &key[..2], &key[2..4], &key[4..]),
+        ] {
+            let reason = deny_reason(&wrapped);
+            for piece in pieces(8) {
+                assert!(!reason.contains(piece), "{piece} shown in {reason:?}");
+            }
+        }
+        // Breaks anywhere else still become spaces, short hex runs on their own lines included.
         assert_eq!(
             deny_reason("on the list\nsince today\r\n2 hits"),
             "on the list since today  2 hits"
         );
+        assert_eq!(deny_reason("codes\nab12\ncd34\n99"), "codes ab12 cd34 99");
     }
 
     #[tokio::test]
@@ -826,6 +866,46 @@ mod tests {
 
     fn config_errors(config: &Config) -> Vec<String> {
         TransactionPluginRunner::validate_config(config).0
+    }
+
+    // The plugin reads its token from the environment each time, so the one test that sets it is
+    // `serial`, like the tests above: none of them runs while it is set.
+    #[cfg(unix)]
+    mod token_env {
+        use super::*;
+        use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+
+        #[tokio::test]
+        #[serial_test::serial]
+        async fn external_decision_unreadable_token_env_fails_validation_and_asks_nothing() {
+            let mut server = Server::new_async().await;
+            let never = server
+                .mock("POST", "/decide")
+                .with_status(200)
+                .with_body(r#"{"decision":"allow"}"#)
+                .expect(0)
+                .create_async()
+                .await;
+            let config = config_with(&format!("{}/decide", server.url()), 2_000);
+
+            let previous = std::env::var_os(ExternalDecisionConfig::TOKEN_ENV);
+            std::env::set_var(
+                ExternalDecisionConfig::TOKEN_ENV,
+                OsString::from_vec(b"secret\xff".to_vec()),
+            );
+            let errors = config_errors(&config);
+            let result = run(&config, &Pubkey::new_unique()).await;
+            match previous {
+                Some(value) => std::env::set_var(ExternalDecisionConfig::TOKEN_ENV, value),
+                None => std::env::remove_var(ExternalDecisionConfig::TOKEN_ENV),
+            }
+
+            // Config validation and the plugin both read the variable: validation reports it, and
+            // the plugin refuses without a request (it does not send the request without a token).
+            assert!(errors.iter().any(|e| e.contains("is not valid UTF-8")), "{errors:?}");
+            assert!(matches!(result, Err(KoraError::InternalServerError(_))), "{result:?}");
+            never.assert_async().await;
+        }
     }
 
     #[test]
