@@ -10,6 +10,7 @@ use crate::{
         BPF_LOADER_UPGRADEABLE_PROGRAM_ID, DEPLOY_REGISTRY_PROGRAM_ID, LOADER_V4_PROGRAM_ID,
     },
     error::KoraError,
+    sanitize_error,
     transaction::{
         ParsedBpfLoaderUpgradeableInstructionData, ParsedLoaderV4InstructionData,
         ParsedSystemInstructionData, ParsedSystemInstructionType, VersionedTransactionOps,
@@ -45,7 +46,8 @@ async fn require_registered_owner_signature(
         .await
         .map_err(|e| {
             KoraError::RpcError(format!(
-                "DeployAuthority plugin: failed to fetch registry entry for {program}: {e}"
+                "DeployAuthority plugin: failed to fetch registry entry for {program}: {}",
+                sanitize_error!(e)
             ))
         })?
         .value;
@@ -577,6 +579,28 @@ mod tests {
         create_account as system_create_account, transfer as system_transfer,
     };
     use std::sync::Arc;
+
+    #[cfg(not(feature = "unsafe-debug"))]
+    #[tokio::test]
+    async fn test_registry_lookup_error_redacts_provider_url_credentials() {
+        let rpc_client =
+            RpcClient::new("http://127.0.0.1:1/PATHSECRET?api-key=QUERYSECRET".to_string());
+
+        let err = require_registered_owner_signature(
+            &rpc_client,
+            &Pubkey::new_unique(),
+            &HashSet::new(),
+            "upgrade",
+            PluginExecutionContext::SignTransaction,
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("127.0.0.1:1"), "transport error should name the host: {err}");
+        assert!(!err.contains("PATHSECRET"));
+        assert!(!err.contains("QUERYSECRET"));
+    }
 
     fn enable_deploy_authority_plugin(config: &mut Config) {
         config.kora.plugins.enabled = vec![TransactionPluginType::DeployAuthority];
