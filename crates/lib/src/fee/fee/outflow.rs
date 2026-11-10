@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     config::Config,
     error::KoraError,
+    sanitize_error,
     token::{
         spl_token_2022::Token2022Mint,
         token::{AtaCreationInstructionInfo, TokenType, TokenUtil},
@@ -131,7 +132,8 @@ impl FeeConfigUtil {
                     .map_err(|e| {
                         KoraError::RpcError(format!(
                             "Failed to fetch rent exemption for account length {}: {}",
-                            account_len, e
+                            account_len,
+                            sanitize_error!(e)
                         ))
                     })?;
                 rent_cache_by_account_len.insert(account_len, rent);

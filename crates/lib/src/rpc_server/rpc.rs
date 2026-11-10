@@ -2,7 +2,7 @@ use log::info;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 
-use crate::error::KoraError;
+use crate::{error::KoraError, sanitize_error};
 
 use crate::rpc_server::method::{
     estimate_bundle_fee::{
@@ -35,7 +35,7 @@ fn log_response<T: std::fmt::Debug>(
     label: &str,
     result: Result<T, KoraError>,
 ) -> Result<T, KoraError> {
-    info!("{label} response: {result:?}");
+    info!("{label} response: {}", sanitize_error!(format!("{result:?}")));
     result
 }
 

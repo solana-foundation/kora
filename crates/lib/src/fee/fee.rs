@@ -5,6 +5,7 @@ use crate::{
     constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
     error::KoraError,
     fee::price::PriceModel,
+    sanitize_error,
     token::{
         spl_token_2022::Token2022Mint,
         token::{TokenType, TokenUtil, TransferHookValidationFlow},
@@ -345,7 +346,7 @@ impl TransactionFeeUtil {
                 rpc_client.get_fee_for_message(&V1FeeMessage(message)).await
             }
         }
-        .map_err(|e| KoraError::RpcError(e.to_string()))
+        .map_err(|e| KoraError::RpcError(sanitize_error!(e)))
     }
 
     /// Get fee estimate for a resolved transaction, handling V0 transactions with lookup tables
@@ -618,6 +619,23 @@ mod tests {
     fn test_total_fee_accepts_sum_at_u64_max() {
         let calculation = TotalFeeCalculation::new(0, 5000, 0, 0, 0, u64::MAX - 5000);
         assert_eq!(calculation.get_total_fee_lamports().unwrap(), u64::MAX);
+    }
+
+    #[cfg(not(feature = "unsafe-debug"))]
+    #[tokio::test]
+    async fn test_get_estimate_fee_redacts_provider_url_credentials() {
+        let rpc_client =
+            RpcClient::new("http://127.0.0.1:1/PATHSECRET?api-key=QUERYSECRET".to_string());
+        let message = VersionedMessage::Legacy(Message::default());
+
+        let err = TransactionFeeUtil::get_estimate_fee(&rpc_client, &message)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("127.0.0.1:1"), "transport error should name the host: {err}");
+        assert!(!err.contains("PATHSECRET"));
+        assert!(!err.contains("QUERYSECRET"));
     }
 
     #[tokio::test]

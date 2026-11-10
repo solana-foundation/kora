@@ -1,6 +1,7 @@
 use crate::{
     config::Config,
     error::KoraError,
+    sanitize_error,
     token::{
         interface::TokenMint,
         spl_token::TokenProgram,
@@ -47,7 +48,7 @@ impl TokenUtil {
                 let epoch = rpc_client
                     .get_epoch_info()
                     .await
-                    .map_err(|e| KoraError::RpcError(e.to_string()))?
+                    .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?
                     .epoch;
                 *cached_epoch = Some(epoch);
                 epoch

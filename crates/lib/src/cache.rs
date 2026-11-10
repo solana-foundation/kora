@@ -312,7 +312,7 @@ impl CacheUtil {
         let (blockhash, _) = rpc_client
             .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
             .await
-            .map_err(|e| KoraError::RpcError(e.to_string()))?;
+            .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
         Ok(blockhash)
     }
 
@@ -513,10 +513,9 @@ impl CacheUtil {
         if max_staleness == 0 {
             return Ok(None);
         }
-        let current_slot = rpc_client
-            .get_slot()
-            .await
-            .map_err(|e| KoraError::RpcError(format!("Failed to get current slot: {e}")))?;
+        let current_slot = rpc_client.get_slot().await.map_err(|e| {
+            KoraError::RpcError(format!("Failed to get current slot: {}", sanitize_error!(e)))
+        })?;
         Ok(Some(current_slot.saturating_sub(max_staleness)))
     }
 
@@ -798,6 +797,19 @@ mod tests {
     use serde_json::json;
     use solana_client::rpc_request::RpcRequest;
     use std::env;
+
+    #[cfg(not(feature = "unsafe-debug"))]
+    #[tokio::test]
+    async fn test_fetch_blockhash_from_rpc_redacts_provider_url_credentials() {
+        let rpc_client =
+            RpcClient::new("http://127.0.0.1:1/PATHSECRET?api-key=QUERYSECRET".to_string());
+
+        let err = CacheUtil::fetch_blockhash_from_rpc(&rpc_client).await.unwrap_err().to_string();
+
+        assert!(err.contains("127.0.0.1:1"), "transport error should name the host: {err}");
+        assert!(!err.contains("PATHSECRET"));
+        assert!(!err.contains("QUERYSECRET"));
+    }
 
     #[tokio::test]
     async fn test_is_cache_enabled_disabled() {

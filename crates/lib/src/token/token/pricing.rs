@@ -1,6 +1,6 @@
 use crate::{
-    config::Config, error::KoraError, oracle::TokenPrice, transaction::ParsedSPLInstructionData,
-    CacheUtil,
+    config::Config, error::KoraError, oracle::TokenPrice, sanitize_error,
+    transaction::ParsedSPLInstructionData, CacheUtil,
 };
 use rust_decimal::{
     prelude::{FromPrimitive, ToPrimitive},
@@ -40,7 +40,10 @@ impl TokenUtil {
                     let slot = match current_slot {
                         Some(s) => s,
                         None => rpc_client.get_slot().await.map_err(|e| {
-                            KoraError::RpcError(format!("Failed to get current slot: {e}"))
+                            KoraError::RpcError(format!(
+                                "Failed to get current slot: {}",
+                                sanitize_error!(e)
+                            ))
                         })?,
                     };
                     let age = slot.saturating_sub(block_id);
@@ -73,12 +76,9 @@ impl TokenUtil {
             CacheUtil::get_or_fetch_token_prices(rpc_client, config, &mint_addresses).await?;
 
         let current_slot = if config.validation.max_price_staleness_slots > 0 {
-            Some(
-                rpc_client
-                    .get_slot()
-                    .await
-                    .map_err(|e| KoraError::RpcError(format!("Failed to get current slot: {e}")))?,
-            )
+            Some(rpc_client.get_slot().await.map_err(|e| {
+                KoraError::RpcError(format!("Failed to get current slot: {}", sanitize_error!(e)))
+            })?)
         } else {
             None
         };
@@ -114,7 +114,12 @@ impl TokenUtil {
         let token_price =
             CacheUtil::get_or_fetch_token_price(rpc_client, config, &mint.to_string())
                 .await
-                .map_err(|e| KoraError::RpcError(format!("Failed to fetch token price: {e}")))?;
+                .map_err(|e| {
+                    KoraError::RpcError(format!(
+                        "Failed to fetch token price: {}",
+                        sanitize_error!(e)
+                    ))
+                })?;
 
         Self::check_price_staleness(rpc_client, config, &token_price, "", None).await?;
 

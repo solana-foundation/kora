@@ -286,7 +286,7 @@ impl JitoClient {
         })?;
 
         if let Some(error) = rpc_response.error {
-            return Err(JitoError::ApiError(error.message));
+            return Err(JitoError::ApiError(sanitize_error!(error.message)));
         }
 
         let result = rpc_response
