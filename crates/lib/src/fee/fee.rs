@@ -20,7 +20,8 @@ use crate::cache::CacheUtil;
 use crate::tests::cache_mock::MockCacheUtil as CacheUtil;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableMessage};
 use solana_compute_budget::compute_budget_limits::{
-    ComputeBudgetLimits, DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT, MAX_COMPUTE_UNIT_LIMIT,
+    ComputeBudgetLimits, DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT,
+    MAX_BUILTIN_ALLOCATION_COMPUTE_UNIT_LIMIT, MAX_COMPUTE_UNIT_LIMIT,
 };
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::VersionedMessage;
@@ -398,6 +399,7 @@ impl TransactionFeeUtil {
         let mut compute_unit_price: Option<u64> = None;
         let mut compute_unit_limit: Option<u32> = None;
         let mut non_compute_budget_instructions = appended_instructions;
+        let mut compute_budget_instructions: u32 = 0;
         for instruction in message.instructions() {
             if account_keys.get(instruction.program_id_index as usize)
                 != Some(&compute_budget_program_id)
@@ -405,6 +407,7 @@ impl TransactionFeeUtil {
                 non_compute_budget_instructions = non_compute_budget_instructions.saturating_add(1);
                 continue;
             }
+            compute_budget_instructions = compute_budget_instructions.saturating_add(1);
             match borsh::from_slice(&instruction.data) {
                 Ok(ComputeBudgetInstruction::SetComputeUnitPrice(micro_lamports)) => {
                     compute_unit_price.get_or_insert(micro_lamports);
@@ -420,8 +423,12 @@ impl TransactionFeeUtil {
             return 0;
         };
 
-        let default_compute_unit_limit =
-            non_compute_budget_instructions.saturating_mul(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT);
+        let default_compute_unit_limit = non_compute_budget_instructions
+            .saturating_mul(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT)
+            .saturating_add(
+                compute_budget_instructions
+                    .saturating_mul(MAX_BUILTIN_ALLOCATION_COMPUTE_UNIT_LIMIT),
+            );
 
         ComputeBudgetLimits {
             compute_unit_price: price,
@@ -2769,11 +2776,32 @@ mod tests {
             ],
         );
 
-        // The lone transfer defaults to 200_000 CU, so 2_000 micro-lamports over it = 400 lamports.
-        // Billing the 1.4M protocol maximum instead would overstate this sevenfold.
+        // The transfer defaults to 200_000 CU and the price instruction is a builtin allocated
+        // 3_000 CU, so 2_000 micro-lamports over 203_000 CU = 406 lamports. Billing the 1.4M
+        // protocol maximum instead would overstate this sevenfold.
         assert_eq!(
             TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
-            400
+            406
+        );
+    }
+
+    #[test]
+    fn test_get_requested_priority_fee_counts_every_compute_budget_builtin_allocation() {
+        let payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let message = create_legacy_message(
+            &payer,
+            &[
+                ComputeBudgetInstruction::set_compute_unit_price(1_000_000),
+                ComputeBudgetInstruction::request_heap_frame(64 * 1024),
+                ComputeBudgetInstruction::set_loaded_accounts_data_size_limit(64 * 1024),
+                transfer(&payer, &recipient, 1_000),
+            ],
+        );
+
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
+            209_000
         );
     }
 
