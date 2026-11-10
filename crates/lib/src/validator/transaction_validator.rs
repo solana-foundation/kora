@@ -6990,6 +6990,58 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_bpf_v3_upgrade_with_foreign_spill_blocked_by_drainage_guard() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.bpf_loader_upgradeable.allow_upgrade = true;
+        setup_bpf_v3_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v3::upgrade(&program, &buffer, &fee_payer, &attacker);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .expect_err("foreign spill must be rejected");
+        assert!(err.to_string().contains("drainage guard"), "got: {err}");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_upgrade_with_fee_payer_spill_accepted_when_allowed() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.bpf_loader_upgradeable.allow_upgrade = true;
+        setup_bpf_v3_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v3::upgrade(&program, &buffer, &fee_payer, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_bpf_v3_upgrade_with_kora_as_spill_does_not_require_allow_upgrade() {
         // Regression: spill is a lamport recipient, not a signer. A user upgrading their own
         // program who picks Kora as the spill account is just refunding excess lamports;

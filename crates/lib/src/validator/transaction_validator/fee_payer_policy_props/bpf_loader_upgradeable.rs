@@ -91,9 +91,10 @@ impl DrainRole for BpfLoaderUpgradeableRole {
                     .unwrap()
                     .swap_remove(1)
             }
-            // `spill` is a lamport sink and deliberately ungated, so the actor only ever
-            // occupies the upgrade authority slot here.
-            Self::Upgrade => upgrade(&program, &buffer, actor, &other),
+            // The drainage guard rejects a fee-payer upgrade authority paired with a foreign
+            // spill regardless of the flag, so this role names the actor in both slots to
+            // isolate the flag as the only thing under test.
+            Self::Upgrade => upgrade(&program, &buffer, actor, actor),
             Self::SetAuthorityCurrent => set_upgrade_authority(&program, actor, Some(&other)),
             Self::SetAuthorityNew => set_upgrade_authority(&program, &other, Some(actor)),
             Self::SetAuthorityCheckedCurrent => {

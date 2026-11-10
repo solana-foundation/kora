@@ -50,6 +50,8 @@ Do not go looking for a `fee_payer_policy` flag for these. They are rejected reg
   account being created. `CreateAccountAllowPrefund` with zero lamports would otherwise retype it.
 - System `Assign` (`transaction_validator/system.rs`): the fee payer account can never be reassigned
   to an owner other than the System program, so it cannot be retyped and closed by another program.
+- BPF Loader Upgradeable `Upgrade` (`transaction_validator/bpf_loader_upgradeable.rs`): when the fee
+  payer is the upgrade authority, the spill must also be the fee payer.
 - ALT `CloseLookupTable` (`transaction_validator/alt.rs`): when the fee payer is the authority, the
   recipient must also be the fee payer.
 - Loader v4 `SetProgramLength` (`transaction_validator/loader_v4.rs`): when the fee payer is the
