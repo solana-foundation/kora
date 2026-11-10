@@ -79,7 +79,10 @@ impl TotalFeeCalculation {
                     self.base_fee, self.kora_signature_fee, self.fee_payer_outflow, self.payment_instruction_fee, self.transfer_fee_amount);
                 KoraError::ValidationError("Fee calculation overflow".to_string())
             })?;
-        Ok(sum.max(0) as u64)
+        u64::try_from(sum.max(0)).map_err(|_| {
+            log::error!("Fee calculation exceeds u64 range: {sum}");
+            KoraError::ValidationError("Fee calculation exceeds u64 range".to_string())
+        })
     }
 }
 
@@ -596,6 +599,18 @@ mod tests {
             false,
         )
         .await
+    }
+
+    #[test]
+    fn test_total_fee_rejects_sum_above_u64_instead_of_wrapping_to_zero() {
+        let calculation = TotalFeeCalculation::new(0, 5000, 0, 0, 0, u64::MAX - 4999);
+        assert!(calculation.get_total_fee_lamports().is_err());
+    }
+
+    #[test]
+    fn test_total_fee_accepts_sum_at_u64_max() {
+        let calculation = TotalFeeCalculation::new(0, 5000, 0, 0, 0, u64::MAX - 5000);
+        assert_eq!(calculation.get_total_fee_lamports().unwrap(), u64::MAX);
     }
 
     #[tokio::test]
