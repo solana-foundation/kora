@@ -448,7 +448,10 @@ async fn finalize_deploy(
         program_lamports,
         bytes.len(),
     )?;
-    let mut deploy_signers: Vec<&Keypair> = vec![program];
+    for ix in &mut deploy_ixs {
+        mark_signer(ix, &buffer.pubkey());
+    }
+    let mut deploy_signers: Vec<&Keypair> = vec![program, buffer];
     if let Some(wallet) = ctx.cfg.wallet {
         deploy_ixs.push(register_ix(
             &DEFAULT_REGISTRY_PROGRAM,
@@ -568,6 +571,7 @@ pub async fn upgrade(cfg: &UpgradeConfig<'_>) -> Result<Signature> {
 
     let mut upgrade_ix =
         loader_v3::upgrade(&cfg.program, &buffer.pubkey(), &kora_pubkey, &kora_pubkey);
+    mark_signer(&mut upgrade_ix, &buffer.pubkey());
     upgrade_ix.accounts.push(AccountMeta::new_readonly(cfg.wallet.pubkey(), true));
     submit_returning_signature(
         &http,
@@ -576,9 +580,15 @@ pub async fn upgrade(cfg: &UpgradeConfig<'_>) -> Result<Signature> {
         &rpc,
         &kora_pubkey,
         &[upgrade_ix],
-        &[cfg.wallet],
+        &[cfg.wallet, &buffer],
     )
     .await
+}
+
+fn mark_signer(instruction: &mut Instruction, signer: &Pubkey) {
+    for meta in instruction.accounts.iter_mut().filter(|meta| meta.pubkey == *signer) {
+        meta.is_signer = true;
+    }
 }
 
 /// A program is live when its programdata account exists; the reaper's close removes it

@@ -99,6 +99,23 @@ fn require_fee_payer(
     Ok(())
 }
 
+fn require_buffer_signer(
+    instruction: &str,
+    buffer: &Pubkey,
+    verified_signers: &HashSet<Pubkey>,
+    context: PluginExecutionContext,
+) -> Result<(), KoraError> {
+    if !verified_signers.contains(buffer) {
+        return Err(KoraError::InvalidTransaction(format!(
+            "DeployAuthority plugin: BPF Loader {instruction} from buffer {buffer} must be signed \
+             by the buffer keypair, so only the client that created the buffer can consume it \
+             (context: {})",
+            context.method_name()
+        )));
+    }
+    Ok(())
+}
+
 /// Enforces that the fee payer is the authority on every program-loader instruction we sign,
 /// covering both BPF Loader Upgradeable (loader-v3) and Loader-v4. The core fee-payer policies
 /// gate whether Kora is *willing* to participate as authority; this plugin requires Kora to
@@ -193,6 +210,7 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                 ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
                     upgrade_authority,
                     program,
+                    buffer,
                     ..
                 } => {
                     require_fee_payer(
@@ -209,10 +227,17 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                             context.method_name()
                         )));
                     }
+                    require_buffer_signer(
+                        "DeployWithMaxDataLen",
+                        buffer,
+                        &verified_signers,
+                        context,
+                    )?;
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::Upgrade {
                     upgrade_authority,
                     spill,
+                    buffer,
                     ..
                 } => {
                     require_fee_payer(
@@ -222,6 +247,7 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                         context,
                     )?;
                     require_fee_payer("Upgrade spill", spill, fee_payer, context)?;
+                    require_buffer_signer("Upgrade", buffer, &verified_signers, context)?;
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::SetAuthority {
                     new_authority, ..
@@ -1068,9 +1094,53 @@ mod tests {
         let (config, rpc_client) = build_runner_v3();
         let fee_payer = Pubkey::new_unique();
         let program = Pubkey::new_unique();
+        let buffer = Keypair::new();
+        let ix = signed_by_buffer(
+            loader_v3::upgrade(&program, &buffer.pubkey(), &fee_payer, &fee_payer),
+            &buffer.pubkey(),
+        );
+        assert!(run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&buffer])
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn v3_rejects_upgrade_without_buffer_signature() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let (config, rpc_client) = build_runner_v3();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
         let buffer = Pubkey::new_unique();
         let ix = loader_v3::upgrade(&program, &buffer, &fee_payer, &fee_payer);
-        assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("buffer keypair")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn v3_rejects_deploy_without_buffer_signature() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let (config, rpc_client) = build_runner_v3();
+        let fee_payer = Pubkey::new_unique();
+        let program = Keypair::new();
+        let ixs = loader_v3::deploy_with_max_program_len(
+            &fee_payer,
+            &program.pubkey(),
+            &Pubkey::new_unique(),
+            &fee_payer,
+            1_000_000,
+            0,
+        )
+        .unwrap();
+        let err = run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &ixs, &[&program])
+            .await
+            .expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("buffer keypair")),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]
@@ -1108,7 +1178,7 @@ mod tests {
         let (config, rpc_client) = build_runner_v3();
         let fee_payer = Pubkey::new_unique();
         let program = Keypair::new();
-        let buffer = Pubkey::new_unique();
+        let buffer = Keypair::new();
         let program_data = Pubkey::find_program_address(
             &[program.pubkey().as_ref()],
             &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
@@ -1117,12 +1187,15 @@ mod tests {
         let mut ixs = loader_v3::deploy_with_max_program_len(
             &fee_payer,
             &program.pubkey(),
-            &buffer,
+            &buffer.pubkey(),
             &fee_payer,
             1_000_000,
             0,
         )
-        .unwrap();
+        .unwrap()
+        .into_iter()
+        .map(|ix| signed_by_buffer(ix, &buffer.pubkey()))
+        .collect::<Vec<_>>();
         ixs.push(system_create_account(
             &fee_payer,
             &program_data,
@@ -1130,9 +1203,15 @@ mod tests {
             0,
             &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
         ));
-        assert!(run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &ixs, &[&program])
-            .await
-            .is_ok());
+        assert!(run_plugin_ixs_signed(
+            &config,
+            &rpc_client,
+            &fee_payer,
+            &ixs,
+            &[&program, &buffer]
+        )
+        .await
+        .is_ok());
     }
 
     #[tokio::test]
@@ -1397,16 +1476,34 @@ mod tests {
             .await
     }
 
+    fn signed_by_buffer(
+        mut ix: solana_sdk::instruction::Instruction,
+        buffer: &Pubkey,
+    ) -> solana_sdk::instruction::Instruction {
+        for meta in ix.accounts.iter_mut().filter(|meta| meta.pubkey == *buffer) {
+            meta.is_signer = true;
+        }
+        ix
+    }
+
+    fn buffer_signed_upgrade(
+        program: &Pubkey,
+        fee_payer: &Pubkey,
+    ) -> (solana_sdk::instruction::Instruction, Keypair) {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let buffer = Keypair::new();
+        let ix = loader_v3::upgrade(program, &buffer.pubkey(), fee_payer, fee_payer);
+        (signed_by_buffer(ix, &buffer.pubkey()), buffer)
+    }
+
     fn upgrade_ix_with_owner_signer(
         program: &Pubkey,
         fee_payer: &Pubkey,
         owner: &Pubkey,
-    ) -> solana_sdk::instruction::Instruction {
-        use solana_loader_v3_interface::instruction as loader_v3;
-        let buffer = Pubkey::new_unique();
-        let mut ix = loader_v3::upgrade(program, &buffer, fee_payer, fee_payer);
+    ) -> (solana_sdk::instruction::Instruction, Keypair) {
+        let (mut ix, buffer) = buffer_signed_upgrade(program, fee_payer);
         ix.accounts.push(AccountMeta::new_readonly(*owner, true));
-        ix
+        (ix, buffer)
     }
 
     #[tokio::test]
@@ -1416,9 +1513,10 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let program = Pubkey::new_unique();
 
-        use solana_loader_v3_interface::instruction as loader_v3;
-        let ix = loader_v3::upgrade(&program, &Pubkey::new_unique(), &fee_payer, &fee_payer);
-        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        let (ix, buffer) = buffer_signed_upgrade(&program, &fee_payer);
+        let err = run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&buffer])
+            .await
+            .expect_err("must reject");
         assert!(
             matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("not registered")),
             "{err:?}"
@@ -1434,9 +1532,10 @@ mod tests {
         let entry = registry_entry_account(&owner.pubkey(), &fee_payer);
         let rpc_client = RpcMockBuilder::new().with_account_info(&entry).build();
 
-        use solana_loader_v3_interface::instruction as loader_v3;
-        let ix = loader_v3::upgrade(&program, &Pubkey::new_unique(), &fee_payer, &fee_payer);
-        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        let (ix, buffer) = buffer_signed_upgrade(&program, &fee_payer);
+        let err = run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&buffer])
+            .await
+            .expect_err("must reject");
         assert!(
             matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("has not signed")),
             "{err:?}"
@@ -1453,10 +1552,11 @@ mod tests {
         let entry = registry_entry_account(&owner.pubkey(), &fee_payer);
         let rpc_client = RpcMockBuilder::new().with_account_info(&entry).build();
 
-        let ix = upgrade_ix_with_owner_signer(&program, &fee_payer, &attacker.pubkey());
-        let err = run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&attacker])
-            .await
-            .expect_err("must reject");
+        let (ix, buffer) = upgrade_ix_with_owner_signer(&program, &fee_payer, &attacker.pubkey());
+        let err =
+            run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&attacker, &buffer])
+                .await
+                .expect_err("must reject");
         assert!(
             matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("has not signed")),
             "{err:?}"
@@ -1472,8 +1572,8 @@ mod tests {
         let entry = registry_entry_account(&owner.pubkey(), &fee_payer);
         let rpc_client = RpcMockBuilder::new().with_account_info(&entry).build();
 
-        let ix = upgrade_ix_with_owner_signer(&program, &fee_payer, &owner.pubkey());
-        assert!(run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&owner])
+        let (ix, buffer) = upgrade_ix_with_owner_signer(&program, &fee_payer, &owner.pubkey());
+        assert!(run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&owner, &buffer])
             .await
             .is_ok());
     }
@@ -1570,18 +1670,21 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().build();
         let fee_payer = Pubkey::new_unique();
         let program = Keypair::new();
-        let buffer = Pubkey::new_unique();
+        let buffer = Keypair::new();
         let entry = registry_entry_address(&program.pubkey());
 
         let mut ixs = loader_v3::deploy_with_max_program_len(
             &fee_payer,
             &program.pubkey(),
-            &buffer,
+            &buffer.pubkey(),
             &fee_payer,
             1_000_000,
             0,
         )
-        .unwrap();
+        .unwrap()
+        .into_iter()
+        .map(|ix| signed_by_buffer(ix, &buffer.pubkey()))
+        .collect::<Vec<_>>();
         ixs.push(system_create_account(
             &fee_payer,
             &entry,
@@ -1589,9 +1692,15 @@ mod tests {
             65,
             &DEPLOY_REGISTRY_PROGRAM_ID,
         ));
-        assert!(run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &ixs, &[&program])
-            .await
-            .is_ok());
+        assert!(run_plugin_ixs_signed(
+            &config,
+            &rpc_client,
+            &fee_payer,
+            &ixs,
+            &[&program, &buffer]
+        )
+        .await
+        .is_ok());
     }
 
     #[tokio::test]
@@ -1614,7 +1723,6 @@ mod tests {
     async fn registry_gating_off_when_not_allowlisted() {
         // Registry not in allowed_programs → gating inert; an unregistered upgrade passes the
         // plugin (Kora is still the authority, which the core checks cover).
-        use solana_loader_v3_interface::instruction as loader_v3;
         let mut config = ConfigMockBuilder::new()
             .with_allowed_programs(vec![BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()])
             .build();
@@ -1623,7 +1731,9 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let program = Pubkey::new_unique();
 
-        let ix = loader_v3::upgrade(&program, &Pubkey::new_unique(), &fee_payer, &fee_payer);
-        assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
+        let (ix, buffer) = buffer_signed_upgrade(&program, &fee_payer);
+        assert!(run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&buffer])
+            .await
+            .is_ok());
     }
 }

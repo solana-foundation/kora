@@ -64,7 +64,7 @@ async fn deploy_v3_program_through_kora() -> Result<()> {
         .rpc_client()
         .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_program())
         .await?;
-    let deploy_ixs = loader_v3::deploy_with_max_program_len(
+    let mut deploy_ixs = loader_v3::deploy_with_max_program_len(
         &kora_pubkey,
         &program.pubkey(),
         &buffer.pubkey(),
@@ -72,7 +72,13 @@ async fn deploy_v3_program_through_kora() -> Result<()> {
         program_lamports,
         bytes.len(),
     )?;
-    submit_and_confirm(&ctx, &kora_pubkey, &deploy_ixs, &[&program]).await?;
+    expect_reject(&ctx, &kora_pubkey, &deploy_ixs, &[&program], "signed by the buffer keypair")
+        .await?;
+
+    for meta in deploy_ixs[1].accounts.iter_mut().filter(|meta| meta.pubkey == buffer.pubkey()) {
+        meta.is_signer = true;
+    }
+    submit_and_confirm(&ctx, &kora_pubkey, &deploy_ixs, &[&program, &buffer]).await?;
 
     // Loader-v3 Close rejects with InvalidArgument when clock.slot == programdata.slot
     // ("Program was deployed in this block already"); wait for the slot to advance.
