@@ -13,12 +13,6 @@ use crate::{error::KoraError, sanitize_error};
 /// Trait for storing and retrieving usage counts
 #[async_trait]
 pub trait UsageStore: Send + Sync {
-    /// Increment usage count for a key and return the new value
-    async fn increment(&self, key: &str) -> Result<u32, KoraError>;
-
-    /// Increment usage count with absolute expiration (key expires at unix timestamp)
-    async fn increment_with_expiry(&self, key: &str, expires_at: u64) -> Result<u32, KoraError>;
-
     /// Get current usage count for a key (returns 0 if not found)
     async fn get(&self, key: &str) -> Result<u32, KoraError>;
 
@@ -45,9 +39,6 @@ pub trait UsageStore: Send + Sync {
         }
         Ok(true)
     }
-
-    /// Clear all usage data (mainly for testing)
-    async fn clear(&self) -> Result<(), KoraError>;
 }
 
 /// Atomically checks the limit and increments — sets TTL only on first
@@ -114,41 +105,6 @@ impl RedisUsageStore {
 
 #[async_trait]
 impl UsageStore for RedisUsageStore {
-    async fn increment(&self, key: &str) -> Result<u32, KoraError> {
-        let mut conn = self.get_connection().await?;
-        let count: u32 = conn.incr(key, 1).await.map_err(|e| {
-            KoraError::InternalServerError(sanitize_error!(format!(
-                "Failed to increment usage for {}: {}",
-                key, e
-            )))
-        })?;
-        Ok(count)
-    }
-
-    async fn increment_with_expiry(&self, key: &str, expires_at: u64) -> Result<u32, KoraError> {
-        let mut conn = self.get_connection().await?;
-
-        // Use Redis pipeline for atomic INCR + EXPIREAT
-        // EXPIREAT sets absolute expiration timestamp, so repeated calls are idempotent
-        let (count,): (u32,) = redis::pipe()
-            .atomic()
-            .incr(key, 1)
-            .cmd("EXPIREAT")
-            .arg(key)
-            .arg(expires_at as i64)
-            .ignore()
-            .query_async(&mut conn)
-            .await
-            .map_err(|e| {
-                KoraError::InternalServerError(sanitize_error!(format!(
-                    "Failed to increment with expiry for {}: {}",
-                    key, e
-                )))
-            })?;
-
-        Ok(count)
-    }
-
     async fn get(&self, key: &str) -> Result<u32, KoraError> {
         let mut conn = self.get_connection().await?;
         let count: Option<u32> = conn.get(key).await.map_err(|e| {
@@ -214,14 +170,6 @@ impl UsageStore for RedisUsageStore {
 
         Ok(allowed == 1)
     }
-
-    async fn clear(&self) -> Result<(), KoraError> {
-        let mut conn = self.get_connection().await?;
-        let _: () = conn.flushdb().await.map_err(|e| {
-            KoraError::InternalServerError(sanitize_error!(format!("Failed to clear Redis: {}", e)))
-        })?;
-        Ok(())
-    }
 }
 
 /// Entry with count and optional expiry timestamp
@@ -265,33 +213,6 @@ impl Default for InMemoryUsageStore {
 
 #[async_trait]
 impl UsageStore for InMemoryUsageStore {
-    async fn increment(&self, key: &str) -> Result<u32, KoraError> {
-        let mut data = self.lock()?;
-        let entry = data.entry(key.to_string()).or_insert(UsageEntry { count: 0, expiry: None });
-        entry.count += 1;
-        Ok(entry.count)
-    }
-
-    async fn increment_with_expiry(&self, key: &str, expires_at: u64) -> Result<u32, KoraError> {
-        let mut data = self.lock()?;
-
-        let now = Self::current_timestamp();
-        let entry = data.entry(key.to_string()).or_insert(UsageEntry { count: 0, expiry: None });
-
-        // Check if expired, reset if so
-        if let Some(expiry) = entry.expiry {
-            if now >= expiry {
-                entry.count = 0;
-            }
-        }
-
-        entry.count += 1;
-        // Always set to the same absolute expiry (idempotent like EXPIREAT)
-        entry.expiry = Some(expires_at);
-
-        Ok(entry.count)
-    }
-
     async fn get(&self, key: &str) -> Result<u32, KoraError> {
         let data = self.lock()?;
 
@@ -385,12 +306,6 @@ impl UsageStore for InMemoryUsageStore {
 
         Ok(true)
     }
-
-    async fn clear(&self) -> Result<(), KoraError> {
-        let mut data = self.lock()?;
-        data.clear();
-        Ok(())
-    }
 }
 
 /// Mock store that simulates Redis errors for testing error handling
@@ -410,22 +325,6 @@ impl ErrorUsageStore {
 #[cfg(test)]
 #[async_trait]
 impl UsageStore for ErrorUsageStore {
-    async fn increment(&self, _key: &str) -> Result<u32, KoraError> {
-        if self.should_error_increment {
-            Err(KoraError::InternalServerError("Redis connection failed".to_string()))
-        } else {
-            Ok(1)
-        }
-    }
-
-    async fn increment_with_expiry(&self, _key: &str, _expires_at: u64) -> Result<u32, KoraError> {
-        if self.should_error_increment {
-            Err(KoraError::InternalServerError("Redis connection failed".to_string()))
-        } else {
-            Ok(1)
-        }
-    }
-
     async fn get(&self, _key: &str) -> Result<u32, KoraError> {
         if self.should_error_get {
             Err(KoraError::InternalServerError("Redis connection failed".to_string()))
@@ -458,10 +357,6 @@ impl UsageStore for ErrorUsageStore {
             Ok(true)
         }
     }
-
-    async fn clear(&self) -> Result<(), KoraError> {
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -474,26 +369,20 @@ mod tests {
     async fn test_in_memory_usage_store() {
         let store = InMemoryUsageStore::new();
 
-        // Initial count should be 0
         assert_eq!(store.get("wallet1").await.unwrap(), 0);
 
-        // Increment should return 1
-        assert_eq!(store.increment("wallet1").await.unwrap(), 1);
+        assert!(store.check_and_increment("wallet1", 1, 2, None).await.unwrap());
         assert_eq!(store.get("wallet1").await.unwrap(), 1);
 
-        // Increment again should return 2
-        assert_eq!(store.increment("wallet1").await.unwrap(), 2);
+        assert!(store.check_and_increment("wallet1", 1, 2, None).await.unwrap());
         assert_eq!(store.get("wallet1").await.unwrap(), 2);
 
-        // Different key should be independent
-        assert_eq!(store.increment("wallet2").await.unwrap(), 1);
+        assert!(!store.check_and_increment("wallet1", 1, 2, None).await.unwrap());
+        assert_eq!(store.get("wallet1").await.unwrap(), 2);
+
+        assert!(store.check_and_increment("wallet2", 1, 2, None).await.unwrap());
         assert_eq!(store.get("wallet2").await.unwrap(), 1);
         assert_eq!(store.get("wallet1").await.unwrap(), 2);
-
-        // Clear should reset everything
-        store.clear().await.unwrap();
-        assert_eq!(store.get("wallet1").await.unwrap(), 0);
-        assert_eq!(store.get("wallet2").await.unwrap(), 0);
     }
 
     // Run with: KORA_REDIS_URL="redis://127.0.0.1:6379" cargo test -p kora-lib test_redis -- --include-ignored

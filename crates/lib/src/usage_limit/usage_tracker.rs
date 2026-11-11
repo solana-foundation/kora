@@ -477,27 +477,9 @@ mod tests {
 
     #[async_trait]
     impl UsageStore for ConcurrentMockStore {
-        async fn increment(&self, key: &str) -> Result<u32, KoraError> {
-            tokio::task::yield_now().await;
-            self.inner.increment(key).await
-        }
-
-        async fn increment_with_expiry(
-            &self,
-            key: &str,
-            expires_at: u64,
-        ) -> Result<u32, KoraError> {
-            tokio::task::yield_now().await;
-            self.inner.increment_with_expiry(key, expires_at).await
-        }
-
         async fn get(&self, key: &str) -> Result<u32, KoraError> {
             tokio::task::yield_now().await;
             self.inner.get(key).await
-        }
-
-        async fn clear(&self) -> Result<(), KoraError> {
-            self.inner.clear().await
         }
 
         async fn check_and_increment(
