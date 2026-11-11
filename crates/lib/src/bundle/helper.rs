@@ -20,6 +20,7 @@ use std::{collections::HashMap, sync::Arc};
 pub struct BundleProcessor {
     pub resolved_transactions: Vec<VersionedTransactionResolved>,
     pub total_required_lamports: u64,
+    pub total_cost_lamports: u64,
     pub total_payment_lamports: u64,
     pub total_solana_estimated_fee: u64,
 }
@@ -104,6 +105,7 @@ impl BundleProcessor {
             transfer_hook_validation_flow_for_bundle(plugin_context);
         let mut resolved_transactions = Vec::with_capacity(encoded_txs.len());
         let mut total_required_lamports = 0u64;
+        let mut total_cost_lamports = 0u64;
         let mut all_bundle_instructions: Vec<Instruction> = Vec::new();
         let mut txs_missing_payment_count = 0u64;
 
@@ -162,6 +164,11 @@ impl BundleProcessor {
                     || KoraError::ValidationError("Bundle fee calculation overflow".to_string()),
                 )?;
 
+            total_cost_lamports =
+                total_cost_lamports.checked_add(fee_calc.get_total_fee_lamports()?).ok_or_else(
+                    || KoraError::ValidationError("Bundle fee calculation overflow".to_string()),
+                )?;
+
             if fee_calc.payment_instruction_fee > 0 {
                 txs_missing_payment_count += 1;
             }
@@ -184,6 +191,7 @@ impl BundleProcessor {
                 total_required_lamports.checked_sub(overcount).ok_or_else(|| {
                     KoraError::ValidationError("Bundle fee calculation overflow".to_string())
                 })?;
+            total_cost_lamports = total_cost_lamports.saturating_sub(overcount);
         }
 
         let mut bundle_payment_totals = PaymentLamportTotals::default();
@@ -213,6 +221,7 @@ impl BundleProcessor {
         Ok(Self {
             resolved_transactions,
             total_required_lamports,
+            total_cost_lamports,
             total_payment_lamports,
             total_solana_estimated_fee,
         })
@@ -237,6 +246,11 @@ impl BundleProcessor {
         config: &Config,
         will_send: bool,
     ) -> Result<Vec<VersionedTransactionResolved>, KoraError> {
+        TransactionValidator::validate_strict_pricing(
+            config,
+            self.total_required_lamports,
+            self.total_cost_lamports,
+        )?;
         self.validate_payment()?;
 
         let mut blockhash = None;
@@ -325,11 +339,76 @@ mod tests {
         assert_eq!(bundle_payment_totals.net_payment(), 7_500_000);
     }
 
+    fn strict_pricing_config(strict: bool) -> Config {
+        crate::tests::config_mock::ConfigMockBuilder::new()
+            .with_price_model(crate::fee::price::PriceModel::Fixed {
+                amount: 5000,
+                token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
+                strict,
+            })
+            .build()
+    }
+
+    fn processor_with_cost(
+        total_required_lamports: u64,
+        total_cost_lamports: u64,
+    ) -> BundleProcessor {
+        BundleProcessor {
+            resolved_transactions: vec![],
+            total_required_lamports,
+            total_cost_lamports,
+            total_payment_lamports: total_required_lamports,
+            total_solana_estimated_fee: 0,
+        }
+    }
+
+    async fn sign_empty_bundle(
+        processor: BundleProcessor,
+        config: &Config,
+    ) -> Result<Vec<VersionedTransactionResolved>, KoraError> {
+        let keypair = solana_sdk::signature::Keypair::new();
+        let signer =
+            Arc::new(solana_keychain::Signer::from_memory(&keypair.to_base58_string()).unwrap());
+        let rpc_client = crate::tests::rpc_mock::RpcMockBuilder::new().build();
+        let fee_payer = solana_sdk::signer::Signer::pubkey(&keypair);
+        processor.sign_all(&signer, &fee_payer, &rpc_client, config, false).await
+    }
+
+    #[tokio::test]
+    async fn test_sign_all_rejects_bundle_costing_more_than_strict_fixed_price() {
+        let config = strict_pricing_config(true);
+
+        let result = sign_empty_bundle(processor_with_cost(10_000, 10_001), &config).await;
+
+        match result {
+            Err(KoraError::ValidationError(msg)) => {
+                assert!(msg.contains("Strict pricing violation"), "{msg}")
+            }
+            Err(other) => panic!("expected strict pricing violation, got {other:?}"),
+            Ok(_) => panic!("expected strict pricing violation, bundle was signed"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sign_all_accepts_bundle_within_strict_fixed_price() {
+        let config = strict_pricing_config(true);
+
+        assert!(sign_empty_bundle(processor_with_cost(10_000, 10_000), &config).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_sign_all_ignores_cost_when_fixed_price_is_not_strict() {
+        let config = strict_pricing_config(false);
+
+        assert!(sign_empty_bundle(processor_with_cost(10_000, 10_001), &config).await.is_ok());
+    }
+
     #[test]
     fn test_validate_payment_sufficient() {
         let processor = BundleProcessor {
             resolved_transactions: vec![],
             total_required_lamports: 1000,
+            total_cost_lamports: 0,
             total_payment_lamports: 1500,
             total_solana_estimated_fee: 1000,
         };
@@ -342,6 +421,7 @@ mod tests {
         let processor = BundleProcessor {
             resolved_transactions: vec![],
             total_required_lamports: 1000,
+            total_cost_lamports: 0,
             total_payment_lamports: 1000,
             total_solana_estimated_fee: 1000,
         };
@@ -354,6 +434,7 @@ mod tests {
         let processor = BundleProcessor {
             resolved_transactions: vec![],
             total_required_lamports: 2000,
+            total_cost_lamports: 0,
             total_payment_lamports: 1000,
             total_solana_estimated_fee: 1000,
         };
@@ -374,6 +455,7 @@ mod tests {
         let processor = BundleProcessor {
             resolved_transactions: vec![],
             total_required_lamports: 0,
+            total_cost_lamports: 0,
             total_payment_lamports: 0,
             total_solana_estimated_fee: 1000,
         };
@@ -386,6 +468,7 @@ mod tests {
         let processor = BundleProcessor {
             resolved_transactions: vec![],
             total_required_lamports: u64::MAX,
+            total_cost_lamports: 0,
             total_payment_lamports: u64::MAX,
             total_solana_estimated_fee: 1000,
         };
@@ -398,6 +481,7 @@ mod tests {
         let processor = BundleProcessor {
             resolved_transactions: vec![],
             total_required_lamports: 1001,
+            total_cost_lamports: 0,
             total_payment_lamports: 1000,
             total_solana_estimated_fee: 500,
         };
@@ -413,6 +497,7 @@ mod tests {
         let processor = BundleProcessor {
             resolved_transactions: vec![],
             total_required_lamports: 5000,
+            total_cost_lamports: 0,
             total_payment_lamports: 6000,
             total_solana_estimated_fee: 2500,
         };

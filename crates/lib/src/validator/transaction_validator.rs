@@ -474,8 +474,21 @@ impl TransactionValidator {
             return Ok(());
         }
 
-        let fixed_price_lamports = fee_calculation.total_fee_lamports;
-        let total_fee_lamports = fee_calculation.get_total_fee_lamports()?;
+        Self::validate_strict_pricing(
+            config,
+            fee_calculation.total_fee_lamports,
+            fee_calculation.get_total_fee_lamports()?,
+        )
+    }
+
+    pub fn validate_strict_pricing(
+        config: &Config,
+        fixed_price_lamports: u64,
+        total_fee_lamports: u64,
+    ) -> Result<(), KoraError> {
+        if !matches!(&config.validation.price.model, PriceModel::Fixed { strict: true, .. }) {
+            return Ok(());
+        }
 
         if fixed_price_lamports < total_fee_lamports {
             log::error!(

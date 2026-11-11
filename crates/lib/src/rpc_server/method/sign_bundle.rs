@@ -522,6 +522,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_sign_bundle_rejects_cost_above_strict_fixed_price() {
+        let mint = Pubkey::new_unique();
+        let mut config = ConfigMockBuilder::new()
+            .with_bundle_enabled(true)
+            .with_usage_limit_enabled(false)
+            .with_cache_enabled(false)
+            .build();
+        config.validation.price = PriceConfig {
+            model: PriceModel::Fixed { amount: 0, token: mint.to_string(), strict: true },
+        };
+        let _m = setup_config_mock(config);
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let signer_pubkey = setup_or_get_test_signer();
+        let rpc_client = Arc::new(
+            RpcMockBuilder::new()
+                .with_fee_estimate(5000)
+                .with_blockhash()
+                .with_simulation()
+                .with_mint_account(6)
+                .build(),
+        );
+
+        let ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&signer_pubkey)));
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let encoded = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
+
+        let request = SignBundleRequest {
+            transactions: vec![encoded],
+            signer_key: Some(signer_pubkey.to_string()),
+            sig_verify: true,
+            user_id: None,
+            sign_only_indices: None,
+        };
+
+        let err = sign_bundle(&rpc_client, request).await.unwrap_err().to_string();
+        assert!(err.contains("Strict pricing violation"), "Unexpected error: {err}");
+    }
+
+    #[tokio::test]
     async fn test_sign_bundle_rejects_disallowed_transaction_version() {
         let _m = ConfigMockBuilder::new()
             .with_bundle_enabled(true)
