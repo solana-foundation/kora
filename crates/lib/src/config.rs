@@ -601,6 +601,14 @@ impl Token2022Config {
     }
 }
 
+fn deserialize_removed_method<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    bool::deserialize(deserializer)?;
+    Ok(false)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct EnabledMethods {
@@ -610,7 +618,9 @@ pub struct EnabledMethods {
     pub get_payer_signer: bool,
     pub sign_transaction: bool,
     pub sign_and_send_transaction: bool,
-    /// Unused: the method was removed. Accepted so configs that still set it keep loading.
+    /// The method was removed. The key is still accepted so configs that set it keep loading,
+    /// but it always reads as `false` so `getConfig` never advertises it.
+    #[serde(deserialize_with = "deserialize_removed_method")]
     pub transfer_transaction: bool,
     pub get_blockhash: bool,
     pub get_config: bool,
@@ -1088,6 +1098,21 @@ mod tests {
         assert_eq!(config.kora.rate_limit, 100);
         assert!(config.kora.enabled_methods.estimate_transaction_fee);
         assert!(config.kora.enabled_methods.sign_and_send_transaction);
+    }
+
+    #[test]
+    fn test_removed_transfer_transaction_never_reads_as_enabled() {
+        let config = ConfigBuilder::new()
+            .with_enabled_methods(&[("transfer_transaction", true)])
+            .build_config()
+            .unwrap();
+
+        assert!(!config.kora.enabled_methods.transfer_transaction);
+        assert!(!config
+            .kora
+            .enabled_methods
+            .get_enabled_method_names()
+            .contains(&"transferTransaction".to_string()));
     }
 
     #[test]
