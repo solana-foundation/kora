@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_keychain::SolanaSigner;
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 #[cfg(not(test))]
 use crate::state::{get_config, select_request_signer_with_signer_key};
@@ -20,7 +19,7 @@ use crate::state::select_request_signer_with_signer_key;
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
 pub struct SignAndSendTransactionRequest {
     pub transaction: String,
     /// Optional signer signer_key to ensure consistency across related RPC calls
@@ -40,7 +39,7 @@ pub struct SignAndSendTransactionRequest {
     pub respond_after: RespondAfter,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SignAndSendTransactionResponse {
     pub signed_transaction: String,
     /// Public key of the signer used (for client consistency)

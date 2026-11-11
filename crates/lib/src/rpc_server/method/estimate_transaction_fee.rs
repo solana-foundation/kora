@@ -1,6 +1,5 @@
 use solana_keychain::SolanaSigner;
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 use crate::{
     error::KoraError,
@@ -25,7 +24,7 @@ use crate::tests::config_mock::mock_state::get_config;
 /// This endpoint calculates the required fee for a given transaction based on current
 /// oracle prices and Kora's configuration. It can estimate fees in native SOL (lamports)
 /// and in a specific supported SPL token if `fee_token` is provided.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EstimateTransactionFeeRequest {
     /// Base64-encoded serialized transaction
     pub transaction: String,
@@ -41,7 +40,7 @@ pub struct EstimateTransactionFeeRequest {
 }
 
 /// Response payload containing the estimated transaction fee.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EstimateTransactionFeeResponse {
     /// The exact fee required in native SOL (lamports)
     pub fee_in_lamports: u64,

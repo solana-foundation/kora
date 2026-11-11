@@ -1,8 +1,7 @@
 use crate::KoraError;
 use serde::Serialize;
-use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GetVersionResponse {
     pub version: String,
 }

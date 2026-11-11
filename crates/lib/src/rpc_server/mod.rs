@@ -3,8 +3,6 @@ pub mod auth;
 pub mod global_rate_limit;
 pub mod method;
 pub mod middleware_utils;
-#[cfg(feature = "docs")]
-pub mod openapi;
 pub mod recaptcha;
 pub mod recaptcha_util;
 pub mod rpc;

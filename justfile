@@ -168,23 +168,9 @@ build-ts-sdk:
 format-ts-sdk:
     cd sdks/ts && pnpm format
 
-# Generate TypeScript client from OpenAPI
-[group('sdk')]
-gen-ts-client: openapi
-    docker run --rm -v "{{justfile_directory()}}:/local" openapitools/openapi-generator-cli generate \
-        -i /local/crates/lib/src/rpc_server/openapi/spec/combined_api.json \
-        -g typescript-fetch \
-        -o /local/generated/typescript-client \
-        --additional-properties=supportsES6=true,npmName=kora-client,npmVersion=0.1.0
-
 # ******************************************************************************
 # Documentation & Coverage
 # ******************************************************************************
-
-# Generate OpenAPI documentation
-[group('docs')]
-openapi:
-    cargo run -p kora-cli --bin kora --features docs -- openapi -o openapi.json
 
 # Generate HTML coverage report
 [group('docs')]

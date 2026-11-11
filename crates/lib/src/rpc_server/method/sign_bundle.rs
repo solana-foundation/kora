@@ -12,7 +12,6 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_keychain::SolanaSigner;
 use solana_sdk::pubkey::Pubkey;
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 #[cfg(not(test))]
 use crate::state::{get_config, select_request_signer_with_signer_key};
@@ -22,7 +21,7 @@ use crate::state::select_request_signer_with_signer_key;
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
 pub struct SignBundleRequest {
     /// Array of base64-encoded transactions
     pub transactions: Vec<String>,
@@ -40,7 +39,7 @@ pub struct SignBundleRequest {
     pub sign_only_indices: Option<Vec<usize>>,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SignBundleResponse {
     /// Array of base64-encoded signed transactions
     pub signed_transactions: Vec<String>,

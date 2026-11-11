@@ -21,7 +21,7 @@ pub struct SignerPoolSettings {
 }
 
 /// Available signer selection strategies
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectionStrategy {
     RoundRobin,

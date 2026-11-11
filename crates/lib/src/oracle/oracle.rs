@@ -10,9 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::time::sleep;
 
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenPrice {
-    #[schema(value_type = String)]
     pub price: Decimal,
     pub confidence: f64,
     pub source: PriceSource,
@@ -20,7 +19,7 @@ pub struct TokenPrice {
     pub block_id: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PriceSource {
     Jupiter,
     Mock,
