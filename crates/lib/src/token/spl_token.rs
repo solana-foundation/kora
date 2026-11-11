@@ -1,13 +1,8 @@
 use crate::token::interface::TokenMint;
 
 use super::interface::{TokenInterface, TokenState};
-use async_trait::async_trait;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::{instruction::Instruction, program_pack::Pack};
-use spl_associated_token_account_interface::{
-    address::get_associated_token_address_with_program_id,
-    instruction::create_associated_token_account,
-};
+use solana_sdk::program_pack::Pack;
 use spl_token_interface::{
     self,
     state::{Account as TokenAccountState, AccountState, Mint as MintState},
@@ -32,12 +27,6 @@ impl TokenState for TokenAccount {
     fn owner(&self) -> Pubkey {
         self.owner
     }
-    fn amount(&self) -> u64 {
-        self.amount
-    }
-    fn decimals(&self) -> u8 {
-        0
-    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -54,32 +43,8 @@ pub struct SplMint {
 }
 
 impl TokenMint for SplMint {
-    fn address(&self) -> Pubkey {
-        self.mint
-    }
-
     fn decimals(&self) -> u8 {
         self.decimals
-    }
-
-    fn mint_authority(&self) -> Option<Pubkey> {
-        self.mint_authority
-    }
-
-    fn supply(&self) -> u64 {
-        self.supply
-    }
-
-    fn freeze_authority(&self) -> Option<Pubkey> {
-        self.freeze_authority
-    }
-
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
-    }
-
-    fn get_token_program(&self) -> Box<dyn TokenInterface> {
-        Box::new(TokenProgram::new())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -101,7 +66,6 @@ impl TokenProgram {
     }
 }
 
-#[async_trait]
 impl TokenInterface for TokenProgram {
     fn program_id(&self) -> Pubkey {
         spl_token_interface::id()
@@ -127,71 +91,6 @@ impl TokenInterface for TokenProgram {
             delegated_amount: account.delegated_amount,
             close_authority: account.close_authority.into(),
         }))
-    }
-
-    fn create_initialize_account_instruction(
-        &self,
-        account: &Pubkey,
-        mint: &Pubkey,
-        owner: &Pubkey,
-    ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(spl_token_interface::instruction::initialize_account(
-            &self.program_id(),
-            account,
-            mint,
-            owner,
-        )?)
-    }
-
-    fn create_transfer_instruction(
-        &self,
-        source: &Pubkey,
-        destination: &Pubkey,
-        authority: &Pubkey,
-        amount: u64,
-    ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(spl_token_interface::instruction::transfer(
-            &self.program_id(),
-            source,
-            destination,
-            authority,
-            &[],
-            amount,
-        )?)
-    }
-
-    fn create_transfer_checked_instruction(
-        &self,
-        source: &Pubkey,
-        mint: &Pubkey,
-        destination: &Pubkey,
-        authority: &Pubkey,
-        amount: u64,
-        decimals: u8,
-    ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(spl_token_interface::instruction::transfer_checked(
-            &self.program_id(),
-            source,
-            mint,
-            destination,
-            authority,
-            &[],
-            amount,
-            decimals,
-        )?)
-    }
-
-    fn get_associated_token_address(&self, wallet: &Pubkey, mint: &Pubkey) -> Pubkey {
-        get_associated_token_address_with_program_id(wallet, mint, &self.program_id())
-    }
-
-    fn create_associated_token_account_instruction(
-        &self,
-        funding_account: &Pubkey,
-        wallet: &Pubkey,
-        mint: &Pubkey,
-    ) -> Instruction {
-        create_associated_token_account(funding_account, wallet, mint, &self.program_id())
     }
 
     fn unpack_mint(
@@ -353,108 +252,6 @@ mod tests {
     }
 
     #[test]
-    fn test_create_initialize_account_instruction() {
-        let program = TokenProgram::new();
-        let account = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
-        let owner = Pubkey::new_unique();
-
-        let result = program.create_initialize_account_instruction(&account, &mint, &owner);
-        assert!(result.is_ok());
-
-        let instruction = result.unwrap();
-        assert_eq!(instruction.program_id, spl_token_interface::id());
-        assert_eq!(instruction.accounts.len(), 4);
-    }
-
-    #[test]
-    fn test_create_transfer_instruction() {
-        let program = TokenProgram::new();
-        let source = Pubkey::new_unique();
-        let destination = Pubkey::new_unique();
-        let authority = Pubkey::new_unique();
-        let amount = 1000000;
-
-        let result = program.create_transfer_instruction(&source, &destination, &authority, amount);
-        assert!(result.is_ok());
-
-        let instruction = result.unwrap();
-        assert_eq!(instruction.program_id, spl_token_interface::id());
-        assert_eq!(instruction.accounts.len(), 3);
-    }
-
-    #[test]
-    fn test_create_transfer_checked_instruction() {
-        let program = TokenProgram::new();
-        let source = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
-        let destination = Pubkey::new_unique();
-        let authority = Pubkey::new_unique();
-        let amount = 1000000;
-        let decimals = 6;
-
-        let result = program.create_transfer_checked_instruction(
-            &source,
-            &mint,
-            &destination,
-            &authority,
-            amount,
-            decimals,
-        );
-        assert!(result.is_ok());
-
-        let instruction = result.unwrap();
-        assert_eq!(instruction.program_id, spl_token_interface::id());
-        assert_eq!(instruction.accounts.len(), 4);
-    }
-
-    #[test]
-    fn test_get_associated_token_address() {
-        let program = TokenProgram::new();
-        let wallet = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
-
-        let ata = program.get_associated_token_address(&wallet, &mint);
-
-        let ata2 = get_associated_token_address_with_program_id(
-            &wallet,
-            &mint,
-            &spl_token_interface::id(),
-        );
-
-        assert_eq!(ata, ata2);
-    }
-
-    #[test]
-    fn test_create_associated_token_account_instruction() {
-        let program = TokenProgram::new();
-        let funding_account = Pubkey::new_unique();
-        let wallet = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
-
-        let instruction =
-            program.create_associated_token_account_instruction(&funding_account, &wallet, &mint);
-
-        assert_eq!(instruction.program_id, spl_associated_token_account_interface::program::id());
-        assert_eq!(instruction.accounts.len(), 6);
-    }
-
-    #[test]
-    fn test_spl_mint_get_token_program() {
-        let spl_mint = SplMint {
-            mint: Pubkey::new_unique(),
-            mint_authority: None,
-            supply: 0,
-            decimals: 0,
-            is_initialized: false,
-            freeze_authority: None,
-        };
-
-        let token_program = spl_mint.get_token_program();
-        assert_eq!(token_program.program_id(), spl_token_interface::id());
-    }
-
-    #[test]
     fn test_spl_mint_as_any_downcasting() {
         let spl_mint = SplMint {
             mint: Pubkey::new_unique(),
@@ -471,21 +268,5 @@ mod tests {
         let downcast_result = any_ref.downcast_ref::<SplMint>();
         assert!(downcast_result.is_some());
         assert_eq!(downcast_result.unwrap().supply, 1000000);
-    }
-
-    #[test]
-    fn test_spl_mint_with_none_authorities() {
-        let spl_mint = SplMint {
-            mint: Pubkey::new_unique(),
-            mint_authority: None,
-            supply: 0,
-            decimals: 0,
-            is_initialized: false,
-            freeze_authority: None,
-        };
-
-        assert_eq!(spl_mint.mint_authority(), None);
-        assert_eq!(spl_mint.freeze_authority(), None);
-        assert!(!spl_mint.is_initialized());
     }
 }

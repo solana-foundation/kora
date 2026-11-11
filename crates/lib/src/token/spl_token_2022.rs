@@ -7,13 +7,7 @@ use crate::token::{
 };
 
 use super::interface::{TokenInterface, TokenState};
-use async_trait::async_trait;
 use solana_program::{program_pack::Pack, pubkey::Pubkey};
-use solana_sdk::instruction::Instruction;
-use spl_associated_token_account_interface::{
-    address::get_associated_token_address_with_program_id,
-    instruction::create_associated_token_account,
-};
 use spl_token_2022_interface::{
     extension::{transfer_fee::TransferFeeConfig, ExtensionType, StateWithExtensions},
     state::{Account as Token2022AccountState, AccountState, Mint as Token2022MintState},
@@ -43,28 +37,8 @@ impl TokenState for Token2022Account {
     fn owner(&self) -> Pubkey {
         self.owner
     }
-    fn amount(&self) -> u64 {
-        self.amount
-    }
-    fn decimals(&self) -> u8 {
-        0
-    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
-    }
-}
-
-impl Token2022Account {
-    pub fn has_memo_extension(&self) -> bool {
-        self.has_extension(ExtensionType::MemoTransfer)
-    }
-
-    pub fn has_immutable_owner_extension(&self) -> bool {
-        self.has_extension(ExtensionType::ImmutableOwner)
-    }
-
-    pub fn has_default_account_state_extension(&self) -> bool {
-        self.has_extension(ExtensionType::DefaultAccountState)
     }
 }
 
@@ -75,22 +49,6 @@ impl Token2022Extensions for Token2022Account {
 
     fn get_extension_types(&self) -> &Vec<ExtensionType> {
         &self.extensions_types
-    }
-
-    fn has_confidential_transfer_extension(&self) -> bool {
-        self.has_extension(ExtensionType::ConfidentialTransferAccount)
-    }
-
-    fn has_transfer_hook_extension(&self) -> bool {
-        self.has_extension(ExtensionType::TransferHookAccount)
-    }
-
-    fn has_pausable_extension(&self) -> bool {
-        self.has_extension(ExtensionType::PausableAccount)
-    }
-
-    fn is_non_transferable(&self) -> bool {
-        self.has_extension(ExtensionType::NonTransferableAccount)
     }
 }
 
@@ -109,32 +67,8 @@ pub struct Token2022Mint {
 }
 
 impl TokenMint for Token2022Mint {
-    fn address(&self) -> Pubkey {
-        self.mint
-    }
-
     fn decimals(&self) -> u8 {
         self.decimals
-    }
-
-    fn mint_authority(&self) -> Option<Pubkey> {
-        self.mint_authority
-    }
-
-    fn supply(&self) -> u64 {
-        self.supply
-    }
-
-    fn freeze_authority(&self) -> Option<Pubkey> {
-        self.freeze_authority
-    }
-
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
-    }
-
-    fn get_token_program(&self) -> Box<dyn TokenInterface> {
-        Box::new(Token2022Program::new())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -190,22 +124,6 @@ impl Token2022Mint {
             Ok(None)
         }
     }
-
-    pub fn has_confidential_mint_burn_extension(&self) -> bool {
-        self.has_extension(ExtensionType::ConfidentialMintBurn)
-    }
-
-    pub fn has_mint_close_authority_extension(&self) -> bool {
-        self.has_extension(ExtensionType::MintCloseAuthority)
-    }
-
-    pub fn has_interest_bearing_extension(&self) -> bool {
-        self.has_extension(ExtensionType::InterestBearingConfig)
-    }
-
-    pub fn has_permanent_delegate_extension(&self) -> bool {
-        self.has_extension(ExtensionType::PermanentDelegate)
-    }
 }
 
 impl Token2022Extensions for Token2022Mint {
@@ -215,22 +133,6 @@ impl Token2022Extensions for Token2022Mint {
 
     fn get_extension_types(&self) -> &Vec<ExtensionType> {
         &self.extensions_types
-    }
-
-    fn has_confidential_transfer_extension(&self) -> bool {
-        self.has_extension(ExtensionType::ConfidentialTransferMint)
-    }
-
-    fn has_transfer_hook_extension(&self) -> bool {
-        self.has_extension(ExtensionType::TransferHook)
-    }
-
-    fn has_pausable_extension(&self) -> bool {
-        self.has_extension(ExtensionType::Pausable)
-    }
-
-    fn is_non_transferable(&self) -> bool {
-        self.has_extension(ExtensionType::NonTransferable)
     }
 }
 
@@ -248,7 +150,6 @@ impl Default for Token2022Program {
     }
 }
 
-#[async_trait]
 impl TokenInterface for Token2022Program {
     fn program_id(&self) -> Pubkey {
         spl_token_2022_interface::id()
@@ -290,72 +191,6 @@ impl TokenInterface for Token2022Program {
             extensions_types,
             extensions,
         }))
-    }
-
-    fn create_initialize_account_instruction(
-        &self,
-        account: &Pubkey,
-        mint: &Pubkey,
-        owner: &Pubkey,
-    ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(spl_token_2022_interface::instruction::initialize_account3(
-            &self.program_id(),
-            account,
-            mint,
-            owner,
-        )?)
-    }
-
-    fn create_transfer_instruction(
-        &self,
-        source: &Pubkey,
-        destination: &Pubkey,
-        authority: &Pubkey,
-        amount: u64,
-    ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        #[allow(deprecated)]
-        Ok(spl_token_2022_interface::instruction::transfer(
-            &self.program_id(),
-            source,
-            destination,
-            authority,
-            &[],
-            amount,
-        )?)
-    }
-
-    fn create_transfer_checked_instruction(
-        &self,
-        source: &Pubkey,
-        mint: &Pubkey,
-        destination: &Pubkey,
-        authority: &Pubkey,
-        amount: u64,
-        decimals: u8,
-    ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(spl_token_2022_interface::instruction::transfer_checked(
-            &self.program_id(),
-            source,
-            mint,
-            destination,
-            authority,
-            &[],
-            amount,
-            decimals,
-        )?)
-    }
-
-    fn get_associated_token_address(&self, wallet: &Pubkey, mint: &Pubkey) -> Pubkey {
-        get_associated_token_address_with_program_id(wallet, mint, &self.program_id())
-    }
-
-    fn create_associated_token_account_instruction(
-        &self,
-        funding_account: &Pubkey,
-        wallet: &Pubkey,
-        mint: &Pubkey,
-    ) -> Instruction {
-        create_associated_token_account(funding_account, wallet, mint, &self.program_id())
     }
 
     fn unpack_mint(
@@ -407,24 +242,10 @@ pub trait Token2022Extensions {
         ext_type as u16
     }
 
-    /// Check if has a specific extension type
-    fn has_extension(&self, extension_type: ExtensionType) -> bool {
-        self.get_extension_types().contains(&extension_type)
-    }
-
     /// Get extension by type
     fn get_extension(&self, extension_type: ExtensionType) -> Option<&ParsedExtension> {
         self.get_extensions().get(&Self::extension_key(extension_type))
     }
-
-    fn has_confidential_transfer_extension(&self) -> bool;
-
-    fn has_transfer_hook_extension(&self) -> bool;
-
-    fn has_pausable_extension(&self) -> bool;
-
-    /// Check if the token/mint is non-transferable (differs between Account and Mint)
-    fn is_non_transferable(&self) -> bool;
 }
 
 #[cfg(test)]
@@ -482,88 +303,10 @@ mod tests {
         // Verify the basic fields
         assert_eq!(account.mint(), mint);
         assert_eq!(account.owner(), owner);
-        assert_eq!(account.amount(), amount);
+        assert_eq!(account.amount, amount);
 
         // Verify extensions map is available
         assert!(!account.extensions.is_empty());
-    }
-
-    #[test]
-    fn test_token2022_transfer_instruction() {
-        let source = Pubkey::new_unique();
-        let dest = Pubkey::new_unique();
-        let authority = Pubkey::new_unique();
-        let amount = 100;
-
-        // Create the instruction directly for testing
-        let program = Token2022Program::new();
-        let ix = program.create_transfer_instruction(&source, &dest, &authority, amount).unwrap();
-
-        assert_eq!(ix.program_id, spl_token_2022_interface::id());
-        // Verify accounts are in correct order
-        assert_eq!(ix.accounts[0].pubkey, source);
-        assert_eq!(ix.accounts[1].pubkey, dest);
-        assert_eq!(ix.accounts[2].pubkey, authority);
-    }
-
-    #[test]
-    fn test_token2022_transfer_checked_instruction() {
-        let source = Pubkey::new_unique();
-        let dest = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
-        let authority = Pubkey::new_unique();
-        let amount = 100;
-        let decimals = 9;
-
-        let program = Token2022Program::new();
-        let ix = program
-            .create_transfer_checked_instruction(
-                &source, &mint, &dest, &authority, amount, decimals,
-            )
-            .unwrap();
-
-        assert_eq!(ix.program_id, spl_token_2022_interface::id());
-        // Verify accounts are in correct order
-        assert_eq!(ix.accounts[0].pubkey, source);
-        assert_eq!(ix.accounts[1].pubkey, mint);
-        assert_eq!(ix.accounts[2].pubkey, dest);
-        assert_eq!(ix.accounts[3].pubkey, authority);
-    }
-
-    #[test]
-    fn test_token2022_ata_derivation() {
-        let program = Token2022Program::new();
-        let wallet = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
-
-        let ata = program.get_associated_token_address(&wallet, &mint);
-
-        // Verify ATA derivation matches spl-token-2022
-        let expected_ata =
-            spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
-                &wallet,
-                &mint,
-                &spl_token_2022_interface::id(),
-            );
-        assert_eq!(ata, expected_ata);
-    }
-
-    #[test]
-    fn test_token2022_account_state_extensions() {
-        let owner = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
-        let amount = 1000;
-
-        let token_account = TokenAccountMockBuilder::new()
-            .with_mint(&mint)
-            .with_owner(&owner)
-            .with_amount(amount)
-            .build_as_custom_token2022_token_account(HashMap::new());
-
-        // Test extension detection
-        assert!(!token_account.has_extension(ExtensionType::TransferFeeConfig));
-        assert!(!token_account.has_extension(ExtensionType::NonTransferableAccount));
-        assert!(!token_account.has_extension(ExtensionType::CpiGuard));
     }
 
     #[test]
@@ -580,7 +323,7 @@ mod tests {
 
         assert_eq!(token_account.mint(), mint);
         assert_eq!(token_account.owner(), owner);
-        assert_eq!(token_account.amount(), amount);
+        assert_eq!(token_account.amount, amount);
 
         assert!(!token_account.extensions.is_empty());
     }
@@ -607,55 +350,6 @@ mod tests {
         let large_amount_fee = mint.calculate_transfer_fee(1_000_000, 0).unwrap();
         assert!(large_amount_fee.is_some());
         assert_eq!(large_amount_fee.unwrap(), 1000, "Large amount should be capped at maximum fee");
-    }
-
-    #[test]
-    fn test_token2022_mint_specific_extensions() {
-        let mint_pubkey = Pubkey::new_unique();
-        let mint = Token2022Mint {
-            mint: mint_pubkey,
-            mint_authority: None,
-            supply: 0,
-            decimals: 6,
-            is_initialized: true,
-            freeze_authority: None,
-            extensions_types: vec![
-                ExtensionType::InterestBearingConfig,
-                ExtensionType::PermanentDelegate,
-                ExtensionType::MintCloseAuthority,
-            ],
-            extensions: HashMap::new(), // Extension data not needed for has_extension tests
-        };
-
-        assert!(mint.has_interest_bearing_extension());
-        assert!(mint.has_permanent_delegate_extension());
-        assert!(mint.has_mint_close_authority_extension());
-        assert!(!mint.has_confidential_mint_burn_extension());
-    }
-
-    #[test]
-    fn test_token2022_account_extension_methods() {
-        let account = TokenAccountMockBuilder::new()
-            .with_extensions(vec![
-                ExtensionType::MemoTransfer,
-                ExtensionType::ImmutableOwner,
-                ExtensionType::DefaultAccountState,
-                ExtensionType::ConfidentialTransferAccount,
-                ExtensionType::TransferHookAccount,
-                ExtensionType::PausableAccount,
-            ])
-            .build_as_custom_token2022_token_account(HashMap::new());
-
-        // Test all extension detection methods
-        assert!(account.has_memo_extension());
-        assert!(account.has_immutable_owner_extension());
-        assert!(account.has_default_account_state_extension());
-        assert!(account.has_confidential_transfer_extension());
-        assert!(account.has_transfer_hook_extension());
-        assert!(account.has_pausable_extension());
-
-        // Test extensions not present
-        assert!(!account.is_non_transferable());
     }
 
     #[test]
@@ -735,32 +429,5 @@ mod tests {
         // Test newer fee (epoch >= 10)
         let fee_new = mint.calculate_transfer_fee(10000, 15).unwrap().unwrap();
         assert_eq!(fee_new, 200); // 10000 * 2% = 200
-    }
-
-    #[test]
-    fn test_token2022_mint_all_extension_methods() {
-        let mint = MintAccountMockBuilder::new()
-            .with_extensions(vec![
-                ExtensionType::InterestBearingConfig,
-                ExtensionType::PermanentDelegate,
-                ExtensionType::MintCloseAuthority,
-                ExtensionType::ConfidentialMintBurn,
-                ExtensionType::ConfidentialTransferMint,
-                ExtensionType::TransferHook,
-                ExtensionType::Pausable,
-            ])
-            .build_as_custom_token2022_mint(Pubkey::new_unique(), HashMap::new());
-
-        // Test all extension detection methods
-        assert!(mint.has_interest_bearing_extension());
-        assert!(mint.has_permanent_delegate_extension());
-        assert!(mint.has_mint_close_authority_extension());
-        assert!(mint.has_confidential_mint_burn_extension());
-        assert!(mint.has_confidential_transfer_extension());
-        assert!(mint.has_transfer_hook_extension());
-        assert!(mint.has_pausable_extension());
-
-        // Test extensions not present
-        assert!(!mint.is_non_transferable());
     }
 }

@@ -19,11 +19,7 @@ mod transfer_hook;
 #[cfg(test)]
 use {crate::tests::config_mock::mock_state::get_config, rust_decimal_macros::dec};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TokenType {
-    Spl,
-    Token2022,
-}
+pub struct TokenType;
 
 impl TokenType {
     pub fn get_token_program_from_owner(
@@ -35,13 +31,6 @@ impl TokenType {
             Ok(Box::new(Token2022Program::new()))
         } else {
             Err(KoraError::TokenOperationError(format!("Invalid token program owner: {owner}")))
-        }
-    }
-
-    pub fn get_token_program(&self) -> Box<dyn TokenInterface> {
-        match self {
-            TokenType::Spl => Box::new(TokenProgram::new()),
-            TokenType::Token2022 => Box::new(Token2022Program::new()),
         }
     }
 }
@@ -215,20 +204,6 @@ mod tests_token {
         if let Err(error) = result {
             assert!(matches!(error, KoraError::TokenOperationError(_)));
         }
-    }
-
-    #[test]
-    fn test_token_type_get_token_program_spl() {
-        let token_type = TokenType::Spl;
-        let result = token_type.get_token_program();
-        assert_eq!(result.program_id(), spl_token_interface::id());
-    }
-
-    #[test]
-    fn test_token_type_get_token_program_token2022() {
-        let token_type = TokenType::Token2022;
-        let result = token_type.get_token_program();
-        assert_eq!(result.program_id(), spl_token_2022_interface::id());
     }
 
     #[test]

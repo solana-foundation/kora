@@ -2,7 +2,6 @@ use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use kora_lib::{
     constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR,
-    token::{spl_token::TokenProgram, spl_token_2022::Token2022Program, TokenInterface},
     transaction::TransactionUtil,
 };
 use solana_address_lookup_table_interface::state::AddressLookupTable;
@@ -187,15 +186,15 @@ impl TransactionBuilder {
         let from_token_account = get_associated_token_address(from_authority, token_mint);
         let to_token_account = get_associated_token_address(to_pubkey, token_mint);
 
-        let token_interface = TokenProgram::new();
-        let instruction = token_interface
-            .create_transfer_instruction(
-                &from_token_account,
-                &to_token_account,
-                from_authority,
-                amount,
-            )
-            .expect("Failed to create SPL transfer instruction");
+        let instruction = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &from_token_account,
+            &to_token_account,
+            from_authority,
+            &[],
+            amount,
+        )
+        .expect("Failed to create SPL transfer instruction");
 
         self.instructions.push(instruction);
         self
@@ -316,17 +315,17 @@ impl TransactionBuilder {
             &spl_token_2022_interface::id(),
         );
 
-        let token_interface = Token2022Program::new();
-        let instruction = token_interface
-            .create_transfer_checked_instruction(
-                &from_ata,
-                token_mint,
-                &to_ata,
-                from_authority,
-                amount,
-                decimals,
-            )
-            .expect("Failed to create Token 2022 transfer_checked instruction");
+        let instruction = spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::id(),
+            &from_ata,
+            token_mint,
+            &to_ata,
+            from_authority,
+            &[],
+            amount,
+            decimals,
+        )
+        .expect("Failed to create Token 2022 transfer_checked instruction");
 
         self.instructions.push(instruction);
         self
@@ -341,17 +340,17 @@ impl TransactionBuilder {
         amount: u64,
         decimals: u8,
     ) -> Self {
-        let token_interface = Token2022Program::new();
-        let instruction = token_interface
-            .create_transfer_checked_instruction(
-                from_token_account,
-                token_mint,
-                to_token_account,
-                from_authority,
-                amount,
-                decimals,
-            )
-            .expect("Failed to create Token 2022 transfer_checked instruction with accounts");
+        let instruction = spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::id(),
+            from_token_account,
+            token_mint,
+            to_token_account,
+            from_authority,
+            &[],
+            amount,
+            decimals,
+        )
+        .expect("Failed to create Token 2022 transfer_checked instruction with accounts");
 
         self.instructions.push(instruction);
         self
