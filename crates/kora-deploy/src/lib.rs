@@ -33,7 +33,7 @@ use solana_sdk::{
 };
 use solana_transaction::versioned::VersionedTransaction;
 
-use crate::state::{ChunkWriterState, DeployState};
+use crate::state::{ChunkWriterState, DeployState, StateLockGuard};
 
 // Write instruction data is a u32 enum tag, a u32 offset and a u64 length prefix before the bytes.
 const WRITE_INSTRUCTION_HEADER_LEN: usize = 16;
@@ -150,6 +150,8 @@ macro_rules! cleanup_buffer {
 /// Orchestrates the program deployment process: handles state initialization,
 /// validates continuity for resuming, executes chunked writes, and finalizes the deploy.
 pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
+    let _guard = StateLockGuard::acquire(cfg.state_path.as_path())?;
+
     let http = reqwest::Client::builder().timeout(Duration::from_secs(60)).build()?;
     let rpc = Arc::new(RpcClient::new_with_commitment(
         cfg.rpc_url.to_string(),

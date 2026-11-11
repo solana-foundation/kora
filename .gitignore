@@ -32,6 +32,7 @@ coverage/
 
 # kora-deploy state file — contains raw keypair bytes
 .kora-deploy-state.json
+.kora-deploy-state.json.lock
 
 # AI (ignore all except skills/)
 .claude/*
