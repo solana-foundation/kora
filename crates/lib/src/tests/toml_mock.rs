@@ -91,11 +91,6 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn with_require_one_of_programs(mut self, programs: Vec<&str>) -> Self {
-        self.validation.require_one_of_programs = programs.iter().map(|s| s.to_string()).collect();
-        self
-    }
-
     pub fn with_tokens(mut self, tokens: Vec<&str>) -> Self {
         self.validation.allowed_tokens = tokens.iter().map(|s| s.to_string()).collect();
         self
