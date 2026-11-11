@@ -5,69 +5,6 @@ use jsonrpsee::rpc_params;
 use kora_lib::transaction::TransactionUtil;
 use solana_sdk::{pubkey::Pubkey, signature::Signer};
 
-/// Test transferTransaction with Token 2022 transfer (DEPRECATED endpoint)
-#[tokio::test]
-async fn test_transfer_transaction_token_2022_legacy() {
-    let ctx = crate::ctx().await;
-
-    let sender = SenderTestHelper::get_test_sender_keypair();
-    let recipient = RecipientTestHelper::get_recipient_pubkey();
-    let token_mint_2022 = USDCMint2022TestHelper::get_test_usdc_mint_2022_pubkey();
-    let amount = 1_000_000; // 1 USDC
-
-    let request_params = rpc_params![
-        amount,
-        token_mint_2022.to_string(),
-        sender.pubkey().to_string(),
-        recipient.to_string()
-    ];
-
-    let response: serde_json::Value = ctx
-        .rpc_call("transferTransaction", request_params)
-        .await
-        .expect("Failed to transfer Token 2022");
-
-    response.assert_success();
-
-    // transferTransaction returns unsigned transaction data
-    assert!(response["transaction"].as_str().is_some(), "Expected transaction in response");
-    assert!(response["message"].as_str().is_some(), "Expected message in response");
-    assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
-    assert!(response["signer_pubkey"].as_str().is_some(), "Expected signer_pubkey in response");
-}
-
-/// Test Token 2022 transfer transaction returns valid unsigned transaction (DEPRECATED endpoint)
-#[tokio::test]
-async fn test_transfer_transaction_token_2022_with_ata_legacy() {
-    let ctx = crate::ctx().await;
-
-    let sender = SenderTestHelper::get_test_sender_keypair();
-    let recipient = RecipientTestHelper::get_recipient_pubkey();
-
-    let response: serde_json::Value = ctx
-        .rpc_call(
-            "transferTransaction",
-            rpc_params![
-                10,
-                &USDCMint2022TestHelper::get_test_usdc_mint_2022_pubkey().to_string(),
-                sender.pubkey().to_string(),
-                recipient.to_string()
-            ],
-        )
-        .await
-        .expect("Failed to submit Token 2022 transfer transaction");
-
-    response.assert_success();
-    assert!(response["transaction"].as_str().is_some(), "Expected transaction in response");
-    assert!(response["message"].as_str().is_some(), "Expected message in response");
-    assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
-    assert!(response["signer_pubkey"].as_str().is_some(), "Expected signer_pubkey in response");
-
-    let transaction_string = response["transaction"].as_str().unwrap();
-    let _transaction = TransactionUtil::decode_b64_transaction(transaction_string)
-        .expect("Failed to decode transaction from base64");
-}
-
 #[tokio::test]
 async fn test_sign_token_2022_transaction_legacy() {
     let ctx = crate::ctx().await;

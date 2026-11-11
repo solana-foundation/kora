@@ -144,7 +144,6 @@ mod tests {
         assert!(response.enabled_methods.get_payer_signer);
         assert!(response.enabled_methods.sign_transaction);
         assert!(response.enabled_methods.sign_and_send_transaction);
-        assert!(response.enabled_methods.transfer_transaction);
         assert!(response.enabled_methods.get_blockhash);
         assert!(response.enabled_methods.get_config);
     }

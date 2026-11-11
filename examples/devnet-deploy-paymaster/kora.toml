@@ -27,7 +27,6 @@ estimate_bundle_fee = false
 get_supported_tokens = false
 sign_transaction = true
 sign_and_send_transaction = true
-transfer_transaction = false
 get_blockhash = false
 get_config = false
 get_payer_signer = true

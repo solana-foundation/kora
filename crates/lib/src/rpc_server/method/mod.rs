@@ -9,4 +9,3 @@ pub mod sign_and_send_bundle;
 pub mod sign_and_send_transaction;
 pub mod sign_bundle;
 pub mod sign_transaction;
-pub mod transfer_transaction;

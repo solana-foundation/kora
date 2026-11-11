@@ -9,7 +9,6 @@ use utoipa::{
     PartialSchema,
 };
 
-#[allow(deprecated)]
 use crate::rpc_server::method::{
     estimate_bundle_fee::{
         estimate_bundle_fee, EstimateBundleFeeRequest, EstimateBundleFeeResponse,
@@ -30,9 +29,6 @@ use crate::rpc_server::method::{
     },
     sign_bundle::{sign_bundle, SignBundleRequest, SignBundleResponse},
     sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResponse},
-    transfer_transaction::{
-        transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
-    },
 };
 
 #[derive(Clone)]
@@ -116,17 +112,6 @@ impl KoraRpc {
         )
     }
 
-    #[deprecated(since = "2.2.0", note = "Use getPaymentInstruction instead for fee payment flows")]
-    pub async fn transfer_transaction(
-        &self,
-        request: TransferTransactionRequest,
-    ) -> Result<TransferTransactionResponse, KoraError> {
-        info!("Transfer transaction request: {request:?}");
-        #[allow(deprecated)]
-        let result = transfer_transaction(&self.rpc_client, request).await;
-        log_response("Transfer transaction", result)
-    }
-
     pub async fn get_blockhash(&self) -> Result<GetBlockhashResponse, KoraError> {
         info!("Get blockhash request received");
         log_response("Get blockhash", get_blockhash(&self.rpc_client).await)
@@ -200,11 +185,6 @@ impl KoraRpc {
                 name: "signAndSendTransaction".to_string(),
                 request: Some(SignAndSendTransactionRequest::schema()),
                 response: SignAndSendTransactionResponse::schema(),
-            },
-            OpenApiSpec {
-                name: "transferTransaction".to_string(),
-                request: Some(TransferTransactionRequest::schema()),
-                response: TransferTransactionResponse::schema(),
             },
             OpenApiSpec {
                 name: "getVersion".to_string(),

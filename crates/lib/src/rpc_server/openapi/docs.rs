@@ -30,7 +30,6 @@ use crate::rpc_server::{
             SignAndSendTransactionRequest, SignAndSendTransactionResponse,
         },
         sign_transaction::{SignTransactionRequest, SignTransactionResponse},
-        transfer_transaction::{TransferTransactionRequest, TransferTransactionResponse},
     },
     KoraRpc,
 };
@@ -75,8 +74,6 @@ const JSON_CONTENT_TYPE: &str = "application/json";
         SignAndSendTransactionResponse,
         SignTransactionRequest,
         SignTransactionResponse,
-        TransferTransactionRequest,
-        TransferTransactionResponse,
     ))
 )]
 pub struct ApiDoc;

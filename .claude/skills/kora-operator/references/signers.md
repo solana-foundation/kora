@@ -136,7 +136,7 @@ kora rpc start --no-load-signer
 ```
 
 Available methods: `getConfig`, `getBlockhash`, `getSupportedTokens`, `estimateTransactionFee`.
-Unavailable: `signTransaction`, `signAndSendTransaction`, `transferTransaction`.
+Unavailable: `signTransaction`, `signAndSendTransaction`.
 
 ---
 
