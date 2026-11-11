@@ -2,11 +2,8 @@ use solana_program::pubkey;
 use solana_sdk::pubkey::Pubkey;
 
 pub const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
-pub const NATIVE_SOL: &str = "11111111111111111111111111111111";
 pub const LAMPORTS_PER_SIGNATURE: u64 = 5000;
 pub const ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION: u64 = 50;
-pub const MIN_BALANCE_FOR_RENT_EXEMPTION: u64 = 2_039_280;
-pub const DEFAULT_INTEREST_MULTIPLIER: u128 = 100 * 24 * 60 * 60 / 10000 / (365 * 24 * 60 * 60);
 pub const MAX_TRANSACTION_SIZE: usize = 1232;
 
 pub const X_RECAPTCHA_TOKEN: &str = "x-recaptcha-token";
@@ -57,7 +54,6 @@ pub const DEFAULT_CACHE_ACCOUNT_TTL: u64 = 60; // 1 minute for account data
 pub const DEFAULT_CACHE_PRICE_TTL: u64 = 0; // 0 disables price caching
 pub const DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS: u64 = 30; // 30 seconds
 
-pub const DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS: u64 = 0; // 0 = unlimited
 pub const DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE: bool = false;
 
 pub const DEFAULT_MAX_REQUEST_BODY_SIZE: usize = 2 * 1024 * 1024; // 2 MB
@@ -267,14 +263,8 @@ pub mod instruction_indexes {
         pub const ATA_ADDRESS_INDEX: usize = 1;
         pub const WALLET_OWNER_INDEX: usize = 2;
         pub const MINT_INDEX: usize = 3;
-        pub const SYSTEM_PROGRAM_INDEX: usize = 4;
         pub const TOKEN_PROGRAM_INDEX: usize = 5;
         pub const MIN_ACCOUNTS: usize = 6;
-    }
-
-    pub mod spl_transfer_instruction_indexes {
-        pub const DESTINATION_INDEX: usize = 1;
-        pub const MIN_ACCOUNTS: usize = 3;
     }
 
     // Address Lookup Table (ALT) instruction indexes
@@ -329,7 +319,6 @@ pub mod instruction_indexes {
 
     pub mod loader_v4_set_program_length {
         pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
-        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_RECIPIENT: usize = 3;
         pub const PROGRAM_INDEX: usize = 0;
         pub const AUTHORITY_INDEX: usize = 1;
         pub const OPTIONAL_RECIPIENT_INDEX: usize = 2;
@@ -337,7 +326,6 @@ pub mod instruction_indexes {
 
     pub mod loader_v4_deploy {
         pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
-        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_SOURCE: usize = 3;
         pub const PROGRAM_INDEX: usize = 0;
         pub const AUTHORITY_INDEX: usize = 1;
         pub const OPTIONAL_SOURCE_PROGRAM_INDEX: usize = 2;
@@ -367,7 +355,6 @@ pub mod instruction_indexes {
     // Source: solana-loader-v3-interface::instruction::UpgradeableLoaderInstruction.
     pub mod bpf_loader_upgradeable_initialize_buffer {
         pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 1;
-        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_AUTHORITY: usize = 2;
         pub const BUFFER_INDEX: usize = 0;
         pub const OPTIONAL_AUTHORITY_INDEX: usize = 1;
     }
@@ -400,7 +387,6 @@ pub mod instruction_indexes {
 
     pub mod bpf_loader_upgradeable_set_authority {
         pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
-        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_NEW_AUTHORITY: usize = 3;
         pub const TARGET_INDEX: usize = 0;
         pub const CURRENT_AUTHORITY_INDEX: usize = 1;
         pub const OPTIONAL_NEW_AUTHORITY_INDEX: usize = 2;
@@ -415,9 +401,6 @@ pub mod instruction_indexes {
 
     pub mod bpf_loader_upgradeable_close {
         pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
-        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_AUTHORITY: usize = 3;
-        // Closing a ProgramData account requires the associated Program account too.
-        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PROGRAM: usize = 4;
         pub const TARGET_INDEX: usize = 0;
         pub const RECIPIENT_INDEX: usize = 1;
         pub const OPTIONAL_AUTHORITY_INDEX: usize = 2;
@@ -426,7 +409,6 @@ pub mod instruction_indexes {
 
     pub mod bpf_loader_upgradeable_extend_program {
         pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
-        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER: usize = 4;
         pub const PROGRAM_DATA_INDEX: usize = 0;
         pub const PROGRAM_INDEX: usize = 1;
         // Index 2 is the System program (optional).
@@ -435,7 +417,6 @@ pub mod instruction_indexes {
 
     pub mod bpf_loader_upgradeable_extend_program_checked {
         pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
-        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER: usize = 5;
         pub const PROGRAM_DATA_INDEX: usize = 0;
         pub const PROGRAM_INDEX: usize = 1;
         pub const AUTHORITY_INDEX: usize = 2;
