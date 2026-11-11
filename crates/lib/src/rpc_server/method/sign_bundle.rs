@@ -521,6 +521,63 @@ mod tests {
         assert!(err.contains("exceeds maximum allowed"), "Unexpected error: {err}");
     }
 
+    async fn process_strict_bundle_without_payment(tx_count: usize) -> BundleProcessor {
+        let mint = Pubkey::new_unique();
+        let mut config = ConfigMockBuilder::new().with_cache_enabled(false).build();
+        config.validation.price = PriceConfig {
+            model: PriceModel::Fixed { amount: 1000, token: mint.to_string(), strict: true },
+        };
+
+        let fee_payer = Pubkey::new_unique();
+        let encoded_txs: Vec<String> = (0..tx_count)
+            .map(|_| {
+                let ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1);
+                let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+                TransactionUtil::encode_versioned_transaction(
+                    &TransactionUtil::new_unsigned_versioned_transaction(message),
+                )
+                .unwrap()
+            })
+            .collect();
+
+        let mint_account =
+            crate::tests::account_mock::MintAccountMockBuilder::new().with_decimals(6).build();
+        let rpc_client = RpcMockBuilder::new()
+            .with_simulation()
+            .build_with_sequential_accounts(vec![&mint_account; tx_count]);
+
+        BundleProcessor::process_bundle(
+            &encoded_txs,
+            fee_payer,
+            &Pubkey::new_unique(),
+            &config,
+            &rpc_client,
+            false,
+            None,
+            BundleProcessingMode::SkipUsage,
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_process_bundle_waives_missing_payment_penalty_once_under_strict_fixed_price() {
+        let single = process_strict_bundle_without_payment(1).await;
+        let triple = process_strict_bundle_without_payment(3).await;
+
+        assert_eq!(
+            single.total_cost_lamports,
+            crate::constant::ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION
+        );
+        assert!(single.total_required_lamports > 0);
+        assert_eq!(
+            triple.total_cost_lamports,
+            3 * single.total_cost_lamports
+                - 2 * crate::constant::ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION
+        );
+        assert_eq!(triple.total_required_lamports, 3 * single.total_required_lamports);
+    }
+
     #[tokio::test]
     async fn test_sign_bundle_rejects_cost_above_strict_fixed_price() {
         let mint = Pubkey::new_unique();
