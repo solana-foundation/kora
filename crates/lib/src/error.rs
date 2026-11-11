@@ -207,42 +207,6 @@ impl From<KoraError> for ErrorObjectOwned {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KoraResponse<T> {
-    pub data: Option<T>,
-    pub error: Option<KoraError>,
-}
-
-impl<T> KoraResponse<T> {
-    pub fn ok(data: T) -> Self {
-        Self { data: Some(data), error: None }
-    }
-
-    pub fn err(error: KoraError) -> Self {
-        Self { data: None, error: Some(error) }
-    }
-
-    pub fn from_result(result: Result<T, KoraError>) -> Self {
-        match result {
-            Ok(data) => Self::ok(data),
-            Err(error) => Self::err(error),
-        }
-    }
-}
-
-pub trait IntoKoraResponse<T> {
-    fn into_response(self) -> KoraResponse<T>;
-}
-
-impl<T, E: Into<KoraError>> IntoKoraResponse<T> for Result<T, E> {
-    fn into_response(self) -> KoraResponse<T> {
-        match self {
-            Ok(data) => KoraResponse::ok(data),
-            Err(e) => KoraResponse::err(e.into()),
-        }
-    }
-}
-
 impl_kora_error_from!(anyhow::Error => SigningError);
 impl_kora_error_from!(solana_keychain::SignerError => SigningError);
 
@@ -260,47 +224,6 @@ mod tests {
     use super::*;
     use solana_program::program_error::ProgramError;
     use std::{collections::HashSet, error::Error as StdError};
-
-    #[test]
-    fn test_kora_response_ok() {
-        let response = KoraResponse::ok(42);
-        assert_eq!(response.data, Some(42));
-        assert_eq!(response.error, None);
-    }
-
-    #[test]
-    fn test_kora_response_err() {
-        let error = KoraError::AccountNotFound("test_account".to_string());
-        let response: KoraResponse<()> = KoraResponse::err(error.clone());
-        assert_eq!(response.data, None);
-        assert_eq!(response.error, Some(error));
-    }
-
-    #[test]
-    fn test_kora_response_from_result() {
-        let ok_response = KoraResponse::from_result(Ok(42));
-        assert_eq!(ok_response.data, Some(42));
-        assert_eq!(ok_response.error, None);
-
-        let error = KoraError::ValidationError("test error".to_string());
-        let err_response: KoraResponse<i32> = KoraResponse::from_result(Err(error.clone()));
-        assert_eq!(err_response.data, None);
-        assert_eq!(err_response.error, Some(error));
-    }
-
-    #[test]
-    fn test_into_kora_response() {
-        let result: Result<i32, KoraError> = Ok(42);
-        let response = result.into_response();
-        assert_eq!(response.data, Some(42));
-        assert_eq!(response.error, None);
-
-        let error = KoraError::SwapError("swap failed".to_string());
-        let result: Result<i32, KoraError> = Err(error.clone());
-        let response = result.into_response();
-        assert_eq!(response.data, None);
-        assert_eq!(response.error, Some(error));
-    }
 
     #[test]
     fn test_client_error_conversion() {
@@ -477,20 +400,6 @@ mod tests {
     }
 
     #[test]
-    fn test_into_kora_response_with_different_error_types() {
-        let io_result: Result<String, std::io::Error> = Err(std::io::Error::other("test"));
-        let response = io_result.into_response();
-        assert_eq!(response.data, None);
-        assert!(matches!(response.error, Some(KoraError::InternalServerError(_))));
-
-        let signer_result: Result<String, SignerError> =
-            Err(SignerError::Custom("test".to_string()));
-        let response = signer_result.into_response();
-        assert_eq!(response.data, None);
-        assert!(matches!(response.error, Some(KoraError::SigningError(_))));
-    }
-
-    #[test]
     fn test_kora_error_display() {
         let error = KoraError::AccountNotFound("test_account".to_string());
         let display_string = format!("{error}");
@@ -499,17 +408,5 @@ mod tests {
         let error = KoraError::RateLimitExceeded;
         let display_string = format!("{error}");
         assert_eq!(display_string, "Rate limit exceeded");
-    }
-
-    #[test]
-    fn test_kora_response_serialization() {
-        let response = KoraResponse::ok("test_data".to_string());
-        let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("test_data"));
-
-        let error_response: KoraResponse<String> =
-            KoraResponse::err(KoraError::ValidationError("test".to_string()));
-        let error_json = serde_json::to_string(&error_response).unwrap();
-        assert!(error_json.contains("ValidationError"));
     }
 }
