@@ -145,7 +145,7 @@ impl UsageTracker {
         .await?;
 
         for transfer in transfers.iter().filter(|transfer| transfer.is_inflow) {
-            let Some(source_owner) = transfer.source_owner else {
+            let Some(source_owner) = transfer.existing_source_owner else {
                 continue;
             };
             // Key usage by the funding wallet (the source token account's owner), not the
@@ -1066,6 +1066,59 @@ mod tests {
             result,
             Some(owner.pubkey()),
             "A payment into a Kora ATA created in the same transaction must identify the payer"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_extract_user_ignores_source_ata_created_in_same_transaction() {
+        let store = Arc::new(InMemoryUsageStore::new());
+        let tracker = UsageTracker::new(true, store, vec![], false);
+
+        let fee_payer = Keypair::new();
+        let attacker = Keypair::new();
+        let victim = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let victim_ata = get_associated_token_address(&victim, &mint);
+        let payment_ata = get_associated_token_address(&fee_payer.pubkey(), &mint);
+        let payment_account = create_mock_token_account(&fee_payer.pubkey(), &mint);
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_account_responses(vec![None, Some(&payment_account)]);
+        let config = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+            .build();
+
+        let instructions = [
+            create_associated_token_account_idempotent(
+                &attacker.pubkey(),
+                &victim,
+                &mint,
+                &spl_token_interface::id(),
+            ),
+            spl_token_interface::instruction::transfer(
+                &spl_token_interface::id(),
+                &victim_ata,
+                &payment_ata,
+                &attacker.pubkey(),
+                &[],
+                1_000_000,
+            )
+            .unwrap(),
+        ];
+        let mut tx = make_signed_transaction(&instructions, &[&attacker], &fee_payer);
+
+        let result = tracker
+            .extract_user_from_payment_instruction(
+                &mut tx,
+                &config,
+                &fee_payer.pubkey(),
+                &rpc_client,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            result, None,
+            "A source account created in the same transaction must not attribute usage to its claimed owner"
         );
     }
 

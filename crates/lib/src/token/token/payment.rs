@@ -21,7 +21,7 @@ use super::{PaymentLamportTotals, TokenUtil};
 pub(crate) struct KoraTokenTransfer {
     pub source_address: Pubkey,
     pub destination_address: Pubkey,
-    pub source_owner: Option<Pubkey>,
+    pub existing_source_owner: Option<Pubkey>,
     pub destination_exists: bool,
     pub authority: Pubkey,
     pub multisig_signers: Vec<Pubkey>,
@@ -270,7 +270,9 @@ impl TokenUtil {
                 transfers.push(KoraTokenTransfer {
                     source_address: *source_address,
                     destination_address: *destination_address,
-                    source_owner: source_account_info.map(|(source_owner, _, _)| source_owner),
+                    existing_source_owner: source_account_info
+                        .filter(|(_, _, exists)| *exists)
+                        .map(|(source_owner, _, _)| source_owner),
                     destination_exists: destination_account_info
                         .map(|(_, _, exists)| exists)
                         .unwrap_or(false),
