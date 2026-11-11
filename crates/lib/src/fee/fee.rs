@@ -6,15 +6,10 @@ use crate::{
     error::KoraError,
     fee::price::PriceModel,
     token::{
-        interface::TokenInterface,
-        spl_token::TokenProgram,
-        spl_token_2022::{Token2022Mint, Token2022Program},
+        spl_token_2022::Token2022Mint,
         token::{TokenType, TokenUtil, TransferHookValidationFlow},
     },
-    transaction::{
-        ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionOps,
-        VersionedTransactionResolved,
-    },
+    transaction::{VersionedTransactionOps, VersionedTransactionResolved},
 };
 use solana_sdk::instruction::Instruction;
 
@@ -111,82 +106,44 @@ impl FeeConfigUtil {
         let mut has_payment = false;
         let mut total_transfer_fees = 0u64;
 
-        let spl_transfers = resolved_transaction
-            .get_or_parse_spl_instructions()?
-            .get(&ParsedSPLInstructionType::SplTokenTransfer)
-            .cloned()
-            .unwrap_or_default();
+        let transfers = TokenUtil::find_kora_token_transfers(
+            config,
+            resolved_transaction,
+            rpc_client,
+            &payment_destination,
+            bundle_instructions,
+        )
+        .await?;
 
-        let all_instructions: &[Instruction] = match bundle_instructions {
-            Some(instrs) => instrs,
-            None => resolved_transaction.all_instructions(),
-        };
+        for transfer in transfers.iter().filter(|transfer| transfer.is_inflow) {
+            has_payment = true;
 
-        for instruction in &spl_transfers {
-            if let ParsedSPLInstructionData::SplTokenTransfer {
-                mint,
-                amount,
-                is_2022,
-                destination_address,
-                ..
-            } = instruction
-            {
-                // Resolve the destination owner via the same helper payment validation uses, so an
-                // ATA created in this transaction (no pre-state) is recognized instead of treated
-                // as a non-payment.
-                let token_program: Box<dyn TokenInterface> = if *is_2022 {
-                    Box::new(Token2022Program::new())
-                } else {
-                    Box::new(TokenProgram::new())
-                };
-                let destination_owner = TokenUtil::resolve_token_account_owner_and_mint(
-                    config,
-                    rpc_client,
-                    token_program.as_ref(),
-                    destination_address,
-                    all_instructions,
-                )
-                .await?
-                .map(|(owner, _, _)| owner);
+            if !transfer.is_2022 {
+                continue;
+            }
 
-                if destination_owner == Some(payment_destination) {
-                    has_payment = true;
+            let mint_account =
+                CacheUtil::get_account(config, rpc_client, &transfer.mint, true).await?;
+            let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
+            let mint_state = token_program.unpack_mint(&transfer.mint, &mint_account.data)?;
 
-                    if *is_2022 {
-                        if let Some(mint_pubkey) = mint {
-                            let mint_account =
-                                CacheUtil::get_account(config, rpc_client, mint_pubkey, true)
-                                    .await?;
+            if let Some(token2022_mint) = mint_state.as_any().downcast_ref::<Token2022Mint>() {
+                let current_epoch = rpc_client.get_epoch_info().await?.epoch;
 
-                            let token_program =
-                                TokenType::get_token_program_from_owner(&mint_account.owner)?;
-                            let mint_state =
-                                token_program.unpack_mint(mint_pubkey, &mint_account.data)?;
-
-                            if let Some(token2022_mint) =
-                                mint_state.as_any().downcast_ref::<Token2022Mint>()
-                            {
-                                let current_epoch = rpc_client.get_epoch_info().await?.epoch;
-
-                                if let Some(fee_amount) =
-                                    token2022_mint.calculate_transfer_fee(*amount, current_epoch)?
-                                {
-                                    total_transfer_fees = total_transfer_fees
-                                        .checked_add(fee_amount)
-                                        .ok_or_else(|| {
-                                            log::error!(
-                                                "Transfer fee accumulation overflow: total={}, new_fee={}",
-                                                total_transfer_fees,
-                                                fee_amount
-                                            );
-                                            KoraError::ValidationError(
-                                                "Transfer fee accumulation overflow".to_string(),
-                                            )
-                                        })?;
-                                }
-                            }
-                        }
-                    }
+                if let Some(fee_amount) =
+                    token2022_mint.calculate_transfer_fee(transfer.amount, current_epoch)?
+                {
+                    total_transfer_fees =
+                        total_transfer_fees.checked_add(fee_amount).ok_or_else(|| {
+                            log::error!(
+                                "Transfer fee accumulation overflow: total={}, new_fee={}",
+                                total_transfer_fees,
+                                fee_amount
+                            );
+                            KoraError::ValidationError(
+                                "Transfer fee accumulation overflow".to_string(),
+                            )
+                        })?;
                 }
             }
         }
@@ -445,7 +402,7 @@ impl TransactionFeeUtil {
 mod tests {
     use super::*;
     use crate::{
-        config::TransferHookPolicy,
+        config::{SplTokenConfig, TransferHookPolicy},
         constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
         fee::{
             fee::{FeeConfigUtil, TransactionFeeUtil},
@@ -1840,16 +1797,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_analyze_payment_instructions_with_payment() {
-        let _m = ConfigMockBuilder::new().build_and_setup();
+        let mint = Pubkey::new_unique();
+        let _m = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+            .build_and_setup();
         let cache_ctx = CacheUtil::get_account_context();
         cache_ctx.checkpoint();
         let signer = setup_or_get_test_signer();
-        let mint = Pubkey::new_unique();
-
-        let mocked_account = create_mock_token_account(&signer, &mint);
-        let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
 
         let sender = Keypair::new();
+        let mocked_account = create_mock_token_account(&signer, &mint);
+        let sender_account = create_mock_token_account(&sender.pubkey(), &mint);
+        let mocked_rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&sender_account, &mocked_account]);
 
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
         let payment_token_account = get_associated_token_address(&signer, &mint);
@@ -1884,12 +1844,60 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_analyze_payment_instructions_recognizes_in_transaction_payment_ata() {
-        let _m = ConfigMockBuilder::new().build_and_setup();
+    async fn test_analyze_payment_instructions_ignores_unsupported_token() {
+        let _m = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![
+                Pubkey::new_unique().to_string()
+            ]))
+            .build_and_setup();
         let cache_ctx = CacheUtil::get_account_context();
         cache_ctx.checkpoint();
         let signer = setup_or_get_test_signer();
+        let junk_mint = Pubkey::new_unique();
+        let sender = Keypair::new();
+        let payment_account = create_mock_token_account(&signer, &junk_mint);
+        let mocked_rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&payment_account, &payment_account]);
+
+        let transfer_instruction = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &get_associated_token_address(&sender.pubkey(), &junk_mint),
+            &get_associated_token_address(&signer, &junk_mint),
+            &sender.pubkey(),
+            &[],
+            1000,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_instruction], None));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let config = get_config().unwrap();
+        let (has_payment, _) = FeeConfigUtil::analyze_payment_instructions(
+            &config,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &signer,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            !has_payment,
+            "A transfer of a token Kora does not accept must not waive the payment instruction fee"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_analyze_payment_instructions_recognizes_in_transaction_payment_ata() {
         let mint = Pubkey::new_unique();
+        let _m = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+            .build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+        let signer = setup_or_get_test_signer();
         let sender = Keypair::new();
         let token2022_id = spl_token_2022_interface::id();
 
@@ -2147,16 +2155,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_analyze_payment_instructions_with_multiple_payments() {
-        let _m = ConfigMockBuilder::new().build_and_setup();
+        let mint = Pubkey::new_unique();
+        let _m = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+            .build_and_setup();
         let cache_ctx = CacheUtil::get_account_context();
         cache_ctx.checkpoint();
         let signer = setup_or_get_test_signer();
-        let mint = Pubkey::new_unique();
-
-        let mocked_account = create_mock_token_account(&signer, &mint);
-        let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
 
         let sender = Keypair::new();
+        let mocked_account = create_mock_token_account(&signer, &mint);
+        let sender_account = create_mock_token_account(&sender.pubkey(), &mint);
+        let mocked_rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &sender_account,
+            &mocked_account,
+            &sender_account,
+            &mocked_account,
+        ]);
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
         let payment_token_account = get_associated_token_address(&signer, &mint);
 

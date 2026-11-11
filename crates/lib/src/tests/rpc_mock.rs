@@ -177,22 +177,28 @@ impl RpcMockBuilder {
     }
 
     pub fn build_with_sequential_accounts(self, accounts: Vec<&Account>) -> Arc<RpcClient> {
+        self.build_with_sequential_account_responses(accounts.into_iter().map(Some).collect())
+    }
+
+    pub fn build_with_sequential_account_responses(
+        self,
+        accounts: Vec<Option<&Account>>,
+    ) -> Arc<RpcClient> {
         let mut entries: Vec<(RpcRequest, Value)> = self.mocks.into_iter().collect();
 
         for account in accounts {
-            let encoded_data = STANDARD.encode(&account.data);
+            let value = account.map(|account| {
+                json!({
+                    "data": [STANDARD.encode(&account.data), "base64"],
+                    "executable": account.executable,
+                    "lamports": account.lamports,
+                    "owner": account.owner.to_string(),
+                    "rentEpoch": account.rent_epoch
+                })
+            });
             entries.push((
                 RpcRequest::GetAccountInfo,
-                json!({
-                    "context": { "slot": 1 },
-                    "value": {
-                        "data": [encoded_data, "base64"],
-                        "executable": account.executable,
-                        "lamports": account.lamports,
-                        "owner": account.owner.to_string(),
-                        "rentEpoch": account.rent_epoch
-                    }
-                }),
+                json!({ "context": { "slot": 1 }, "value": value }),
             ));
         }
 

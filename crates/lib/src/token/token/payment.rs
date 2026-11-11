@@ -18,6 +18,20 @@ use std::collections::{HashMap, HashSet};
 
 use super::{PaymentLamportTotals, TokenUtil};
 
+pub(crate) struct KoraTokenTransfer {
+    pub source_address: Pubkey,
+    pub destination_address: Pubkey,
+    pub source_owner: Option<Pubkey>,
+    pub destination_exists: bool,
+    pub authority: Pubkey,
+    pub multisig_signers: Vec<Pubkey>,
+    pub mint: Pubkey,
+    pub amount: u64,
+    pub is_2022: bool,
+    pub is_inflow: bool,
+    pub is_outflow: bool,
+}
+
 impl TokenUtil {
     async fn calculate_token2022_net_amount(
         amount: u64,
@@ -173,33 +187,20 @@ impl TokenUtil {
         }
     }
 
-    /// Calculate payment inflow/outflow totals for transfers involving the expected destination.
-    ///
-    /// For bundles, pass `bundle_instructions` to enable cross-tx ATA lookup
-    /// (e.g., ATA created in Tx1, payment in Tx2).
-    pub(crate) async fn calculate_payment_lamport_totals(
+    /// Returns the SPL transfers of a token Kora accepts that move funds into or out of token
+    /// accounts owned by `kora_owner`. Token accounts created earlier in the transaction (or
+    /// bundle, via `bundle_instructions`) are resolved from their ATA creation instruction.
+    pub(crate) async fn find_kora_token_transfers(
         config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
-        expected_destination_owner: &Pubkey,
+        kora_owner: &Pubkey,
         bundle_instructions: Option<&[Instruction]>,
-    ) -> Result<PaymentLamportTotals, KoraError> {
-        let mut totals = PaymentLamportTotals::default();
-        let mut cached_epoch: Option<u64> = None;
-        let mut token2022_mints: HashMap<Pubkey, Box<dyn TokenMint>> = HashMap::new();
-        let mut payment_mints: HashSet<Pubkey> = HashSet::new();
-        struct ValidTransfer {
-            is_inflow: bool,
-            is_outflow: bool,
-            token_mint: Pubkey,
-            inflow_amount: u64,
-            amount: u64,
-        }
-        let mut valid_transfers = Vec::new();
-
+    ) -> Result<Vec<KoraTokenTransfer>, KoraError> {
         let all_instructions = bundle_instructions
             .map(|instructions| instructions.to_vec())
             .unwrap_or_else(|| transaction_resolved.all_instructions().to_vec());
+        let mut transfers = Vec::new();
 
         for instruction in transaction_resolved
             .get_or_parse_spl_instructions()?
@@ -212,7 +213,8 @@ impl TokenUtil {
                 mint,
                 amount,
                 is_2022,
-                ..
+                owner,
+                multisig_signers,
             } = instruction
             {
                 let token_program: Box<dyn TokenInterface> = if *is_2022 {
@@ -240,11 +242,11 @@ impl TokenUtil {
 
                 let is_inflow = destination_account_info
                     .as_ref()
-                    .map(|(owner, _, _)| owner == expected_destination_owner)
+                    .map(|(account_owner, _, _)| account_owner == kora_owner)
                     .unwrap_or(false);
                 let is_outflow = source_account_info
                     .as_ref()
-                    .map(|(owner, _, _)| owner == expected_destination_owner)
+                    .map(|(account_owner, _, _)| account_owner == kora_owner)
                     .unwrap_or(false);
 
                 if !is_inflow && !is_outflow {
@@ -265,55 +267,115 @@ impl TokenUtil {
                     continue;
                 }
 
-                if *is_2022 && is_inflow {
-                    if let Some((_, _, destination_exists)) = destination_account_info.as_ref() {
-                        if *destination_exists {
-                            TokenUtil::validate_token2022_extensions_for_payment(
-                                config,
-                                rpc_client,
-                                source_address,
-                                destination_address,
-                                &mint.unwrap_or(token_mint),
-                            )
-                            .await?;
-                        } else {
-                            TokenUtil::validate_token2022_partial_for_ata_creation(
-                                config,
-                                rpc_client,
-                                source_address,
-                                &token_mint,
-                            )
-                            .await?;
-                        }
-                    } else {
-                        continue;
-                    }
-                }
-
-                payment_mints.insert(token_mint);
-
-                let inflow_amount = if *is_2022 && is_inflow {
-                    Self::calculate_token2022_net_amount(
-                        *amount,
-                        &token_mint,
-                        rpc_client,
-                        config,
-                        &mut cached_epoch,
-                        &mut token2022_mints,
-                    )
-                    .await?
-                } else {
-                    *amount
-                };
-
-                valid_transfers.push(ValidTransfer {
+                transfers.push(KoraTokenTransfer {
+                    source_address: *source_address,
+                    destination_address: *destination_address,
+                    source_owner: source_account_info.map(|(source_owner, _, _)| source_owner),
+                    destination_exists: destination_account_info
+                        .map(|(_, _, exists)| exists)
+                        .unwrap_or(false),
+                    authority: *owner,
+                    multisig_signers: multisig_signers.clone(),
+                    mint: token_mint,
+                    amount: *amount,
+                    is_2022: *is_2022,
                     is_inflow,
                     is_outflow,
-                    token_mint,
-                    inflow_amount,
-                    amount: *amount,
                 });
             }
+        }
+
+        Ok(transfers)
+    }
+
+    /// Calculate payment inflow/outflow totals for transfers involving the expected destination.
+    ///
+    /// For bundles, pass `bundle_instructions` to enable cross-tx ATA lookup
+    /// (e.g., ATA created in Tx1, payment in Tx2).
+    pub(crate) async fn calculate_payment_lamport_totals(
+        config: &Config,
+        transaction_resolved: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+        expected_destination_owner: &Pubkey,
+        bundle_instructions: Option<&[Instruction]>,
+    ) -> Result<PaymentLamportTotals, KoraError> {
+        let mut totals = PaymentLamportTotals::default();
+        let mut cached_epoch: Option<u64> = None;
+        let mut token2022_mints: HashMap<Pubkey, Box<dyn TokenMint>> = HashMap::new();
+        let mut payment_mints: HashSet<Pubkey> = HashSet::new();
+        struct ValidTransfer {
+            is_inflow: bool,
+            is_outflow: bool,
+            token_mint: Pubkey,
+            inflow_amount: u64,
+            amount: u64,
+        }
+        let mut valid_transfers = Vec::new();
+
+        for transfer in Self::find_kora_token_transfers(
+            config,
+            transaction_resolved,
+            rpc_client,
+            expected_destination_owner,
+            bundle_instructions,
+        )
+        .await?
+        {
+            let KoraTokenTransfer {
+                source_address,
+                destination_address,
+                destination_exists,
+                mint: token_mint,
+                amount,
+                is_2022,
+                is_inflow,
+                is_outflow,
+                ..
+            } = transfer;
+            if is_2022 && is_inflow {
+                if destination_exists {
+                    TokenUtil::validate_token2022_extensions_for_payment(
+                        config,
+                        rpc_client,
+                        &source_address,
+                        &destination_address,
+                        &token_mint,
+                    )
+                    .await?;
+                } else {
+                    TokenUtil::validate_token2022_partial_for_ata_creation(
+                        config,
+                        rpc_client,
+                        &source_address,
+                        &token_mint,
+                    )
+                    .await?;
+                }
+            }
+
+            payment_mints.insert(token_mint);
+
+            let inflow_amount = if is_2022 && is_inflow {
+                Self::calculate_token2022_net_amount(
+                    amount,
+                    &token_mint,
+                    rpc_client,
+                    config,
+                    &mut cached_epoch,
+                    &mut token2022_mints,
+                )
+                .await?
+            } else {
+                amount
+            };
+
+            valid_transfers.push(ValidTransfer {
+                is_inflow,
+                is_outflow,
+                token_mint,
+                inflow_amount,
+                amount,
+            });
         }
 
         if payment_mints.is_empty() {

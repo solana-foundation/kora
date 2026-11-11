@@ -11,11 +11,8 @@ use crate::{
     config::Config,
     error::KoraError,
     sanitize_error,
-    token::token::TokenType,
-    transaction::{
-        ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionOps,
-        VersionedTransactionResolved,
-    },
+    token::token::TokenUtil,
+    transaction::{VersionedTransactionOps, VersionedTransactionResolved},
 };
 use deadpool_redis::Runtime;
 use redis::AsyncCommands;
@@ -138,58 +135,32 @@ impl UsageTracker {
     ) -> Result<Option<Pubkey>, KoraError> {
         let payment_destination = config.kora.get_payment_address(fee_payer)?;
         let verified_signers = transaction.verified_signers();
-        let parsed_spl_instructions = transaction.get_or_parse_spl_instructions()?;
+        let transfers = TokenUtil::find_kora_token_transfers(
+            config,
+            transaction,
+            rpc_client,
+            &payment_destination,
+            None,
+        )
+        .await?;
 
-        for instruction in parsed_spl_instructions
-            .get(&ParsedSPLInstructionType::SplTokenTransfer)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedSPLInstructionData::SplTokenTransfer {
-                source_address,
-                destination_address,
-                owner,
-                multisig_signers,
-                is_2022,
-                ..
-            } = instruction
+        for transfer in transfers.iter().filter(|transfer| transfer.is_inflow) {
+            let Some(source_owner) = transfer.source_owner else {
+                continue;
+            };
+            // Key usage by the funding wallet (the source token account's owner), not the
+            // transfer authority, which can be a rotatable delegate or multisig member.
+            if Self::owner_signed_or_authorized_by_multisig(
+                &transfer.authority,
+                &transfer.multisig_signers,
+                transfer.is_2022,
+                &verified_signers,
+                config,
+                rpc_client,
+            )
+            .await?
             {
-                // Check if this is a payment to Kora by verifying the destination token account owner
-                // matches the payment destination
-                let destination_account =
-                    match CacheUtil::get_account(config, rpc_client, destination_address, true)
-                        .await
-                    {
-                        Ok(account) => account,
-                        Err(KoraError::AccountNotFound(_)) => continue,
-                        Err(e) => return Err(e),
-                    };
-
-                let token_program =
-                    TokenType::get_token_program_from_owner(&destination_account.owner)?;
-                let token_account =
-                    token_program.unpack_token_account(&destination_account.data)?;
-
-                if token_account.owner() == payment_destination
-                    && Self::owner_signed_or_authorized_by_multisig(
-                        owner,
-                        multisig_signers,
-                        *is_2022,
-                        &verified_signers,
-                        config,
-                        rpc_client,
-                    )
-                    .await?
-                {
-                    // Key usage by the funding wallet (the source token account's owner), not the
-                    // transfer authority, which can be a rotatable delegate or multisig member.
-                    let source_account =
-                        CacheUtil::get_account(config, rpc_client, source_address, true).await?;
-                    let source_token_program =
-                        TokenType::get_token_program_from_owner(&source_account.owner)?;
-                    let source_token_account =
-                        source_token_program.unpack_token_account(&source_account.data)?;
-                    return Ok(Some(source_token_account.owner()));
-                }
+                return Ok(Some(source_owner));
             }
         }
 
@@ -453,6 +424,7 @@ impl UsageTracker {
 mod tests {
     use super::*;
     use crate::{
+        config::SplTokenConfig,
         tests::{
             account_mock::create_mock_token_account, config_mock::ConfigMockBuilder,
             rpc_mock::RpcMockBuilder, transaction_mock::create_mock_resolved_transaction,
@@ -462,7 +434,13 @@ mod tests {
     };
     use async_trait::async_trait;
     use solana_message::{Message, VersionedMessage};
-    use solana_sdk::{account::Account, signature::Keypair, signer::Signer};
+    use solana_sdk::{
+        account::Account, instruction::Instruction, signature::Keypair, signer::Signer,
+    };
+    use spl_associated_token_account_interface::{
+        address::get_associated_token_address,
+        instruction::create_associated_token_account_idempotent,
+    };
     use std::sync::Arc;
 
     struct ConcurrentMockStore {
@@ -974,7 +952,16 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        make_signed_transaction(&[ix], signing_keypairs, fee_payer)
+    }
+
+    fn make_signed_transaction(
+        instructions: &[Instruction],
+        signing_keypairs: &[&Keypair],
+        fee_payer: &Keypair,
+    ) -> VersionedTransactionResolved {
+        let message =
+            VersionedMessage::Legacy(Message::new(instructions, Some(&fee_payer.pubkey())));
         let mut tx = TransactionUtil::new_unsigned_versioned_transaction(message);
         let message_bytes = tx.message.serialize();
 
@@ -1001,8 +988,12 @@ mod tests {
         let destination_ata = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
         let destination_account = create_mock_token_account(&fee_payer.pubkey(), &mint);
-        let rpc_client = RpcMockBuilder::new().with_account_info(&destination_account).build();
-        let config = ConfigMockBuilder::new().build();
+        let source_account = create_mock_token_account(&victim_owner.pubkey(), &mint);
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_account, &destination_account]);
+        let config = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+            .build();
 
         let mut tx = make_spl_transfer_transaction(
             &victim_owner.pubkey(),
@@ -1026,6 +1017,121 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_extract_user_resolves_payment_into_ata_created_in_same_transaction() {
+        let store = Arc::new(InMemoryUsageStore::new());
+        let tracker = UsageTracker::new(true, store, vec![], false);
+
+        let fee_payer = Keypair::new();
+        let owner = Keypair::new();
+        let mint = Pubkey::new_unique();
+        let source_ata = get_associated_token_address(&owner.pubkey(), &mint);
+        let payment_ata = get_associated_token_address(&fee_payer.pubkey(), &mint);
+        let source_account = create_mock_token_account(&owner.pubkey(), &mint);
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_account_responses(vec![Some(&source_account), None]);
+        let config = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+            .build();
+
+        let instructions = [
+            create_associated_token_account_idempotent(
+                &owner.pubkey(),
+                &fee_payer.pubkey(),
+                &mint,
+                &spl_token_interface::id(),
+            ),
+            spl_token_interface::instruction::transfer(
+                &spl_token_interface::id(),
+                &source_ata,
+                &payment_ata,
+                &owner.pubkey(),
+                &[],
+                1_000_000,
+            )
+            .unwrap(),
+        ];
+        let mut tx = make_signed_transaction(&instructions, &[&owner], &fee_payer);
+
+        let result = tracker
+            .extract_user_from_payment_instruction(
+                &mut tx,
+                &config,
+                &fee_payer.pubkey(),
+                &rpc_client,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            result,
+            Some(owner.pubkey()),
+            "A payment into a Kora ATA created in the same transaction must identify the payer"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_extract_user_ignores_unsupported_token_transfer_placed_before_payment() {
+        let store = Arc::new(InMemoryUsageStore::new());
+        let tracker = UsageTracker::new(true, store, vec![], false);
+
+        let fee_payer = Keypair::new();
+        let throwaway = Keypair::new();
+        let payer = Keypair::new();
+        let junk_mint = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let junk_account = create_mock_token_account(&fee_payer.pubkey(), &junk_mint);
+        let source_account = create_mock_token_account(&payer.pubkey(), &mint);
+        let destination_account = create_mock_token_account(&fee_payer.pubkey(), &mint);
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &junk_account,
+            &junk_account,
+            &source_account,
+            &destination_account,
+        ]);
+        let config = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+            .build();
+
+        let instructions = [
+            spl_token_interface::instruction::transfer(
+                &spl_token_interface::id(),
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &throwaway.pubkey(),
+                &[],
+                1,
+            )
+            .unwrap(),
+            spl_token_interface::instruction::transfer(
+                &spl_token_interface::id(),
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &payer.pubkey(),
+                &[],
+                1_000_000,
+            )
+            .unwrap(),
+        ];
+        let mut tx = make_signed_transaction(&instructions, &[&throwaway, &payer], &fee_payer);
+
+        let result = tracker
+            .extract_user_from_payment_instruction(
+                &mut tx,
+                &config,
+                &fee_payer.pubkey(),
+                &rpc_client,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            result,
+            Some(payer.pubkey()),
+            "Usage must be attributed to the wallet paying in a supported token, not a junk transfer"
+        );
+    }
+
+    #[tokio::test]
     async fn test_extract_user_signed_owner_returns_owner() {
         let store = Arc::new(InMemoryUsageStore::new());
         let tracker = UsageTracker::new(true, store, vec![], false);
@@ -1037,8 +1143,10 @@ mod tests {
         let destination_account = create_mock_token_account(&fee_payer.pubkey(), &mint);
         let source_account = create_mock_token_account(&owner.pubkey(), &mint);
         let rpc_client = RpcMockBuilder::new()
-            .build_with_sequential_accounts(vec![&destination_account, &source_account]);
-        let config = ConfigMockBuilder::new().build();
+            .build_with_sequential_accounts(vec![&source_account, &destination_account]);
+        let config = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+            .build();
 
         let mut tx = make_spl_transfer_transaction(
             &owner.pubkey(),
@@ -1074,8 +1182,10 @@ mod tests {
         let destination_account = create_mock_token_account(&fee_payer.pubkey(), &mint);
         let source_account = create_mock_token_account(&source_owner, &mint);
         let rpc_client = RpcMockBuilder::new()
-            .build_with_sequential_accounts(vec![&destination_account, &source_account]);
-        let config = ConfigMockBuilder::new().build();
+            .build_with_sequential_accounts(vec![&source_account, &destination_account]);
+        let config = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+            .build();
 
         let mut tx = make_spl_transfer_transaction(
             &delegate.pubkey(),
@@ -1118,11 +1228,13 @@ mod tests {
         );
         let source_account = create_mock_token_account(&multisig_owner, &mint);
         let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &source_account,
             &destination_account,
             &multisig_account,
-            &source_account,
         ]);
-        let config = ConfigMockBuilder::new().build();
+        let config = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+            .build();
 
         let mut tx = make_spl_transfer_transaction(
             &multisig_owner,
@@ -1162,9 +1274,15 @@ mod tests {
             2,
             &[signer_one.pubkey(), signer_two.pubkey(), signer_three.pubkey()],
         );
-        let rpc_client = RpcMockBuilder::new()
-            .build_with_sequential_accounts(vec![&destination_account, &multisig_account]);
-        let config = ConfigMockBuilder::new().build();
+        let source_account = create_mock_token_account(&multisig_owner, &mint);
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &source_account,
+            &destination_account,
+            &multisig_account,
+        ]);
+        let config = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+            .build();
 
         let mut tx = make_spl_transfer_transaction(
             &multisig_owner,

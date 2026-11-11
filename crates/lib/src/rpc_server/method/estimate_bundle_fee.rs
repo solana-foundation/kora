@@ -119,7 +119,7 @@ pub async fn estimate_bundle_fee(
 mod tests {
     use super::*;
     use crate::{
-        config::TransactionPluginType,
+        config::{SplTokenConfig, TransactionPluginType},
         fee::price::{PriceConfig, PriceModel},
         oracle::PriceSource,
         tests::{
@@ -412,7 +412,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_estimate_bundle_fee_cross_leg_ata_payment() {
+        let mint = Pubkey::new_unique();
         let _m = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
             .with_bundle_enabled(true)
             .with_cache_enabled(true)
             .with_price_model(PriceModel::Margin { margin: 0.1 })
@@ -426,7 +428,6 @@ mod tests {
             .build_and_setup();
 
         let fee_payer = setup_or_get_test_signer();
-        let mint = Pubkey::new_unique();
         let sender = solana_sdk::signature::Keypair::new();
         let token2022_id = spl_token_2022_interface::id();
 
@@ -438,6 +439,7 @@ mod tests {
         let mint_account =
             create_mock_token2022_mint_with_extensions(6, vec![ExtensionType::TransferFeeConfig]);
         let sender_ata_account = create_mock_token_account(&sender.pubkey(), &mint);
+        let sender_ata_account_clone = sender_ata_account.clone();
 
         let mint_account_clone = mint_account.clone();
         let cache_ctx = MockCacheUtil::get_account_context();
@@ -447,21 +449,28 @@ mod tests {
             } else if *addr == mint {
                 Ok(mint_account_clone.clone())
             } else if *addr == sender_ata {
-                Ok(sender_ata_account.clone())
+                Ok(sender_ata_account_clone.clone())
             } else {
                 Ok(Account::default())
             }
         });
 
-        let rpc_client = Arc::new(
-            RpcMockBuilder::new()
-                .with_fee_estimate(5000)
-                .with_blockhash()
-                .with_simulation()
-                .with_epoch_info_mock()
-                .with_account_info(&mint_account)
-                .build(),
-        );
+        let rpc_client = RpcMockBuilder::new()
+            .with_fee_estimate(5000)
+            .with_blockhash()
+            .with_simulation()
+            .with_epoch_info_mock()
+            .build_with_sequential_account_responses(vec![
+                Some(&mint_account),
+                Some(&sender_ata_account),
+                None,
+                Some(&sender_ata_account),
+                None,
+                Some(&mint_account),
+                Some(&sender_ata_account),
+                Some(&mint_account),
+                Some(&mint_account),
+            ]);
 
         let ata_create_ix = create_associated_token_account_idempotent(
             &sender.pubkey(),
