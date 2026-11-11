@@ -76,7 +76,6 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 http-body-util = { workspace = true }
 http = { workspace = true }
-config = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 prometheus = { workspace = true }

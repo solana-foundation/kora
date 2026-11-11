@@ -17,7 +17,6 @@ path = "src/bin/reaper.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-base64 = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 dotenv = { workspace = true }
 kora-deploy = { workspace = true }
