@@ -1434,6 +1434,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_reuses_first_snapshot_per_transaction() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let first_snapshot = AccountMockBuilder::new()
+            .with_owner(ADDRESS_LOOKUP_TABLE_PROGRAM_ID)
+            .with_lamports(2_000_000)
+            .build();
+        let second_snapshot = AccountMockBuilder::new()
+            .with_owner(ADDRESS_LOOKUP_TABLE_PROGRAM_ID)
+            .with_lamports(5_000_000)
+            .build();
+        let mocked_rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&first_snapshot, &second_snapshot]);
+        let mut resolved_transaction = create_alt_close_resolved_transaction(
+            &fee_payer,
+            &fee_payer,
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+        );
+        let config = get_config().unwrap();
+
+        let validated = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        let priced = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(validated, 2_000_000);
+        assert_eq!(
+            priced, validated,
+            "The outflow priced into the fee must be the one checked against max_allowed_lamports"
+        );
+    }
+
+    #[tokio::test]
     async fn test_calculate_fee_payer_outflow_close_account() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let fee_payer = Pubkey::new_unique();

@@ -198,6 +198,22 @@ impl FeeConfigUtil {
         rpc_client: &RpcClient,
         config: &Config,
     ) -> Result<i128, KoraError> {
+        if let Some(outflow) = transaction.cached_fee_payer_outflow(fee_payer_pubkey) {
+            return Ok(outflow);
+        }
+        let outflow =
+            Self::compute_fee_payer_outflow(fee_payer_pubkey, transaction, rpc_client, config)
+                .await?;
+        transaction.cache_fee_payer_outflow(*fee_payer_pubkey, outflow);
+        Ok(outflow)
+    }
+
+    async fn compute_fee_payer_outflow(
+        fee_payer_pubkey: &Pubkey,
+        transaction: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+        config: &Config,
+    ) -> Result<i128, KoraError> {
         // Use i128 to correctly handle net outflow when inflows are processed
         // before outflows. With u64, saturating_sub on 0 would silently discard inflows.
         let mut total: i128 = 0;

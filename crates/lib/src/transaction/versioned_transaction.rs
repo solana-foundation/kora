@@ -129,6 +129,8 @@ pub struct VersionedTransactionResolved {
     >,
 
     parsed_token2022_security_instructions: OnceLock<Vec<Token2022SecurityInstruction>>,
+
+    fee_payer_outflow: Option<(Pubkey, i128)>,
 }
 
 impl Deref for VersionedTransactionResolved {
@@ -247,7 +249,18 @@ impl VersionedTransactionResolved {
             parsed_loader_v4_instructions: OnceLock::new(),
             parsed_bpf_loader_upgradeable_instructions: OnceLock::new(),
             parsed_token2022_security_instructions: OnceLock::new(),
+            fee_payer_outflow: None,
         }
+    }
+
+    pub(crate) fn cached_fee_payer_outflow(&self, fee_payer: &Pubkey) -> Option<i128> {
+        self.fee_payer_outflow
+            .filter(|(cached_fee_payer, _)| cached_fee_payer == fee_payer)
+            .map(|(_, outflow)| outflow)
+    }
+
+    pub(crate) fn cache_fee_payer_outflow(&mut self, fee_payer: Pubkey, outflow: i128) {
+        self.fee_payer_outflow = Some((fee_payer, outflow));
     }
 
     /// Returns the top-level instructions followed by the CPIs simulation surfaced.
