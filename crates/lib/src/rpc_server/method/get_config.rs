@@ -1,15 +1,9 @@
 use crate::{
     config::{EnabledMethods, ValidationConfig},
-    signer::SelectionStrategy,
     state::{self, get_signer_pool},
     KoraError,
 };
 use serde::Serialize;
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SignerPoolInfo {
-    pub strategy: SelectionStrategy,
-}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GetConfigResponse {

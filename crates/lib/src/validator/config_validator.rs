@@ -1,11 +1,9 @@
-use std::{path::Path, str::FromStr};
+use std::path::Path;
 
 use crate::{
-    signer::SignerPoolConfig, state::get_config, token::token::TokenUtil,
-    validator::signer_validator::SignerValidator, KoraError,
+    signer::SignerPoolConfig, state::get_config, validator::signer_validator::SignerValidator,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::pubkey::Pubkey;
 
 mod fee_payer_policy;
 mod onchain;
@@ -16,28 +14,6 @@ mod transactions;
 pub struct ConfigValidator {}
 
 impl ConfigValidator {
-    pub async fn validate(_rpc_client: &RpcClient) -> Result<(), KoraError> {
-        let config = &get_config()?;
-
-        if config.validation.is_payment_required() && config.validation.allowed_tokens.is_empty() {
-            return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
-        }
-
-        if !config.validation.allowed_tokens.is_empty() {
-            TokenUtil::check_valid_tokens(&config.validation.allowed_tokens)?;
-        }
-
-        if let Some(payment_address) = &config.kora.payment_address {
-            if let Err(e) = Pubkey::from_str(payment_address) {
-                return Err(KoraError::InternalServerError(format!(
-                    "Invalid payment address: {e}"
-                )));
-            }
-        }
-
-        Ok(())
-    }
-
     pub async fn validate_with_result(
         rpc_client: &RpcClient,
         skip_rpc_validation: bool,
@@ -156,52 +132,12 @@ mod tests {
     };
     use serial_test::serial;
     use solana_commitment_config::CommitmentConfig;
+    use solana_sdk::pubkey::Pubkey;
     use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
     use spl_token_2022_interface::{extension::ExtensionType, ID as TOKEN_2022_PROGRAM_ID};
     use spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID;
 
     use super::{tokens::validate_token2022_extensions, *};
-
-    #[tokio::test]
-    #[serial]
-    async fn test_validate_config() {
-        let mut config = Config {
-            validation: ValidationConfig {
-                max_allowed_lamports: 1000000000,
-                max_priority_fee_lamports: None,
-                max_signatures: 10,
-                allowed_programs: ProgramsConfig::Allowlist(vec!["program1".to_string()]),
-                allowed_tokens: vec!["token1".to_string()],
-                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec!["token3".to_string()]),
-                disallowed_accounts: vec!["account1".to_string()],
-                price_source: PriceSource::Jupiter,
-                fee_payer_policy: FeePayerPolicy::default(),
-                price: PriceConfig::default(),
-                token_2022: Token2022Config::default(),
-                allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
-                max_price_staleness_slots: 0,
-                require_one_of_programs: vec![],
-                cross_cluster_check: false,
-                cross_cluster_endpoints: vec![],
-            },
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
-
-        let _ = update_config(config.clone());
-
-        config.validation.allowed_tokens = vec![];
-        let _ = update_config(config);
-
-        let rpc_client = RpcClient::new_with_commitment(
-            "http://localhost:8899".to_string(),
-            CommitmentConfig::confirmed(),
-        );
-        let result = ConfigValidator::validate(&rpc_client).await;
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), KoraError::InternalServerError(_)));
-    }
 
     #[tokio::test]
     #[serial]
