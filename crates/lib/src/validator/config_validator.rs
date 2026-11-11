@@ -481,6 +481,49 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("No authentication configured")));
     }
 
+    #[test]
+    fn test_every_fee_payer_policy_flag_has_a_warning() {
+        fn enable_all(
+            value: &mut serde_json::Value,
+            path: &mut Vec<String>,
+            flags: &mut Vec<String>,
+        ) {
+            match value {
+                serde_json::Value::Bool(flag) => {
+                    *flag = true;
+                    let (field, section) = path.split_last().unwrap();
+                    flags.push(format!(
+                        "[validation.fee_payer_policy.{}] {field}=false",
+                        section.join(".")
+                    ));
+                }
+                serde_json::Value::Object(fields) => {
+                    for (name, child) in fields.iter_mut() {
+                        path.push(name.clone());
+                        enable_all(child, path, flags);
+                        path.pop();
+                    }
+                }
+                other => panic!("unexpected fee payer policy value: {other}"),
+            }
+        }
+
+        let mut value = serde_json::to_value(FeePayerPolicy::default()).unwrap();
+        let mut flags = Vec::new();
+        enable_all(&mut value, &mut Vec::new(), &mut flags);
+        let policy: FeePayerPolicy = serde_json::from_value(value).unwrap();
+
+        let mut warnings = Vec::new();
+        ConfigValidator::validate_fee_payer_policy(&policy, &mut warnings);
+
+        let missing: Vec<&String> = flags
+            .iter()
+            .filter(|flag| !warnings.iter().any(|w| w.contains(flag.as_str())))
+            .collect();
+        assert!(missing.is_empty(), "fee payer policy flags without a warning: {missing:?}");
+        assert_eq!(warnings.len(), flags.len());
+    }
+
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_warnings() {

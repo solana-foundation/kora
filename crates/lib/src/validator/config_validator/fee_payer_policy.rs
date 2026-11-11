@@ -72,6 +72,12 @@ impl ConfigValidator {
             spl_token, allow_thaw_account, "SPL Token ThawAccount instructions",
                 "Users can make the fee payer unfreeze token accounts. This can undermine freeze policies";
 
+            spl_token, allow_withdraw_excess_lamports, "SPL Token WithdrawExcessLamports instructions",
+                "Users can make the fee payer withdraw excess lamports from accounts it controls to arbitrary recipients. This can drain SOL";
+
+            spl_token, allow_unwrap_lamports, "SPL Token UnwrapLamports instructions",
+                "Users can make the fee payer unwrap lamports from its native token accounts to arbitrary recipients. This can drain SOL";
+
             token_2022, allow_transfer, "Token2022 transfers",
                 "Users can make the fee payer transfer arbitrary token amounts. This can drain your fee payer token accounts";
 
@@ -107,6 +113,18 @@ impl ConfigValidator {
 
             token_2022, allow_thaw_account, "Token2022 ThawAccount instructions",
                 "Users can make the fee payer unfreeze token accounts. This can undermine freeze policies";
+
+            token_2022, allow_initialize_extension_authority, "Token2022 extension authority initialization",
+                "Users can plant the fee payer as a future Token2022 extension authority or delegate. This creates control relationships Kora did not choose";
+
+            token_2022, allow_update_extension_authority, "Token2022 extension authority updates",
+                "Users can make the fee payer act as the current authority of Token2022 extensions. This can change mint behavior Kora is responsible for";
+
+            token_2022, allow_withdraw_excess_lamports, "Token2022 WithdrawExcessLamports instructions",
+                "Users can make the fee payer withdraw excess lamports from accounts it controls to arbitrary recipients. This can drain SOL";
+
+            token_2022, allow_unwrap_lamports, "Token2022 UnwrapLamports instructions",
+                "Users can make the fee payer unwrap lamports from its native token accounts to arbitrary recipients. This can drain SOL";
 
             token_2022, allow_reallocate, "Token2022 Reallocate instructions",
                 "Users can make the fee payer the payer, owner, or a multisig signer of Reallocate on token accounts. As payer, the fee payer funds the rent for growing accounts it does not own through a System Transfer CPI, which also requires system.allow_transfer and counts toward max_allowed_lamports. This can drain SOL";
