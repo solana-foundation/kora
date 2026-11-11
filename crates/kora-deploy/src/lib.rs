@@ -388,7 +388,7 @@ async fn write_chunks<S: ChunkWriterState>(
                         buffer,
                         kora_pubkey
                     );
-                    return Err(e.context("failed to save deploy state after chunk write"));
+                    return Err(e.context("failed to save state after chunk write"));
                 }
                 if written_chunks % 25 < ixs.len() || written_chunks == chunk_count {
                     log::info!("wrote chunk {}/{}", written_chunks, chunk_count);

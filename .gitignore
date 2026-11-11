@@ -30,9 +30,13 @@ coverage/
 *.pid
 .local/
 
-# kora-deploy state file — contains raw keypair bytes
+# kora-deploy state and lock files — contain raw keypair bytes
 .kora-deploy-state.json
 .kora-deploy-state.json.lock
+.kora-deploy-state.tmp
+.kora-upgrade-state.json
+.kora-upgrade-state.json.lock
+.kora-upgrade-state.tmp
 
 # AI (ignore all except skills/)
 .claude/*
