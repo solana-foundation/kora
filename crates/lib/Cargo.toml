@@ -12,10 +12,6 @@ workspace = true
 [lib]
 path = "src/mod.rs"
 
-[[bin]]
-name = "update-config"
-path = "src/metrics/bin/update-config.rs"
-
 [dependencies]
 url = { workspace = true }
 serde = { workspace = true }

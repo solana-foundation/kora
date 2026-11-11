@@ -116,6 +116,7 @@ pub struct MetricsConfig {
     pub enabled: bool,
     pub endpoint: String,
     pub port: u16,
+    /// Unused. Accepted so configs that still set it keep loading.
     pub scrape_interval: u64,
     pub fee_payer_balance: FeePayerBalanceMetricsConfig,
 }

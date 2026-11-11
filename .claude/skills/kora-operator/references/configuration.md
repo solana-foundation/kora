@@ -356,7 +356,6 @@ No charge. Does NOT include fee payer outflow. Must secure fee payer policy.
 enabled = true
 endpoint = "/metrics"   # HTTP path for metrics endpoint
 port = 9090
-scrape_interval = 15
 
 [metrics.fee_payer_balance]
 enabled = true

@@ -145,13 +145,9 @@ run-docker:
 
 # Run metrics stack (Prometheus + Grafana)
 [group('run')]
-run-metrics: _update-metrics-config
+run-metrics:
     cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml down
     cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml up
-
-[private]
-_update-metrics-config:
-    cargo run -p kora-lib --bin update-config
 
 # ******************************************************************************
 # TypeScript SDK
