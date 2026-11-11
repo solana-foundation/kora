@@ -2,9 +2,13 @@
 use std::os::unix::fs::OpenOptionsExt;
 #[cfg(not(unix))]
 use std::os::windows::fs::OpenOptionsExt;
-use std::{fs, io::Write, path::Path};
+use std::{
+    fs::{self, TryLockError},
+    io::Write,
+    path::{Path, PathBuf},
+};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 // NOTE: keypairs are raw bytes in JSON; file security relies on OS-level permissions (see save()).
@@ -103,6 +107,59 @@ impl ChunkWriterState for DeployState {
     }
 }
 
+/// Advisory file lock guard preventing multiple processes from operating on the same state file.
+#[derive(Debug)]
+#[must_use = "the lock is released when the guard is dropped"]
+pub struct StateLockGuard {
+    _file: fs::File,
+}
+
+impl StateLockGuard {
+    /// Appends `.lock` to the full state file path to avoid colliding with `.tmp` files.
+    pub fn lock_path(state_path: &Path) -> PathBuf {
+        let mut os_str = state_path.as_os_str().to_os_string();
+        os_str.push(".lock");
+        PathBuf::from(os_str)
+    }
+
+    /// Acquires an advisory file lock on `<state_path>.lock`.
+    pub fn acquire(state_path: &Path) -> Result<Self> {
+        let lock_path = Self::lock_path(state_path);
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .with_context(|| {
+                format!("failed to open state lock file at {}", lock_path.display())
+            })?;
+
+        if let Err(err) = file.try_lock() {
+            return match err {
+                TryLockError::WouldBlock => bail!(
+                    "Another kora-deploy process is using state file {}. Failing fast.",
+                    state_path.display()
+                ),
+                TryLockError::Error(io_err) => Err(anyhow::Error::new(io_err).context(format!(
+                    "failed to acquire advisory lock on {}",
+                    lock_path.display()
+                ))),
+            };
+        }
+
+        Ok(Self { _file: file })
+    }
+}
+
+impl Drop for StateLockGuard {
+    fn drop(&mut self) {
+        if let Err(err) = self._file.unlock() {
+            log::warn!("failed to release advisory lock on state file: {err}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,5 +211,53 @@ mod tests {
         )?;
         assert_eq!(state.chunk_size, 900);
         Ok(())
+    }
+
+    #[test]
+    fn test_state_lock_guard_contention_fails_fast_while_held() -> Result<()> {
+        let state_path =
+            temp_dir().join(format!("kora-deploy-state-lock-test-{}.json", Pubkey::new_unique()));
+        let lock_path = StateLockGuard::lock_path(&state_path);
+
+        let guard1 = StateLockGuard::acquire(&state_path)?;
+        assert!(lock_path.exists());
+
+        let err = StateLockGuard::acquire(&state_path).unwrap_err();
+        let expected_msg = format!(
+            "Another kora-deploy process is using state file {}. Failing fast.",
+            state_path.display()
+        );
+        assert_eq!(err.to_string(), expected_msg);
+
+        drop(guard1);
+        let _ = fs::remove_file(&lock_path);
+        Ok(())
+    }
+
+    #[test]
+    fn test_state_lock_guard_released_on_drop_allows_reacquire() -> Result<()> {
+        let state_path =
+            temp_dir().join(format!("kora-deploy-state-lock-test-{}.json", Pubkey::new_unique()));
+        let lock_path = StateLockGuard::lock_path(&state_path);
+
+        let guard1 = StateLockGuard::acquire(&state_path)?;
+        drop(guard1);
+
+        let guard2 = StateLockGuard::acquire(&state_path)?;
+        drop(guard2);
+
+        let _ = fs::remove_file(&lock_path);
+        Ok(())
+    }
+
+    #[test]
+    fn test_state_lock_path_appends_dot_lock_and_differs_from_save_tmp() {
+        let state_path = Path::new("/tmp/test-state.json");
+        let lock_path = StateLockGuard::lock_path(state_path);
+        let save_tmp_path = state_path.with_extension("tmp");
+
+        assert_eq!(lock_path, Path::new("/tmp/test-state.json.lock"));
+        assert_eq!(save_tmp_path, Path::new("/tmp/test-state.tmp"));
+        assert_ne!(lock_path, save_tmp_path);
     }
 }
