@@ -10,9 +10,6 @@ pub enum BundleError {
     #[error("Bundle validation failed: {0}")]
     ValidationError(String),
 
-    #[error("Failed to serialize transaction: {0}")]
-    SerializationError(String),
-
     #[error(transparent)]
     Jito(#[from] JitoError),
 }

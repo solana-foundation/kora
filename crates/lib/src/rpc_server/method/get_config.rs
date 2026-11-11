@@ -1,18 +1,11 @@
 use crate::{
     config::{EnabledMethods, ValidationConfig},
-    signer::SelectionStrategy,
     state::{self, get_signer_pool},
     KoraError,
 };
 use serde::Serialize;
-use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct SignerPoolInfo {
-    pub strategy: SelectionStrategy,
-}
-
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GetConfigResponse {
     pub fee_payers: Vec<String>,
     pub validation_config: ValidationConfig,
@@ -144,14 +137,13 @@ mod tests {
         assert!(response.enabled_methods.get_payer_signer);
         assert!(response.enabled_methods.sign_transaction);
         assert!(response.enabled_methods.sign_and_send_transaction);
-        assert!(response.enabled_methods.transfer_transaction);
         assert!(response.enabled_methods.get_blockhash);
         assert!(response.enabled_methods.get_config);
     }
 
     #[test]
     fn test_get_config_response_serializes_programs_config_all_as_string() {
-        // The TS SDK / OpenAPI contract relies on `allowed_programs` being either
+        // The TS SDK contract relies on `allowed_programs` being either
         // the string "All" or an array of strings on the wire. Guard against any
         // future field annotation that would break this user-facing shape.
         let mut validation_config = crate::tests::config_mock::ValidationConfigBuilder::new()

@@ -1,8 +1,7 @@
 use crate::{error::KoraError, state::get_config};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetSupportedTokensResponse {
     pub tokens: Vec<String>,
 }

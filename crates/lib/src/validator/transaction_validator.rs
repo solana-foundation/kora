@@ -2,7 +2,7 @@ use crate::{
     config::{Config, FeePayerPolicy, ProgramsConfig},
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation, TransactionFeeUtil},
-    token::{interface::TokenMint, token::TokenUtil},
+    token::token::TokenUtil,
     transaction::{
         ParsedSPLInstructionData, ParsedSystemInstructionData, VersionedTransactionResolved,
     },
@@ -31,7 +31,6 @@ pub struct TransactionValidator {
     allow_all_programs: bool,
     require_one_of_programs: HashSet<Pubkey>,
     max_signatures: u64,
-    allowed_tokens: HashSet<Pubkey>,
     disallowed_accounts: HashSet<Pubkey>,
     fee_payer_policy: FeePayerPolicy,
     allow_durable_transactions: bool,
@@ -55,29 +54,11 @@ impl TransactionValidator {
             allow_all_programs,
             require_one_of_programs: parse_pubkey_set(&config.require_one_of_programs)?,
             max_signatures: config.max_signatures,
-            allowed_tokens: parse_pubkey_set(&config.allowed_tokens)?,
             disallowed_accounts: parse_pubkey_set(&config.disallowed_accounts)?,
             fee_payer_policy: config.fee_payer_policy.clone(),
             allow_durable_transactions: config.allow_durable_transactions,
             allowed_transaction_versions: config.allowed_transaction_versions.clone(),
         })
-    }
-
-    pub async fn fetch_and_validate_token_mint(
-        &self,
-        mint: &Pubkey,
-        config: &Config,
-        rpc_client: &RpcClient,
-    ) -> Result<Box<dyn TokenMint + Send + Sync>, KoraError> {
-        if !self.allowed_tokens.contains(mint) {
-            return Err(KoraError::InvalidTransaction(format!(
-                "Mint {mint} is not a valid token mint"
-            )));
-        }
-
-        let mint = TokenUtil::get_mint(config, rpc_client, mint).await?;
-
-        Ok(mint)
     }
 
     /*

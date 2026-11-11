@@ -164,20 +164,6 @@ impl TokenAccountMockBuilder {
         self
     }
 
-    /// Add an extension type (Token2022 only)
-    pub fn with_extension(mut self, extension: ExtensionType) -> Self {
-        if !self.extensions.contains(&extension) {
-            self.extensions.push(extension);
-        }
-        self
-    }
-
-    /// Add multiple extension types (Token2022 only)
-    pub fn with_extensions(mut self, extensions: Vec<ExtensionType>) -> Self {
-        self.extensions = extensions;
-        self
-    }
-
     /// Set account state (for SPL Token compatibility)
     pub fn with_state(self, _state: SplAccountState) -> Self {
         // State is handled automatically in build methods, this is for compatibility
@@ -199,11 +185,6 @@ impl TokenAccountMockBuilder {
             Some(key) => COption::Some(key),
             None => COption::None,
         };
-        self
-    }
-
-    pub fn with_lamports(mut self, lamports: u64) -> Self {
-        self.lamports = lamports;
         self
     }
 
@@ -553,10 +534,6 @@ pub fn create_mock_spl_mint_account(decimals: u8) -> Account {
 
 pub fn create_mock_token2022_mint_account(decimals: u8) -> Account {
     MintAccountMockBuilder::new().with_decimals(decimals).build_token2022()
-}
-
-pub fn create_mock_account_with_balance(lamports: u64) -> Account {
-    AccountMockBuilder::new().with_lamports(lamports).build()
 }
 
 pub fn create_mock_account_with_owner(owner: Pubkey) -> Account {

@@ -10,15 +10,10 @@ readme = "../../README.md"
 name = "kora"
 path = "src/main.rs"
 
-[features]
-docs = ["kora-lib/docs", "dep:utoipa"]
-
 [dependencies]
 kora-lib = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 dotenv = { workspace = true }
-serde_json = { workspace = true }
-utoipa = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true }
 log = { workspace = true }

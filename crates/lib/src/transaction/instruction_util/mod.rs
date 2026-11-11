@@ -63,18 +63,6 @@ impl IxUtils {
         account_keys.iter().enumerate().map(|(idx, key)| (*key, idx as u8)).collect()
     }
 
-    pub fn get_account_key_if_present(ix: &Instruction, index: usize) -> Option<Pubkey> {
-        if ix.accounts.is_empty() {
-            return None;
-        }
-
-        if index >= ix.accounts.len() {
-            return None;
-        }
-
-        Some(ix.accounts[index].pubkey)
-    }
-
     pub fn get_account_key_required(
         account_keys: &[Pubkey],
         index: usize,

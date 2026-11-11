@@ -11,7 +11,6 @@ JSON-RPC 2.0 over HTTP POST. All transactions are base64-encoded.
 - [signAndSendTransaction](#signandsendtransaction)
 - [signBundle](#signbundle)
 - [signAndSendBundle](#signandsendBundle)
-- [transferTransaction](#transfertransaction) (deprecated)
 - [getPaymentInstruction](#getpaymentinstruction) (client-side only)
 - [getConfig](#getconfig)
 - [getBlockhash](#getblockhash)
@@ -193,34 +192,6 @@ Note: When using Jito tips paid by Kora, ensure `allow_transfer = true` in `[val
 
 ---
 
-## transferTransaction
-
-> **Deprecated** as of Kora v2.2.0. Returns payment instruction data without signing. Use `@solana-program/token` instructions + `signTransaction`/`signAndSendTransaction` instead.
-
-**Request:**
-```ts
-{
-  amount: number;         // in token's smallest unit
-  token: string;          // mint address ("11111111111111111111111111111111" for SOL)
-  source: string;         // source wallet pubkey (not token account)
-  destination: string;    // destination wallet pubkey (not token account)
-  signer_key?: string;
-}
-```
-
-**Response:**
-```ts
-{
-  transaction: string;       // base64 encoded
-  message: string;           // base64 encoded message
-  blockhash: string;
-  signer_pubkey: string;
-  instructions: Instruction[];  // parsed instructions (SDK only, populated client-side)
-}
-```
-
----
-
 ## getPaymentInstruction
 
 **Client-side only** - no actual RPC call. Calls `estimateTransactionFee` internally and constructs a token transfer instruction to pay Kora.
@@ -283,7 +254,6 @@ Returns server configuration including fee payers, validation rules, and enabled
     sign_and_send_transaction: boolean;
     sign_bundle: boolean;
     sign_and_send_bundle: boolean;
-    transfer_transaction: boolean;
     get_blockhash: boolean;
     get_config: boolean;
   };

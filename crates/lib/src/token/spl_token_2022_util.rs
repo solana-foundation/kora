@@ -11,7 +11,6 @@
 //! ```rust,ignore
 //! // For MintExtension:
 //! MintExtension::from_string("transfer_fee_config") -> Some(ExtensionType::TransferFeeConfig)
-//! MintExtension::to_string_name(ExtensionType::TransferFeeConfig) -> Some("transfer_fee_config")  
 //! MintExtension::all_string_names() -> &["confidential_transfer_mint", "transfer_fee_config", ...]
 //! MintExtension::EXTENSIONS -> &[ExtensionType::ConfidentialTransferMint, ExtensionType::TransferFeeConfig, ...]
 //! ```
@@ -77,13 +76,6 @@ macro_rules! define_extensions {
             pub fn from_string(s: &str) -> Option<ExtensionType> {
                 match s {
                     $($str_name => Some($ext_type),)*
-                    _ => None,
-                }
-            }
-
-            pub fn to_string_name(ext_type: ExtensionType) -> Option<&'static str> {
-                match ext_type {
-                    $($ext_type => Some($str_name),)*
                     _ => None,
                 }
             }
@@ -323,49 +315,6 @@ mod tests {
     }
 
     #[test]
-    fn test_mint_extension_to_string_name() {
-        // Test valid mint extension types
-        assert_eq!(
-            MintExtension::to_string_name(ExtensionType::ConfidentialTransferMint),
-            Some("confidential_transfer_mint")
-        );
-        assert_eq!(
-            MintExtension::to_string_name(ExtensionType::TransferFeeConfig),
-            Some("transfer_fee_config")
-        );
-        assert_eq!(
-            MintExtension::to_string_name(ExtensionType::MintCloseAuthority),
-            Some("mint_close_authority")
-        );
-        assert_eq!(
-            MintExtension::to_string_name(ExtensionType::InterestBearingConfig),
-            Some("interest_bearing_config")
-        );
-        assert_eq!(
-            MintExtension::to_string_name(ExtensionType::NonTransferable),
-            Some("non_transferable")
-        );
-        assert_eq!(
-            MintExtension::to_string_name(ExtensionType::PermanentDelegate),
-            Some("permanent_delegate")
-        );
-        assert_eq!(
-            MintExtension::to_string_name(ExtensionType::TransferHook),
-            Some("transfer_hook")
-        );
-        assert_eq!(MintExtension::to_string_name(ExtensionType::Pausable), Some("pausable"));
-        assert_eq!(
-            MintExtension::to_string_name(ExtensionType::ConfidentialMintBurn),
-            Some("confidential_mint_burn")
-        );
-
-        // Test invalid extension types (account extensions)
-        assert_eq!(MintExtension::to_string_name(ExtensionType::MemoTransfer), None);
-        assert_eq!(MintExtension::to_string_name(ExtensionType::CpiGuard), None);
-        assert_eq!(MintExtension::to_string_name(ExtensionType::ImmutableOwner), None);
-    }
-
-    #[test]
     fn test_mint_extension_all_string_names() {
         let names = MintExtension::all_string_names();
 
@@ -481,45 +430,6 @@ mod tests {
         assert_eq!(AccountExtension::from_string("transfer_fee_config"), None); // This is a mint extension
         assert_eq!(AccountExtension::from_string(""), None);
         assert_eq!(AccountExtension::from_string("MEMO_TRANSFER"), None); // Case sensitive
-    }
-
-    #[test]
-    fn test_account_extension_to_string_name() {
-        // Test valid account extension types
-        assert_eq!(
-            AccountExtension::to_string_name(ExtensionType::ConfidentialTransferAccount),
-            Some("confidential_transfer_account")
-        );
-        assert_eq!(
-            AccountExtension::to_string_name(ExtensionType::NonTransferableAccount),
-            Some("non_transferable_account")
-        );
-        assert_eq!(
-            AccountExtension::to_string_name(ExtensionType::TransferHookAccount),
-            Some("transfer_hook_account")
-        );
-        assert_eq!(
-            AccountExtension::to_string_name(ExtensionType::PausableAccount),
-            Some("pausable_account")
-        );
-        assert_eq!(
-            AccountExtension::to_string_name(ExtensionType::MemoTransfer),
-            Some("memo_transfer")
-        );
-        assert_eq!(AccountExtension::to_string_name(ExtensionType::CpiGuard), Some("cpi_guard"));
-        assert_eq!(
-            AccountExtension::to_string_name(ExtensionType::ImmutableOwner),
-            Some("immutable_owner")
-        );
-        assert_eq!(
-            AccountExtension::to_string_name(ExtensionType::DefaultAccountState),
-            Some("default_account_state")
-        );
-
-        // Test invalid extension types (mint extensions)
-        assert_eq!(AccountExtension::to_string_name(ExtensionType::TransferFeeConfig), None);
-        assert_eq!(AccountExtension::to_string_name(ExtensionType::MintCloseAuthority), None);
-        assert_eq!(AccountExtension::to_string_name(ExtensionType::NonTransferable), None);
     }
 
     #[test]

@@ -1,5 +1,4 @@
 use anyhow::Result;
-use kora_lib::signer::KeypairUtil;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     pubkey::Pubkey,
@@ -20,7 +19,8 @@ pub fn get_fee_for_default_transaction_in_usdc() -> u64 {
 }
 
 pub fn parse_private_key_string(private_key: &str) -> Result<Keypair, String> {
-    KeypairUtil::from_private_key_string(private_key).map_err(|e| e.to_string())
+    let bytes: Vec<u8> = serde_json::from_str(private_key).map_err(|e| e.to_string())?;
+    Keypair::try_from(&bytes[..]).map_err(|e| e.to_string())
 }
 
 pub struct FeePayerTestHelper;

@@ -18,7 +18,6 @@ use std::{
     ops::Deref,
     sync::OnceLock,
 };
-use utoipa::ToSchema;
 
 use solana_transaction_status_client_types::UiTransactionEncoding;
 
@@ -144,7 +143,7 @@ impl Deref for VersionedTransactionResolved {
 /// responding, ordered by increasing assurance: `Signed` < `Sent` < `Confirmed`.
 ///
 /// All modes share the immediate sign-and-send validation flow (`will_send = true`)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RespondAfter {
     /// Wait for on-chain confirmation at `confirmed` commitment (default).

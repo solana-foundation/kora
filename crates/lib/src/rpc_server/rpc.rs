@@ -3,13 +3,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 
 use crate::error::KoraError;
-#[cfg(feature = "docs")]
-use utoipa::{
-    openapi::{RefOr, Schema},
-    PartialSchema,
-};
 
-#[allow(deprecated)]
 use crate::rpc_server::method::{
     estimate_bundle_fee::{
         estimate_bundle_fee, EstimateBundleFeeRequest, EstimateBundleFeeResponse,
@@ -30,20 +24,11 @@ use crate::rpc_server::method::{
     },
     sign_bundle::{sign_bundle, SignBundleRequest, SignBundleResponse},
     sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResponse},
-    transfer_transaction::{
-        transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
-    },
 };
 
 #[derive(Clone)]
 pub struct KoraRpc {
     rpc_client: Arc<RpcClient>,
-}
-#[cfg(feature = "docs")]
-pub struct OpenApiSpec {
-    pub name: String,
-    pub request: Option<RefOr<Schema>>,
-    pub response: RefOr<Schema>,
 }
 
 fn log_response<T: std::fmt::Debug>(
@@ -116,17 +101,6 @@ impl KoraRpc {
         )
     }
 
-    #[deprecated(since = "2.2.0", note = "Use getPaymentInstruction instead for fee payment flows")]
-    pub async fn transfer_transaction(
-        &self,
-        request: TransferTransactionRequest,
-    ) -> Result<TransferTransactionResponse, KoraError> {
-        info!("Transfer transaction request: {request:?}");
-        #[allow(deprecated)]
-        let result = transfer_transaction(&self.rpc_client, request).await;
-        log_response("Transfer transaction", result)
-    }
-
     pub async fn get_blockhash(&self) -> Result<GetBlockhashResponse, KoraError> {
         info!("Get blockhash request received");
         log_response("Get blockhash", get_blockhash(&self.rpc_client).await)
@@ -156,72 +130,6 @@ impl KoraRpc {
     ) -> Result<SignAndSendBundleResponse, KoraError> {
         info!("Sign and send bundle request: {request:?}");
         log_response("Sign and send bundle", sign_and_send_bundle(&self.rpc_client, request).await)
-    }
-
-    #[cfg(feature = "docs")]
-    pub fn build_docs_spec() -> Vec<OpenApiSpec> {
-        vec![
-            OpenApiSpec {
-                name: "estimateTransactionFee".to_string(),
-                request: Some(EstimateTransactionFeeRequest::schema()),
-                response: EstimateTransactionFeeResponse::schema(),
-            },
-            OpenApiSpec {
-                name: "estimateBundleFee".to_string(),
-                request: Some(EstimateBundleFeeRequest::schema()),
-                response: EstimateBundleFeeResponse::schema(),
-            },
-            OpenApiSpec {
-                name: "getBlockhash".to_string(),
-                request: None,
-                response: GetBlockhashResponse::schema(),
-            },
-            OpenApiSpec {
-                name: "getConfig".to_string(),
-                request: None,
-                response: GetConfigResponse::schema(),
-            },
-            OpenApiSpec {
-                name: "getSupportedTokens".to_string(),
-                request: None,
-                response: GetSupportedTokensResponse::schema(),
-            },
-            OpenApiSpec {
-                name: "getPayerSigner".to_string(),
-                request: None,
-                response: GetPayerSignerResponse::schema(),
-            },
-            OpenApiSpec {
-                name: "signTransaction".to_string(),
-                request: Some(SignTransactionRequest::schema()),
-                response: SignTransactionResponse::schema(),
-            },
-            OpenApiSpec {
-                name: "signAndSendTransaction".to_string(),
-                request: Some(SignAndSendTransactionRequest::schema()),
-                response: SignAndSendTransactionResponse::schema(),
-            },
-            OpenApiSpec {
-                name: "transferTransaction".to_string(),
-                request: Some(TransferTransactionRequest::schema()),
-                response: TransferTransactionResponse::schema(),
-            },
-            OpenApiSpec {
-                name: "getVersion".to_string(),
-                request: None,
-                response: GetVersionResponse::schema(),
-            },
-            OpenApiSpec {
-                name: "signBundle".to_string(),
-                request: Some(SignBundleRequest::schema()),
-                response: SignBundleResponse::schema(),
-            },
-            OpenApiSpec {
-                name: "signAndSendBundle".to_string(),
-                request: Some(SignAndSendBundleRequest::schema()),
-                response: SignAndSendBundleResponse::schema(),
-            },
-        ]
     }
 }
 

@@ -53,7 +53,6 @@ Before opening a pull request:
 - Run `just check` and `just unit-test`. Run `just integration-test` when you touch validation, signing, fees, or the RPC surface.
 - Add or update tests when behavior changes.
 - Update documentation and reference material when the change is part of the user-facing contract — including the operator and client guides under [`.claude/skills/`](./.claude/skills/), which are documentation and drift like any other.
-- Regenerate derived files with the repository's tooling rather than editing them by hand: `just gen-ts-client` for the SDK client, and the OpenAPI document it depends on.
 - Explain any new dependency and why the existing dependency set is insufficient.
 
 Kora is a paymaster: it signs transactions with a funded fee payer that it does not control the contents of. Any change touching transaction validation, the fee payer policy, fee calculation, or signer handling sits on a trust boundary. Document what an attacker could submit and why the change does not let them move fee payer funds. New fee payer policy flags must default to `false` and carry drain-safety property tests in `crates/lib/src/validator/transaction_validator/fee_payer_policy_props/`.

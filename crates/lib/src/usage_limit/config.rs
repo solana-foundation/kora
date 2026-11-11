@@ -1,14 +1,13 @@
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
-use utoipa::ToSchema;
 
 use crate::{constant::DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE, error::KoraError};
 
 use super::rules::{InstructionRule, TransactionRule, UsageRule};
 
 /// Unified usage limit configuration
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UsageLimitConfig {
     /// Enable per-wallet usage limiting
@@ -66,7 +65,7 @@ impl UsageLimitConfig {
 /// instruction = "Transfer"
 /// max = 10
 /// ```
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
 pub enum UsageLimitRuleConfig {
     /// Transaction-level limit - counts all transactions for a wallet

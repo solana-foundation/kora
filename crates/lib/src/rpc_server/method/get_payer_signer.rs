@@ -4,9 +4,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use solana_keychain::SolanaSigner;
-use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetPayerSignerResponse {
     /// The recommended signer's public key
     pub signer_address: String,

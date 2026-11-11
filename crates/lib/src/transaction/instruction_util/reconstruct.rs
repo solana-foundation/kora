@@ -50,8 +50,6 @@ pub const PARSED_DATA_FIELD_CREATE_IDEMPOTENT: &str = "createIdempotent";
 pub const PARSED_DATA_FIELD_AMOUNT: &str = "amount";
 pub const PARSED_DATA_FIELD_LAMPORTS: &str = "lamports";
 pub const PARSED_DATA_FIELD_DECIMALS: &str = "decimals";
-pub const PARSED_DATA_FIELD_UI_AMOUNT: &str = "uiAmount";
-pub const PARSED_DATA_FIELD_UI_AMOUNT_STRING: &str = "uiAmountString";
 pub const PARSED_DATA_FIELD_TOKEN_AMOUNT: &str = "tokenAmount";
 pub const PARSED_DATA_FIELD_ACCOUNT: &str = "account";
 pub const PARSED_DATA_FIELD_NEW_ACCOUNT: &str = "newAccount";
@@ -65,7 +63,6 @@ pub const PARSED_DATA_FIELD_SOURCE_BASE: &str = "sourceBase";
 pub const PARSED_DATA_FIELD_SOURCE_SEED: &str = "sourceSeed";
 pub const PARSED_DATA_FIELD_SOURCE_OWNER: &str = "sourceOwner";
 pub const PARSED_DATA_FIELD_NONCE_ACCOUNT: &str = "nonceAccount";
-pub const PARSED_DATA_FIELD_RECIPIENT: &str = "recipient";
 pub const PARSED_DATA_FIELD_NONCE_AUTHORITY: &str = "nonceAuthority";
 pub const PARSED_DATA_FIELD_NEW_AUTHORITY: &str = "newAuthority";
 
@@ -91,7 +88,6 @@ pub const PARSED_DATA_FIELD_INSTRUCTIONS: &str = "instructions";
 
 pub const PARSED_DATA_FIELD_MINT_AUTHORITY: &str = "mintAuthority";
 pub const PARSED_DATA_FIELD_FREEZE_AUTHORITY: &str = "freezeAuthority";
-pub const PARSED_DATA_FIELD_AUTHORITY_TYPE: &str = "authorityType";
 pub const PARSED_DATA_FIELD_MULTISIG_ACCOUNT: &str = "multisig";
 pub const PARSED_DATA_FIELD_SIGNERS: &str = "signers";
 pub const PARSED_DATA_FIELD_MULTISIG_AUTHORITY: &str = "multisigAuthority";

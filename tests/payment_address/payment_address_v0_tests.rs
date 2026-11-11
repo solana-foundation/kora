@@ -1,6 +1,5 @@
 use crate::common::*;
 use jsonrpsee::rpc_params;
-use kora_lib::token::{spl_token::TokenProgram, TokenInterface};
 use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
@@ -21,15 +20,15 @@ async fn test_sign_transaction_if_paid_with_payment_address_v0() {
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &test_mint);
     let payment_address_token_account = get_associated_token_address(&payment_address, &test_mint);
 
-    let token_interface = TokenProgram::new();
-    let fee_payer_instruction = token_interface
-        .create_transfer_instruction(
-            &sender_token_account,
-            &payment_address_token_account,
-            &sender.pubkey(),
-            get_fee_for_default_transaction_in_usdc(),
-        )
-        .unwrap();
+    let fee_payer_instruction = spl_token_interface::instruction::transfer(
+        &spl_token_interface::id(),
+        &sender_token_account,
+        &payment_address_token_account,
+        &sender.pubkey(),
+        &[],
+        get_fee_for_default_transaction_in_usdc(),
+    )
+    .unwrap();
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
 
@@ -72,15 +71,15 @@ async fn test_sign_transaction_if_paid_with_wrong_destination_v0() {
         &spl_token_interface::id(),
     );
 
-    let token_interface = TokenProgram::new();
-    let fee_payer_instruction = token_interface
-        .create_transfer_instruction(
-            &sender_token_account,
-            &wrong_dest_ata,
-            &sender.pubkey(),
-            get_fee_for_default_transaction_in_usdc(),
-        )
-        .unwrap();
+    let fee_payer_instruction = spl_token_interface::instruction::transfer(
+        &spl_token_interface::id(),
+        &sender_token_account,
+        &wrong_dest_ata,
+        &sender.pubkey(),
+        &[],
+        get_fee_for_default_transaction_in_usdc(),
+    )
+    .unwrap();
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
 

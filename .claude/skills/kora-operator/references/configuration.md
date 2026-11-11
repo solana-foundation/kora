@@ -123,15 +123,12 @@ sign_transaction = true
 sign_and_send_transaction = true
 sign_bundle = true
 sign_and_send_bundle = true
-transfer_transaction = true        # Deprecated in v2.2.0
 get_blockhash = true
 get_config = true
 get_payer_signer = true
 ```
 
 All default to `true`. If section is included, ALL methods must be explicitly set.
-
-`transfer_transaction` is deprecated — use `@solana-program/token` instructions + `signTransaction`/`signAndSendTransaction` instead.
 
 ---
 
@@ -356,7 +353,6 @@ No charge. Does NOT include fee payer outflow. Must secure fee payer policy.
 enabled = true
 endpoint = "/metrics"   # HTTP path for metrics endpoint
 port = 9090
-scrape_interval = 15
 
 [metrics.fee_payer_balance]
 enabled = true

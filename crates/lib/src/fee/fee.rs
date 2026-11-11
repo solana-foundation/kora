@@ -463,9 +463,6 @@ mod tests {
                 create_legacy_message, create_v0_message_with_alt_loaded_program, create_v1_message,
             },
         },
-        token::{
-            interface::TokenInterface, spl_token::TokenProgram, spl_token_2022::Token2022Program,
-        },
         transaction::TransactionUtil,
     };
     use solana_address_lookup_table_interface::{
@@ -1857,14 +1854,15 @@ mod tests {
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
         let payment_token_account = get_associated_token_address(&signer, &mint);
 
-        let transfer_instruction = TokenProgram::new()
-            .create_transfer_instruction(
-                &sender_token_account,
-                &payment_token_account,
-                &sender.pubkey(),
-                1000,
-            )
-            .unwrap();
+        let transfer_instruction = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &sender_token_account,
+            &payment_token_account,
+            &sender.pubkey(),
+            &[],
+            1000,
+        )
+        .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_instruction], None));
         let mut resolved_transaction =
@@ -1934,9 +1932,16 @@ mod tests {
                 &mint,
                 &token2022_id,
             );
-        let transfer_ix = Token2022Program::new()
-            .create_transfer_instruction(&sender_ata, &payment_ata, &sender.pubkey(), 1_000_000)
-            .unwrap();
+        #[allow(deprecated)]
+        let transfer_ix = spl_token_2022_interface::instruction::transfer(
+            &token2022_id,
+            &sender_ata,
+            &payment_ata,
+            &sender.pubkey(),
+            &[],
+            1_000_000,
+        )
+        .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[ata_create_ix, transfer_ix], None));
         let mut resolved_transaction =
@@ -2004,14 +2009,15 @@ mod tests {
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
         let recipient_token_account = get_associated_token_address(&sender.pubkey(), &mint);
 
-        let transfer_instruction = TokenProgram::new()
-            .create_transfer_instruction(
-                &sender_token_account,
-                &recipient_token_account,
-                &sender.pubkey(),
-                1000,
-            )
-            .unwrap();
+        let transfer_instruction = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &sender_token_account,
+            &recipient_token_account,
+            &sender.pubkey(),
+            &[],
+            1000,
+        )
+        .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_instruction], None));
         let mut resolved_transaction =
@@ -2154,23 +2160,25 @@ mod tests {
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
         let payment_token_account = get_associated_token_address(&signer, &mint);
 
-        let transfer_1 = TokenProgram::new()
-            .create_transfer_instruction(
-                &sender_token_account,
-                &payment_token_account,
-                &sender.pubkey(),
-                500,
-            )
-            .unwrap();
+        let transfer_1 = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &sender_token_account,
+            &payment_token_account,
+            &sender.pubkey(),
+            &[],
+            500,
+        )
+        .unwrap();
 
-        let transfer_2 = TokenProgram::new()
-            .create_transfer_instruction(
-                &sender_token_account,
-                &payment_token_account,
-                &sender.pubkey(),
-                500,
-            )
-            .unwrap();
+        let transfer_2 = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &sender_token_account,
+            &payment_token_account,
+            &sender.pubkey(),
+            &[],
+            500,
+        )
+        .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_1, transfer_2], None));
         let mut resolved_transaction =

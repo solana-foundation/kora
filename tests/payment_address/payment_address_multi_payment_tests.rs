@@ -1,6 +1,5 @@
 use crate::common::*;
 use jsonrpsee::rpc_params;
-use kora_lib::token::{spl_token::TokenProgram, TokenInterface};
 use solana_sdk::{pubkey::Pubkey, signature::Signer};
 use spl_associated_token_account_interface::address::get_associated_token_address;
 use std::str::FromStr;
@@ -15,29 +14,29 @@ async fn test_sign_transaction_if_paid_with_multiple_payments_legacy() {
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &test_mint);
     let payment_address_token_account = get_associated_token_address(&payment_address, &test_mint);
 
-    let token_interface = TokenProgram::new();
-
     let required_fee = get_fee_for_default_transaction_in_usdc();
     let payment_1 = required_fee / 2;
     let payment_2 = required_fee - payment_1 + 10;
 
-    let payment_instruction_1 = token_interface
-        .create_transfer_instruction(
-            &sender_token_account,
-            &payment_address_token_account,
-            &sender.pubkey(),
-            payment_1,
-        )
-        .unwrap();
+    let payment_instruction_1 = spl_token_interface::instruction::transfer(
+        &spl_token_interface::id(),
+        &sender_token_account,
+        &payment_address_token_account,
+        &sender.pubkey(),
+        &[],
+        payment_1,
+    )
+    .unwrap();
 
-    let payment_instruction_2 = token_interface
-        .create_transfer_instruction(
-            &sender_token_account,
-            &payment_address_token_account,
-            &sender.pubkey(),
-            payment_2,
-        )
-        .unwrap();
+    let payment_instruction_2 = spl_token_interface::instruction::transfer(
+        &spl_token_interface::id(),
+        &sender_token_account,
+        &payment_address_token_account,
+        &sender.pubkey(),
+        &[],
+        payment_2,
+    )
+    .unwrap();
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
 
@@ -70,29 +69,29 @@ async fn test_sign_transaction_if_paid_with_multiple_payments_insufficient_legac
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &test_mint);
     let payment_address_token_account = get_associated_token_address(&payment_address, &test_mint);
 
-    let token_interface = TokenProgram::new();
-
     let required_fee = get_fee_for_default_transaction_in_usdc();
     let payment_1 = required_fee / 3;
     let payment_2 = required_fee / 3;
 
-    let payment_instruction_1 = token_interface
-        .create_transfer_instruction(
-            &sender_token_account,
-            &payment_address_token_account,
-            &sender.pubkey(),
-            payment_1,
-        )
-        .unwrap();
+    let payment_instruction_1 = spl_token_interface::instruction::transfer(
+        &spl_token_interface::id(),
+        &sender_token_account,
+        &payment_address_token_account,
+        &sender.pubkey(),
+        &[],
+        payment_1,
+    )
+    .unwrap();
 
-    let payment_instruction_2 = token_interface
-        .create_transfer_instruction(
-            &sender_token_account,
-            &payment_address_token_account,
-            &sender.pubkey(),
-            payment_2,
-        )
-        .unwrap();
+    let payment_instruction_2 = spl_token_interface::instruction::transfer(
+        &spl_token_interface::id(),
+        &sender_token_account,
+        &payment_address_token_account,
+        &sender.pubkey(),
+        &[],
+        payment_2,
+    )
+    .unwrap();
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
 

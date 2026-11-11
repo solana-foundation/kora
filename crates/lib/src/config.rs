@@ -6,7 +6,6 @@ use spl_token_2022_interface::extension::ExtensionType;
 use std::{env, fs, path::Path, str::FromStr};
 use toml;
 use url::Url;
-use utoipa::ToSchema;
 
 use crate::{
     bundle::JitoConfig,
@@ -110,12 +109,13 @@ pub struct Config {
     pub metrics: MetricsConfig,
 }
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MetricsConfig {
     pub enabled: bool,
     pub endpoint: String,
     pub port: u16,
+    /// Unused. Accepted so configs that still set it keep loading.
     pub scrape_interval: u64,
     pub fee_payer_balance: FeePayerBalanceMetricsConfig,
 }
@@ -132,7 +132,7 @@ impl Default for MetricsConfig {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FeePayerBalanceMetricsConfig {
     pub enabled: bool,
@@ -145,7 +145,7 @@ impl Default for FeePayerBalanceMetricsConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SplTokenConfig {
     All,
     #[serde(untagged)]
@@ -204,29 +204,6 @@ pub enum ProgramsConfig {
     Allowlist(Vec<String>),
 }
 
-impl utoipa::PartialSchema for ProgramsConfig {
-    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
-        string_or_string_array_schema()
-    }
-}
-
-impl utoipa::ToSchema for ProgramsConfig {}
-
-/// OpenAPI schema for enums that serialize as either the literal string `"All"` or a JSON array
-/// of strings. The auto-derived schema treats the untagged `Allowlist` variant as an object
-/// wrapper, which does not match the actual JSON form.
-fn string_or_string_array_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
-    use utoipa::openapi::{schema::Type, ArrayBuilder, ObjectBuilder, OneOfBuilder};
-    OneOfBuilder::new()
-        .item(ObjectBuilder::new().schema_type(Type::String).enum_values(Some(vec!["All"])).build())
-        .item(
-            ArrayBuilder::new()
-                .items(ObjectBuilder::new().schema_type(Type::String).build())
-                .build(),
-        )
-        .into()
-}
-
 impl<'a> IntoIterator for &'a ProgramsConfig {
     type Item = &'a String;
     type IntoIter = std::slice::Iter<'a, String>;
@@ -259,30 +236,7 @@ impl ProgramsConfig {
     }
 }
 
-fn transaction_versions_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
-    use utoipa::openapi::{schema::Type, ArrayBuilder, ObjectBuilder, OneOfBuilder};
-    ArrayBuilder::new()
-        .items(
-            OneOfBuilder::new()
-                .item(
-                    ObjectBuilder::new()
-                        .schema_type(Type::String)
-                        .enum_values(Some(vec!["legacy"])),
-                )
-                .item(
-                    ObjectBuilder::new()
-                        .schema_type(Type::Integer)
-                        .minimum(Some(0))
-                        .maximum(Some(255)),
-                ),
-        )
-        .description(Some(
-            "Transaction message versions accepted: any of \"legacy\", 0, 1.\nDefault: all versions.",
-        ))
-        .into()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ValidationConfig {
     pub max_allowed_lamports: u64,
@@ -310,7 +264,6 @@ pub struct ValidationConfig {
     /// Transaction message versions accepted: any of "legacy", 0, 1.
     /// Default: all versions.
     #[serde(default = "default_allowed_transaction_versions")]
-    #[schema(schema_with = transaction_versions_schema)]
     pub allowed_transaction_versions: Vec<TransactionVersion>,
     /// Maximum allowed age of oracle price data in slots. 0 = disabled (default).
     /// When >0, prices with a block_id older than `current_slot - max_price_staleness_slots` are rejected.
@@ -353,7 +306,7 @@ impl ValidationConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct FeePayerPolicy {
     pub system: SystemInstructionPolicy,
@@ -364,7 +317,7 @@ pub struct FeePayerPolicy {
     pub loader_v4: LoaderV4InstructionPolicy,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct SystemInstructionPolicy {
     /// Allow fee payer to be the sender in System Transfer/TransferWithSeed instructions
@@ -380,7 +333,7 @@ pub struct SystemInstructionPolicy {
     pub nonce: NonceInstructionPolicy,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct NonceInstructionPolicy {
     /// Allow fee payer to be set as the nonce authority in InitializeNonceAccount instructions
@@ -395,7 +348,7 @@ pub struct NonceInstructionPolicy {
     // Note: UpgradeNonceAccount not included - has no authority parameter, cannot validate fee payer involvement
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct SplTokenInstructionPolicy {
     /// Allow fee payer to be the owner in SPL Token Transfer/TransferChecked instructions
@@ -430,7 +383,7 @@ pub struct SplTokenInstructionPolicy {
     pub allow_unwrap_lamports: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be the owner in Token2022 Transfer/TransferChecked instructions
@@ -476,7 +429,7 @@ pub struct Token2022InstructionPolicy {
     pub allow_reallocate: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct AltInstructionPolicy {
     /// Allow fee payer to be authority/payer in ALT CreateLookupTable instructions
@@ -491,7 +444,7 @@ pub struct AltInstructionPolicy {
     pub allow_close: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct BpfLoaderUpgradeableInstructionPolicy {
     /// Allow fee payer to be the buffer authority in InitializeBuffer instructions
@@ -521,7 +474,7 @@ pub struct BpfLoaderUpgradeableInstructionPolicy {
     pub allow_migrate: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct LoaderV4InstructionPolicy {
     /// Allow fee payer to be the authority in Write instructions
@@ -542,7 +495,7 @@ pub struct LoaderV4InstructionPolicy {
     pub allow_finalize: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct Token2022Config {
     pub blocked_mint_extensions: Vec<String>,
@@ -564,7 +517,7 @@ pub struct Token2022Config {
 /// Which signing flows accept a mutable TransferHook authority on mints listed in
 /// `allowed_tokens`. Transfers of any other mint with a mutable authority are rejected under
 /// every policy.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum TransferHookPolicy {
@@ -648,7 +601,15 @@ impl Token2022Config {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+fn deserialize_removed_method<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    bool::deserialize(deserializer)?;
+    Ok(false)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct EnabledMethods {
     pub liveness: bool,
@@ -657,6 +618,9 @@ pub struct EnabledMethods {
     pub get_payer_signer: bool,
     pub sign_transaction: bool,
     pub sign_and_send_transaction: bool,
+    /// The method was removed. The key is still accepted so configs that set it keep loading,
+    /// but it always reads as `false` so `getConfig` never advertises it.
+    #[serde(deserialize_with = "deserialize_removed_method")]
     pub transfer_transaction: bool,
     pub get_blockhash: bool,
     pub get_config: bool,
@@ -681,7 +645,6 @@ impl EnabledMethods {
             (self.get_payer_signer, "getPayerSigner"),
             (self.sign_transaction, "signTransaction"),
             (self.sign_and_send_transaction, "signAndSendTransaction"),
-            (self.transfer_transaction, "transferTransaction"),
             (self.get_blockhash, "getBlockhash"),
             (self.get_config, "getConfig"),
             (self.get_version, "getVersion"),
@@ -697,7 +660,7 @@ impl EnabledMethods {
 
 impl IntoIterator for &EnabledMethods {
     type Item = bool;
-    type IntoIter = std::array::IntoIter<bool, 13>;
+    type IntoIter = std::array::IntoIter<bool, 12>;
 
     fn into_iter(self) -> Self::IntoIter {
         [
@@ -707,7 +670,6 @@ impl IntoIterator for &EnabledMethods {
             self.get_payer_signer,
             self.sign_transaction,
             self.sign_and_send_transaction,
-            self.transfer_transaction,
             self.get_blockhash,
             self.get_config,
             self.get_version,
@@ -728,7 +690,7 @@ impl Default for EnabledMethods {
             get_payer_signer: true,
             sign_transaction: true,
             sign_and_send_transaction: true,
-            transfer_transaction: true,
+            transfer_transaction: false,
             get_blockhash: true,
             get_config: true,
             get_version: true,
@@ -740,7 +702,7 @@ impl Default for EnabledMethods {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheConfig {
     /// Redis URL for caching (e.g., "redis://localhost:6379")
@@ -776,7 +738,7 @@ impl CacheConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum TransactionPluginType {
     GasSwap,
@@ -784,7 +746,7 @@ pub enum TransactionPluginType {
     CreateAccountOnlyVia,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct PluginsConfig {
     /// List of enabled transaction plugins, executed for sign/signAndSend flows
@@ -793,14 +755,14 @@ pub struct PluginsConfig {
     pub create_account_only_via: CreateAccountOnlyViaConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct CreateAccountOnlyViaConfig {
     /// Programs whose CPIs are the only place the fee payer may fund account creation
     pub programs: Vec<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct KoraConfig {
     pub rate_limit: u64,
@@ -852,7 +814,7 @@ impl Default for KoraConfig {
 }
 
 /// Configuration for bundle support (wraps provider-specific configs)
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct BundleConfig {
     /// Enable bundle support
@@ -862,7 +824,7 @@ pub struct BundleConfig {
 }
 
 /// Configuration for Lighthouse assertions to protect fee payer balance
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LighthouseConfig {
     /// Enable Lighthouse assertions for fee payer protection
@@ -903,7 +865,7 @@ where
     Ok((!keys.is_empty()).then_some(keys))
 }
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AuthConfig {
     #[serde(alias = "api_key", deserialize_with = "deserialize_api_keys")]
@@ -1139,6 +1101,21 @@ mod tests {
     }
 
     #[test]
+    fn test_removed_transfer_transaction_never_reads_as_enabled() {
+        let config = ConfigBuilder::new()
+            .with_enabled_methods(&[("transfer_transaction", true)])
+            .build_config()
+            .unwrap();
+
+        assert!(!config.kora.enabled_methods.transfer_transaction);
+        assert!(!config
+            .kora
+            .enabled_methods
+            .get_enabled_method_names()
+            .contains(&"transferTransaction".to_string()));
+    }
+
+    #[test]
     fn test_load_config_with_enabled_methods() {
         let config = ConfigBuilder::new()
             .with_programs(vec!["program1", "program2"])
@@ -1151,7 +1128,6 @@ mod tests {
                 ("get_supported_tokens", true),
                 ("sign_transaction", true),
                 ("sign_and_send_transaction", false),
-                ("transfer_transaction", true),
                 ("get_blockhash", true),
                 ("get_config", true),
                 ("get_payer_signer", true),
@@ -1166,7 +1142,6 @@ mod tests {
         assert!(config.kora.enabled_methods.get_supported_tokens);
         assert!(config.kora.enabled_methods.sign_transaction);
         assert!(!config.kora.enabled_methods.sign_and_send_transaction);
-        assert!(config.kora.enabled_methods.transfer_transaction);
         assert!(config.kora.enabled_methods.get_blockhash);
         assert!(config.kora.enabled_methods.get_config);
     }
@@ -1601,7 +1576,7 @@ allow_reallocate = true
         let config = ConfigBuilder::new()
             .with_signing_config(15, 5)
             .with_cache_config(Some("http://localhost:6379"), true, 60, 3600)
-            .with_enabled_methods(&[("transfer_transaction", true), ("sign_transaction", false)])
+            .with_enabled_methods(&[("get_blockhash", true), ("sign_transaction", false)])
             .build_config()
             .unwrap();
 
@@ -1611,7 +1586,7 @@ allow_reallocate = true
         assert_eq!(config.kora.cache.url, Some("http://localhost:6379".to_string()));
         assert!(config.kora.cache.enabled);
 
-        assert!(config.kora.enabled_methods.transfer_transaction);
+        assert!(config.kora.enabled_methods.get_blockhash);
         assert!(!config.kora.enabled_methods.sign_transaction);
     }
 

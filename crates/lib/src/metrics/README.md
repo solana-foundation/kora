@@ -11,32 +11,13 @@ Metrics are configured in the main `kora.toml` file:
 enabled = true           # Enable/disable metrics collection
 endpoint = "/metrics"    # HTTP endpoint for Prometheus scraping
 port = 8080             # Port for metrics (same as RPC or separate)
-scrape_interval = 60    # Prometheus scrape interval in seconds
 ```
 
-## Auto-Configuration
+## Prometheus Configuration
 
-The metrics Docker stack (Prometheus + Grafana) automatically reads configuration from `kora.toml`:
-
-```bash
-# Run metrics (automatically updates config first)
-just run-metrics
-```
-
-### Manual Configuration Update
-
-You can also run the update utility directly:
-
-```bash
-cd crates/metrics
-cargo run --bin update-config
-```
-
-This utility will:
-1. Read metrics configuration from `../../kora.toml`
-2. Update `prometheus.yml` with the correct port, endpoint, and scrape interval
-3. **Preserve custom modifications** in existing files
-4. Display the configuration that was applied
+The metrics Docker stack (Prometheus + Grafana) scrapes the target set in `prometheus.yml`, which
+defaults to `host.docker.internal:8080` at `/metrics`. If you change `port` or `endpoint` in
+`kora.toml`, update the `kora` job in `prometheus.yml` to match.
 
 ## Metrics Exported
 
@@ -75,7 +56,6 @@ just run-metrics
 ```
 
 This will:
-- Automatically update configuration from kora.toml
 - Start Prometheus on port 9090
 - Start Grafana on port 3000
 - Configure Prometheus to scrape Kora metrics

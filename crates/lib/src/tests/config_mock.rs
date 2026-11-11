@@ -5,18 +5,13 @@ use crate::{
     config::{
         default_allowed_transaction_versions, AuthConfig, BundleConfig, CacheConfig, Config,
         EnabledMethods, FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, LighthouseConfig,
-        MetricsConfig, NonceInstructionPolicy, PluginsConfig, ProgramsConfig, SplTokenConfig,
-        SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
-        Token2022InstructionPolicy, ValidationConfig, CORS_WILDCARD,
+        MetricsConfig, PluginsConfig, ProgramsConfig, SplTokenConfig, Token2022Config,
+        ValidationConfig, CORS_WILDCARD,
     },
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
     fee::price::{PriceConfig, PriceModel},
     oracle::PriceSource,
-    signer::config::{
-        MemorySignerConfig, SelectionStrategy, SignerConfig, SignerPoolConfig, SignerPoolSettings,
-        SignerTypeConfig, TurnkeySignerConfig,
-    },
-    usage_limit::{UsageLimitConfig, UsageLimitRuleConfig},
+    usage_limit::UsageLimitConfig,
 };
 
 /// Mock state management for test isolation
@@ -193,23 +188,6 @@ impl ConfigMockBuilder {
         self
     }
 
-    pub fn with_payment_address(mut self, payment_address: Option<String>) -> Self {
-        self.config.kora.payment_address = payment_address;
-        self
-    }
-
-    pub fn with_api_key_auth(mut self, api_key: String) -> Self {
-        let mut keys = self.config.kora.auth.api_keys.unwrap_or_default();
-        keys.push(api_key);
-        self.config.kora.auth.api_keys = Some(keys);
-        self
-    }
-
-    pub fn with_hmac_auth(mut self, hmac_secret: String) -> Self {
-        self.config.kora.auth.hmac_secret = Some(hmac_secret);
-        self
-    }
-
     pub fn with_max_allowed_lamports(mut self, max_lamports: u64) -> Self {
         self.config.validation.max_allowed_lamports = max_lamports;
         self
@@ -242,11 +220,6 @@ impl ConfigMockBuilder {
 
     pub fn with_usage_limit_fallback(mut self, fallback_if_unavailable: bool) -> Self {
         self.config.kora.usage_limit.fallback_if_unavailable = fallback_if_unavailable;
-        self
-    }
-
-    pub fn with_usage_limit_rules(mut self, rules: Vec<UsageLimitRuleConfig>) -> Self {
-        self.config.kora.usage_limit.rules = rules;
         self
     }
 
@@ -328,11 +301,6 @@ impl ValidationConfigBuilder {
         self.config
     }
 
-    pub fn with_max_signatures(mut self, max_signatures: u64) -> Self {
-        self.config.max_signatures = max_signatures;
-        self
-    }
-
     pub fn with_allowed_programs(mut self, programs: Vec<String>) -> Self {
         self.config.allowed_programs = ProgramsConfig::Allowlist(programs);
         self
@@ -340,21 +308,6 @@ impl ValidationConfigBuilder {
 
     pub fn with_allowed_spl_paid_tokens(mut self, spl_payment_config: SplTokenConfig) -> Self {
         self.config.allowed_spl_paid_tokens = spl_payment_config;
-        self
-    }
-
-    pub fn with_allowed_tokens(mut self, tokens: Vec<String>) -> Self {
-        self.config.allowed_tokens = tokens;
-        self
-    }
-
-    pub fn with_price_source(mut self, price_source: PriceSource) -> Self {
-        self.config.price_source = price_source;
-        self
-    }
-
-    pub fn with_fee_payer_policy(mut self, policy: FeePayerPolicy) -> Self {
-        self.config.fee_payer_policy = policy;
         self
     }
 
@@ -426,172 +379,6 @@ impl KoraConfigBuilder {
         self.config.enabled_methods = methods;
         self
     }
-
-    pub fn with_payment_address(mut self, payment_address: Option<String>) -> Self {
-        self.config.payment_address = payment_address;
-        self
-    }
-}
-
-pub struct CacheConfigBuilder {
-    config: CacheConfig,
-}
-
-impl Default for CacheConfigBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl CacheConfigBuilder {
-    pub fn new() -> Self {
-        Self {
-            config: CacheConfig {
-                url: Some("redis://localhost:6379".to_string()),
-                enabled: true,
-                default_ttl: 300,
-                account_ttl: 60,
-                price_ttl: 30,
-            },
-        }
-    }
-
-    pub fn build(self) -> CacheConfig {
-        self.config
-    }
-
-    pub fn with_enabled(mut self, enabled: bool) -> Self {
-        self.config.enabled = enabled;
-        self
-    }
-
-    pub fn disabled() -> Self {
-        Self {
-            config: CacheConfig {
-                url: None,
-                enabled: false,
-                default_ttl: 0,
-                account_ttl: 0,
-                price_ttl: 0,
-            },
-        }
-    }
-}
-
-pub struct AuthConfigBuilder {
-    config: AuthConfig,
-}
-
-impl Default for AuthConfigBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl AuthConfigBuilder {
-    pub fn new() -> Self {
-        Self {
-            config: AuthConfig {
-                api_keys: None,
-                hmac_secret: None,
-                recaptcha_secret: None,
-                recaptcha_score_threshold: crate::constant::DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
-                max_timestamp_age: 10,
-                protected_methods: crate::constant::DEFAULT_PROTECTED_METHODS
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
-            },
-        }
-    }
-
-    pub fn build(self) -> AuthConfig {
-        self.config
-    }
-}
-
-pub struct FeePayerPolicyBuilder {
-    config: FeePayerPolicy,
-}
-
-impl Default for FeePayerPolicyBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl FeePayerPolicyBuilder {
-    pub fn new() -> Self {
-        Self { config: FeePayerPolicy::default() }
-    }
-
-    pub fn build(self) -> FeePayerPolicy {
-        self.config
-    }
-
-    pub fn restrictive() -> Self {
-        Self {
-            config: FeePayerPolicy {
-                system: SystemInstructionPolicy {
-                    allow_transfer: false,
-                    allow_assign: false,
-                    allow_create_account: false,
-                    allow_allocate: false,
-                    nonce: NonceInstructionPolicy {
-                        allow_initialize: false,
-                        allow_advance: false,
-                        allow_withdraw: false,
-                        allow_authorize: false,
-                    },
-                },
-                spl_token: SplTokenInstructionPolicy {
-                    allow_transfer: false,
-                    allow_burn: false,
-                    allow_close_account: false,
-                    allow_approve: false,
-                    allow_revoke: false,
-                    allow_set_authority: false,
-                    allow_mint_to: false,
-                    allow_freeze_account: false,
-                    allow_thaw_account: false,
-                    allow_initialize_mint: false,
-                    allow_initialize_account: false,
-                    allow_initialize_multisig: false,
-                    allow_withdraw_excess_lamports: false,
-                    allow_unwrap_lamports: false,
-                },
-                token_2022: Token2022InstructionPolicy {
-                    allow_transfer: false,
-                    allow_burn: false,
-                    allow_close_account: false,
-                    allow_approve: false,
-                    allow_revoke: false,
-                    allow_set_authority: false,
-                    allow_mint_to: false,
-                    allow_initialize_extension_authority: false,
-                    allow_update_extension_authority: false,
-                    allow_freeze_account: false,
-                    allow_thaw_account: false,
-                    allow_initialize_mint: false,
-                    allow_initialize_account: false,
-                    allow_initialize_multisig: false,
-                    allow_withdraw_excess_lamports: false,
-                    allow_unwrap_lamports: false,
-                    allow_reallocate: false,
-                },
-                alt: crate::config::AltInstructionPolicy {
-                    allow_create: false,
-                    allow_extend: false,
-                    allow_freeze: false,
-                    allow_deactivate: false,
-                    allow_close: false,
-                },
-                bpf_loader_upgradeable:
-                    crate::config::BpfLoaderUpgradeableInstructionPolicy::default(),
-                loader_v4: crate::config::LoaderV4InstructionPolicy::default(),
-            },
-        }
-    }
 }
 
 pub struct MetricsConfigBuilder {
@@ -620,92 +407,6 @@ impl MetricsConfigBuilder {
 
     pub fn with_fee_payer_balance(mut self, config: FeePayerBalanceMetricsConfig) -> Self {
         self.config.fee_payer_balance = config;
-        self
-    }
-
-    pub fn enabled_with_endpoint(endpoint: String) -> Self {
-        Self {
-            config: MetricsConfig {
-                enabled: true,
-                port: 9464,
-                scrape_interval: 10,
-                endpoint,
-                fee_payer_balance: FeePayerBalanceMetricsConfig::default(),
-            },
-        }
-    }
-}
-
-pub struct SignerPoolConfigBuilder {
-    config: SignerPoolConfig,
-}
-
-impl Default for SignerPoolConfigBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SignerPoolConfigBuilder {
-    pub fn new() -> Self {
-        Self {
-            config: SignerPoolConfig {
-                signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
-                signers: vec![],
-            },
-        }
-    }
-
-    pub fn build(self) -> SignerPoolConfig {
-        self.config
-    }
-
-    pub fn with_strategy(mut self, strategy: SelectionStrategy) -> Self {
-        self.config.signer_pool.strategy = strategy;
-        self
-    }
-
-    pub fn with_memory_signer(
-        mut self,
-        name: String,
-        private_key_env: String,
-        weight: Option<u32>,
-    ) -> Self {
-        let signer = SignerConfig {
-            name,
-            weight,
-            config: SignerTypeConfig::Memory { config: MemorySignerConfig { private_key_env } },
-        };
-        self.config.signers.push(signer);
-        self
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_turnkey_signer(
-        mut self,
-        name: String,
-        api_public_key_env: String,
-        api_private_key_env: String,
-        organization_id_env: String,
-        private_key_id_env: String,
-        public_key_env: String,
-        weight: Option<u32>,
-    ) -> Self {
-        let signer = SignerConfig {
-            name,
-            weight,
-            config: SignerTypeConfig::Turnkey {
-                config: TurnkeySignerConfig {
-                    api_public_key_env,
-                    api_private_key_env,
-                    organization_id_env,
-                    private_key_id_env,
-                    public_key_env,
-                    http_config: None,
-                },
-            },
-        };
-        self.config.signers.push(signer);
         self
     }
 }

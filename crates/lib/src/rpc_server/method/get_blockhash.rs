@@ -1,7 +1,6 @@
 use crate::{error::KoraError, CacheUtil};
 use serde::Serialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use utoipa::ToSchema;
 
 #[cfg(not(test))]
 use crate::state::get_config;
@@ -9,7 +8,7 @@ use crate::state::get_config;
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GetBlockhashResponse {
     pub blockhash: String,
 }

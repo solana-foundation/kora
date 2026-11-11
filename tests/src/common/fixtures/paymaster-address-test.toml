@@ -16,7 +16,6 @@ estimate_transaction_fee = true
 get_supported_tokens = true
 sign_transaction = true
 sign_and_send_transaction = true
-transfer_transaction = true
 get_blockhash = true
 get_config = true
 get_payer_signer = true

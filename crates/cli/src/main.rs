@@ -15,11 +15,6 @@ use kora_lib::{
     CacheUtil, Config,
 };
 
-#[cfg(feature = "docs")]
-use kora_lib::rpc_server::openapi::docs;
-#[cfg(feature = "docs")]
-use utoipa::OpenApi;
-
 #[derive(Subcommand)]
 enum Commands {
     /// Configuration management commands
@@ -31,13 +26,6 @@ enum Commands {
     Rpc {
         #[command(subcommand)]
         rpc_command: RpcCommands,
-    },
-    /// Generate OpenAPI documentation
-    #[cfg(feature = "docs")]
-    Openapi {
-        /// Output path for the OpenAPI spec file
-        #[arg(short = 'o', long, default_value = "openapi.json")]
-        output: String,
     },
 }
 
@@ -233,24 +221,6 @@ async fn main() -> Result<(), KoraError> {
                 println!("Successfully initialized all payment ATAs");
             }
         },
-
-        #[cfg(feature = "docs")]
-        Some(Commands::Openapi { output }) => {
-            docs::update_docs();
-
-            let openapi_spec = docs::ApiDoc::openapi();
-            let json = serde_json::to_string_pretty(&openapi_spec).unwrap_or_else(|e| {
-                print_error(&format!("Failed to serialize OpenAPI spec: {e}"));
-                std::process::exit(1);
-            });
-
-            std::fs::write(&output, json).unwrap_or_else(|e| {
-                print_error(&format!("Failed to write OpenAPI spec to {}: {e}", output));
-                std::process::exit(1);
-            });
-
-            println!("OpenAPI spec written to: {}", output);
-        }
         None => {
             println!("No command specified. Use --help for usage information.");
             println!("Available commands:");
@@ -258,8 +228,6 @@ async fn main() -> Result<(), KoraError> {
             println!("  config validate-with-rpc - Validate configuration with RPC calls");
             println!("  rpc start                - Start RPC server");
             println!("  rpc initialize-atas      - Initialize ATAs for payment tokens");
-            #[cfg(feature = "docs")]
-            println!("  openapi                  - Generate OpenAPI documentation");
         }
     }
 

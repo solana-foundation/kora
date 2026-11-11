@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_keychain::SolanaSigner;
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 #[cfg(not(test))]
 use crate::state::{get_config, select_request_signer_with_signer_key};
@@ -24,7 +23,7 @@ use crate::tests::config_mock::mock_state::get_config;
 /// the configured fee payer policies, and if successful, signs it using Kora's
 /// configured signer policy
 /// but not broadcasted to the network.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
 pub struct SignTransactionRequest {
     /// Base64-encoded Solana transaction
     pub transaction: String,
@@ -40,7 +39,7 @@ pub struct SignTransactionRequest {
 }
 
 /// Response payload containing the signed transaction.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SignTransactionResponse {
     /// Base64-encoded transaction signed by the Kora fee payer
     pub signed_transaction: String,

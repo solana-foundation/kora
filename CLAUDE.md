@@ -62,11 +62,6 @@ V0 transaction without resolving first silently skips the lookup-table accounts 
 Call `VersionedTransactionResolved::resolve_addresses(rpc_client).await` first; it caches. Resolution
 costs an RPC call, which is why it is explicit at the call site instead of happening implicitly.
 
-### Private key parsing tries the filesystem first
-
-`KeypairUtil::from_private_key_string` order is: `fs::read_to_string` → `[..]` u8 array → base58
-fallback. A key string that happens to match an existing path is read as a file.
-
 ### Middleware order is load-bearing
 
 In `rpc_server/server.rs` the reCAPTCHA layer is added last, making it innermost, so it runs only

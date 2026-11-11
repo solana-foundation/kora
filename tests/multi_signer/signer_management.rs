@@ -84,29 +84,6 @@ async fn test_signer_key_consistency() {
 
     assert_eq!(estimate_signer, first_signer_pubkey, "Estimate should use signer keyed signer");
 
-    let transfer_response: serde_json::Value = ctx
-        .rpc_call(
-            "transferTransaction",
-            rpc_params![
-                100u64,
-                "11111111111111111111111111111111", // Native SOL
-                SenderTestHelper::get_test_sender_keypair().pubkey().to_string(),
-                RecipientTestHelper::get_recipient_pubkey().to_string(),
-                &first_signer_pubkey // signer_key
-            ],
-        )
-        .await
-        .expect("Failed to create transfer transaction");
-
-    transfer_response.assert_success();
-    let transfer_signer = transfer_response["signer_pubkey"].as_str().unwrap();
-
-    assert_eq!(
-        transfer_signer, first_signer_pubkey,
-        "Transfer should use same signer keyed signer"
-    );
-    assert_eq!(estimate_signer, transfer_signer, "Both calls should use same signer");
-
     let sender = SenderTestHelper::get_test_sender_keypair();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
     let fee_payer =
@@ -137,7 +114,6 @@ async fn test_signer_key_consistency() {
 
     assert_eq!(sign_signer, first_signer_pubkey, "Sign should use same signer keyed signer");
     assert_eq!(estimate_signer, sign_signer, "All calls should use same signer");
-    assert_eq!(transfer_signer, sign_signer, "All calls should use same signer");
 }
 
 /// Test that without signer keys, multiple estimate calls get different signers (round-robin)

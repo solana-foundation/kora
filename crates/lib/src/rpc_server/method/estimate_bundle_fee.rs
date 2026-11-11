@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_keychain::SolanaSigner;
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 #[cfg(not(test))]
 use crate::state::get_config;
@@ -18,7 +17,7 @@ use crate::state::get_config;
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EstimateBundleFeeRequest {
     /// Array of base64-encoded transactions
     pub transactions: Vec<String>,
@@ -35,7 +34,7 @@ pub struct EstimateBundleFeeRequest {
     pub sign_only_indices: Option<Vec<usize>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EstimateBundleFeeResponse {
     pub fee_in_lamports: u64,
     pub fee_in_token: Option<u64>,
