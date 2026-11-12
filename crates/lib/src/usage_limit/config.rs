@@ -348,7 +348,7 @@ mod tests {
                 max: 10,
                 window_seconds: None,
             };
-            let err = config.build().err().expect("uncountable rule must be rejected");
+            let err = config.build().expect_err("uncountable rule must be rejected");
             assert!(err.to_string().contains("can never be counted"), "{err}");
         }
 

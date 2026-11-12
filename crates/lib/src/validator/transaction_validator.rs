@@ -7651,8 +7651,10 @@ mod tests {
             let config = get_config().unwrap();
             let validator = TransactionValidator::new(config, fee_payer).unwrap();
             let rpc_client = RpcMockBuilder::new().build();
-            let message =
-                VersionedMessage::Legacy(Message::new(&[instruction.clone()], Some(&fee_payer)));
+            let message = VersionedMessage::Legacy(Message::new(
+                std::slice::from_ref(&instruction),
+                Some(&fee_payer),
+            ));
             let mut transaction =
                 TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
             let result =

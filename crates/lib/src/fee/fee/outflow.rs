@@ -379,9 +379,9 @@ impl FeeConfigUtil {
                 extra_signers,
             } = instruction
             {
-                let fee_payer_signs = *nonce_authority == *fee_payer_pubkey
-                    || extra_signers.contains(fee_payer_pubkey);
-                if fee_payer_signs && *new_authority != *fee_payer_pubkey {
+                if Self::fee_payer_signs(fee_payer_pubkey, nonce_authority, extra_signers)
+                    && *new_authority != *fee_payer_pubkey
+                {
                     let lamports = Self::existing_account(rpc_client, nonce_account)
                         .await?
                         .map_or(0, |account| account.lamports);
@@ -594,7 +594,7 @@ impl FeeConfigUtil {
                     rpc_client,
                     fee_payer_pubkey,
                     account,
-                    owner == fee_payer_pubkey || multisig_signers.contains(fee_payer_pubkey),
+                    Self::fee_payer_signs(fee_payer_pubkey, owner, multisig_signers),
                     destination,
                     "SplTokenCloseAccount",
                 )

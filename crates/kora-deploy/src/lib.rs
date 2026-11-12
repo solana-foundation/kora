@@ -620,7 +620,7 @@ pub fn write_instruction_batches(
         .map(|(i, chunk)| {
             let mut ix =
                 loader_v3::write(buffer, authority, (i * chunk_size) as u32, chunk.to_vec());
-            ix.accounts[0].is_signer = true;
+            mark_signer(&mut ix, buffer);
             ix
         })
         .collect();

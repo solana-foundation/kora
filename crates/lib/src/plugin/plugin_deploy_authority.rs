@@ -109,8 +109,8 @@ fn require_buffer_signer(
 ) -> Result<(), KoraError> {
     if !verified_signers.contains(buffer) {
         return Err(KoraError::InvalidTransaction(format!(
-            "DeployAuthority plugin: BPF Loader {instruction} from buffer {buffer} must be signed \
-             by the buffer keypair, so only the client that created the buffer can consume it \
+            "DeployAuthority plugin: BPF Loader {instruction} on buffer {buffer} must be signed \
+             by the buffer keypair, so only the client that created the buffer can use it \
              (context: {})",
             context.method_name()
         )));
@@ -200,14 +200,7 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::Write { buffer, authority, .. } => {
                     require_fee_payer("BPF Loader Write authority", authority, fee_payer, context)?;
-                    if !verified_signers.contains(buffer) {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "DeployAuthority plugin: BPF Loader Write to buffer {buffer} must be \
-                             signed by the buffer keypair, so only the client that created the \
-                             buffer can fill it (context: {})",
-                            context.method_name()
-                        )));
-                    }
+                    require_buffer_signer("Write", buffer, &verified_signers, context)?;
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
                     upgrade_authority,
