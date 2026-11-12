@@ -779,6 +779,32 @@ mod tests_token {
         fee_payer_is_owner: bool,
         with_fee: bool,
     ) -> Result<(), KoraError> {
+        validate_fee_payer_token_use_against_blocked_transfer_fee_mint(
+            blocked_mint_extensions,
+            fee_payer_is_owner,
+            |source, mint, owner| {
+                let program_id = spl_token_2022_interface::id();
+                let destination = Pubkey::new_unique();
+                if with_fee {
+                    spl_token_2022_interface::extension::transfer_fee::instruction::transfer_checked_with_fee(
+                        &program_id, source, mint, &destination, owner, &[], 1_000, 6, 0,
+                    )
+                } else {
+                    spl_token_2022_interface::instruction::transfer_checked(
+                        &program_id, source, mint, &destination, owner, &[], 1_000, 6,
+                    )
+                }
+                .unwrap()
+            },
+        )
+        .await
+    }
+
+    async fn validate_fee_payer_token_use_against_blocked_transfer_fee_mint(
+        blocked_mint_extensions: Vec<String>,
+        fee_payer_is_owner: bool,
+        build_instruction: impl Fn(&Pubkey, &Pubkey, &Pubkey) -> Instruction,
+    ) -> Result<(), KoraError> {
         let _lock = ConfigMockBuilder::new()
             .with_cache_enabled(false)
             .with_blocked_token2022_mint_extensions(blocked_mint_extensions)
@@ -787,18 +813,7 @@ mod tests_token {
         let fee_payer = Pubkey::new_unique();
         let owner = if fee_payer_is_owner { fee_payer } else { Pubkey::new_unique() };
         let mint = Pubkey::new_unique();
-        let program_id = spl_token_2022_interface::id();
-        let (source, destination) = (Pubkey::new_unique(), Pubkey::new_unique());
-        let instruction = if with_fee {
-            spl_token_2022_interface::extension::transfer_fee::instruction::transfer_checked_with_fee(
-                &program_id, &source, &mint, &destination, &owner, &[], 1_000, 6, 0,
-            )
-        } else {
-            spl_token_2022_interface::instruction::transfer_checked(
-                &program_id, &source, &mint, &destination, &owner, &[], 1_000, 6,
-            )
-        }
-        .unwrap();
+        let instruction = build_instruction(&Pubkey::new_unique(), &mint, &owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction_resolved =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
@@ -832,6 +847,64 @@ mod tests_token {
                 matches!(result, Err(KoraError::ValidationError(ref msg)) if msg.contains("Blocked mint extension")),
                 "with_fee={with_fee}: expected blocked mint rejection, got {result:?}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fee_payer_token2022_burn_and_approve_reject_blocked_mint_extension() {
+        let program_id = spl_token_2022_interface::id();
+        let burn = |source: &Pubkey, mint: &Pubkey, owner: &Pubkey| {
+            spl_token_2022_interface::instruction::burn_checked(
+                &program_id,
+                source,
+                mint,
+                owner,
+                &[],
+                1_000,
+                6,
+            )
+            .unwrap()
+        };
+        let approve = |source: &Pubkey, mint: &Pubkey, owner: &Pubkey| {
+            spl_token_2022_interface::instruction::approve_checked(
+                &program_id,
+                source,
+                mint,
+                &Pubkey::new_unique(),
+                owner,
+                &[],
+                1_000,
+                6,
+            )
+            .unwrap()
+        };
+        let blocked = || vec!["transfer_fee_config".to_string()];
+
+        for (name, fee_payer_is_owner, rejected) in
+            [("fee payer owner", true, true), ("foreign owner", false, false)]
+        {
+            let results = [
+                validate_fee_payer_token_use_against_blocked_transfer_fee_mint(
+                    blocked(),
+                    fee_payer_is_owner,
+                    burn,
+                )
+                .await,
+                validate_fee_payer_token_use_against_blocked_transfer_fee_mint(
+                    blocked(),
+                    fee_payer_is_owner,
+                    approve,
+                )
+                .await,
+            ];
+            for result in results {
+                assert_eq!(
+                    matches!(&result, Err(KoraError::ValidationError(msg)) if msg.contains("Blocked mint extension")),
+                    rejected,
+                    "{name}: {result:?}"
+                );
+                assert_eq!(result.is_ok(), !rejected, "{name}: {result:?}");
+            }
         }
     }
 

@@ -64,8 +64,8 @@ impl TokenUtil {
         Ok(source_state.mint())
     }
 
-    /// Reject Token2022 transfers authorized by the fee payer whose mint carries a blocked
-    /// mint extension.
+    /// Reject Token2022 transfers, burns and approvals authorized by the fee payer whose mint
+    /// carries a blocked mint extension.
     pub async fn validate_fee_payer_token2022_transfer_mints(
         config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
@@ -80,21 +80,43 @@ impl TokenUtil {
         let token_program = Token2022Program::new();
         let mut validated_mints = HashSet::new();
 
-        let token_transfers = transaction_resolved
-            .get_or_parse_spl_instructions()?
-            .get(&ParsedSPLInstructionType::SplTokenTransfer)
-            .cloned()
-            .unwrap_or_default();
+        let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
+        let token_movements: Vec<ParsedSPLInstructionData> = [
+            ParsedSPLInstructionType::SplTokenTransfer,
+            ParsedSPLInstructionType::SplTokenBurn,
+            ParsedSPLInstructionType::SplTokenApprove,
+        ]
+        .iter()
+        .filter_map(|instruction_type| spl_instructions.get(instruction_type))
+        .flatten()
+        .cloned()
+        .collect();
 
-        for transfer in token_transfers {
-            let ParsedSPLInstructionData::SplTokenTransfer {
+        for movement in token_movements {
+            let (ParsedSPLInstructionData::SplTokenTransfer {
                 owner,
                 multisig_signers,
                 source_address,
                 mint,
                 is_2022,
                 ..
-            } = transfer
+            }
+            | ParsedSPLInstructionData::SplTokenBurn {
+                owner,
+                multisig_signers,
+                source_address,
+                mint,
+                is_2022,
+                ..
+            }
+            | ParsedSPLInstructionData::SplTokenApprove {
+                owner,
+                multisig_signers,
+                source_address,
+                mint,
+                is_2022,
+                ..
+            }) = movement
             else {
                 continue;
             };
