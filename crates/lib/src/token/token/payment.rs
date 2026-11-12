@@ -15,6 +15,10 @@ use crate::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use spl_token_2022_interface::{
+    extension::permissioned_burn::instruction::PermissionedBurnInstruction,
+    instruction::{decode_instruction_type, TokenInstruction},
+};
 use std::collections::{HashMap, HashSet};
 
 use super::{PaymentLamportTotals, TokenUtil};
@@ -440,6 +444,41 @@ impl TokenUtil {
                     inflow_amount: 0,
                     amount: *amount,
                 });
+            }
+        }
+
+        for instruction in all_instructions
+            .iter()
+            .filter(|instruction| instruction.program_id == spl_token_2022_interface::id())
+        {
+            let is_extension = matches!(
+                TokenInstruction::unpack(&instruction.data),
+                Ok(TokenInstruction::PermissionedBurnExtension)
+            );
+            let is_initialize = matches!(
+                instruction.data.get(1..).map(decode_instruction_type),
+                Some(Ok(PermissionedBurnInstruction::Initialize))
+            );
+            if !is_extension || is_initialize {
+                continue;
+            }
+            let Some(source) = instruction.accounts.first() else {
+                continue;
+            };
+            let source_owner = Self::resolve_token_account_owner_and_mint(
+                config,
+                rpc_client,
+                &Token2022Program::new(),
+                &source.pubkey,
+                &all_instructions,
+            )
+            .await?
+            .map(|(owner, _, _)| owner);
+            if source_owner == Some(*expected_destination_owner) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Permissioned burn from Kora token account {} is not supported",
+                    source.pubkey
+                )));
             }
         }
 

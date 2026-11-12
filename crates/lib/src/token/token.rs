@@ -1470,6 +1470,62 @@ mod tests_token {
     }
 
     #[tokio::test]
+    async fn test_calculate_payment_lamport_totals_rejects_permissioned_burn_from_payment_account()
+    {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let kora_owner = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let permissioned_burn = |source: &Pubkey| {
+            spl_token_2022_interface::extension::permissioned_burn::instruction::burn_checked(
+                &spl_token_2022_interface::id(),
+                source,
+                &mint,
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &[],
+                1_000_000,
+                6,
+            )
+            .unwrap()
+        };
+
+        for (source_owner, rejected) in [(kora_owner, true), (Pubkey::new_unique(), false)] {
+            let source_address = Pubkey::new_unique();
+            let source_account = TokenAccountMockBuilder::new()
+                .with_mint(&mint)
+                .with_owner(&source_owner)
+                .build_token2022();
+            let message = VersionedMessage::Legacy(Message::new(
+                &[permissioned_burn(&source_address)],
+                Some(&kora_owner),
+            ));
+            let mut transaction_resolved =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let rpc_client =
+                RpcMockBuilder::new().build_with_sequential_accounts(vec![&source_account]);
+
+            let mut config = get_config().unwrap();
+            config.kora.cache.enabled = false;
+            let result = TokenUtil::calculate_payment_lamport_totals(
+                &config,
+                &mut transaction_resolved,
+                &rpc_client,
+                &kora_owner,
+                None,
+            )
+            .await;
+
+            assert_eq!(
+                matches!(&result, Err(KoraError::InvalidTransaction(message)) if message.contains("Permissioned burn")),
+                rejected,
+                "{result:?}"
+            );
+            assert_eq!(result.is_ok(), !rejected, "{result:?}");
+        }
+    }
+
+    #[tokio::test]
     async fn test_calculate_payment_lamport_totals_counts_burn_from_payment_account_as_outflow() {
         let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
 
