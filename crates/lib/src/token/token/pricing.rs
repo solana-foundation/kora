@@ -39,8 +39,9 @@ pub(super) fn decimal_scale(decimals: u8) -> Result<Decimal, KoraError> {
 const LANDING_WINDOW_SECS: i64 = 120;
 
 /// Range of the factor a Token-2022 ScaledUiAmount or InterestBearing mint applies between raw
-/// amounts and the UI amounts oracles quote, across the time the transaction can land in. Value
-/// Kora receives at `lower` and value Kora gives away at `upper`.
+/// and UI amounts, across the time the transaction can land in. Value Kora receives at `lower`
+/// and value Kora gives away at `upper`. The range always includes 1, the unscaled valuation,
+/// because price sources differ on whether they quote per UI token or per raw token.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct UiAmountScale {
     pub lower: Decimal,
@@ -60,8 +61,8 @@ impl UiAmountScale {
             .ok_or_else(|| {
                 KoraError::ValidationError("Mint UI amount multiplier is not positive".to_string())
             })?;
-        let lower = factors.iter().copied().min().unwrap_or(Decimal::ONE);
-        let upper = factors.iter().copied().max().unwrap_or(Decimal::ONE);
+        let lower = factors.iter().copied().fold(Decimal::ONE, Decimal::min);
+        let upper = factors.iter().copied().fold(Decimal::ONE, Decimal::max);
         Ok(Self { lower, upper })
     }
 
@@ -477,8 +478,19 @@ mod tests {
     #[test]
     fn test_ui_amount_scale_uses_new_multiplier_once_effective() {
         let scale = UiAmountScale::for_mint(&scaled_ui_mint(0.5, 1_000, 2.0), 1_000).unwrap();
-        assert_eq!(scale.lower, Decimal::from_f64_retain(2.0).unwrap());
-        assert_eq!(scale.upper, scale.lower);
+        assert_eq!(scale.lower, Decimal::ONE);
+        assert_eq!(scale.upper, Decimal::from_f64_retain(2.0).unwrap());
+    }
+
+    #[test]
+    fn test_ui_amount_scale_never_credits_above_or_charges_below_the_raw_amount() {
+        let above = UiAmountScale::for_mint(&scaled_ui_mint(3.0, i64::MAX, 3.0), 0).unwrap();
+        assert_eq!(above.lower, Decimal::ONE, "a payment is not worth more than its raw amount");
+        assert_eq!(above.upper, Decimal::from_f64_retain(3.0).unwrap());
+
+        let below = UiAmountScale::for_mint(&scaled_ui_mint(0.25, i64::MAX, 0.25), 0).unwrap();
+        assert_eq!(below.lower, Decimal::from_f64_retain(0.25).unwrap());
+        assert_eq!(below.upper, Decimal::ONE, "an outflow is not worth less than its raw amount");
     }
 
     #[test]
@@ -503,8 +515,13 @@ mod tests {
         let scale = UiAmountScale::for_mint(&mint, one_year).unwrap();
 
         let e = Decimal::from_f64_retain(std::f64::consts::E).unwrap();
-        assert!((scale.lower - e).abs() < Decimal::new(1, 3), "lower {}", scale.lower);
-        assert!(scale.upper > scale.lower, "interest keeps accruing until the payment lands");
+        assert_eq!(scale.lower, Decimal::ONE);
+        assert!(
+            scale.upper > e,
+            "interest keeps accruing until the payment lands: {}",
+            scale.upper
+        );
+        assert!((scale.upper - e).abs() < Decimal::new(1, 3), "upper {}", scale.upper);
     }
 
     #[test]
