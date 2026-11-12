@@ -90,12 +90,13 @@ macro_rules! cleanup_buffer {
     ($force:expr, $msg:expr, $err_log:expr, $ctx:expr, $buffer:expr, $kora_pubkey:expr) => {
         if $force || $ctx.cfg.cleanup_on_failure {
             log::warn!("{}, attempting to close buffer for cleanup...", $msg);
-            let close_ix = loader_v3::close_any(
+            let mut close_ix = loader_v3::close_any(
                 &$buffer.pubkey(),
                 $kora_pubkey,
                 Some($kora_pubkey),
                 None,
             );
+            mark_signer(&mut close_ix, &$buffer.pubkey());
             match submit_returning_signature(
                 $ctx.http,
                 $ctx.cfg.kora_url,
@@ -103,7 +104,7 @@ macro_rules! cleanup_buffer {
                 $ctx.rpc,
                 $kora_pubkey,
                 &[close_ix],
-                &[],
+                &[$buffer],
             )
             .await
             {

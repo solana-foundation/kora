@@ -198,9 +198,9 @@ pub async fn run(h: &Harness, bytes: &[u8]) -> Result<Report> {
     }
 
     println!("  cleaning up ...");
-    h.close_account(&probe_buffer.pubkey(), None, &[]).await.ok();
+    h.close_account(&probe_buffer.pubkey(), None, &[&probe_buffer]).await.ok();
     h.close_account(&program_data, Some(&program), &[&owner]).await.ok();
-    h.close_account(&big_buffer.pubkey(), None, &[]).await.ok();
+    h.close_account(&big_buffer.pubkey(), None, &[&big_buffer]).await.ok();
 
     Ok(Report { signed, total: rows.len() })
 }

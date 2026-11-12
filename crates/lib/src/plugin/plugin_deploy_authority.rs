@@ -277,16 +277,26 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                     }
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::Close {
-                    authority, recipient, ..
+                    target,
+                    authority,
+                    recipient,
+                    program,
                 } => {
                     // Plugin-level rule: when Kora is the authority, recipient must be Kora too.
                     // (Same drainage shape as v4 SetProgramLength.)
-                    if authority.is_some_and(|a| a == *fee_payer) && recipient != fee_payer {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "DeployAuthority plugin: BPF Loader Close: when fee payer is the \
-                             authority, recipient must be the fee payer (got {recipient}) in {}",
-                            context.method_name()
-                        )));
+                    if authority.is_some_and(|a| a == *fee_payer) {
+                        if recipient != fee_payer {
+                            return Err(KoraError::InvalidTransaction(format!(
+                                "DeployAuthority plugin: BPF Loader Close: when fee payer is \
+                                 the authority, recipient must be the fee payer (got \
+                                 {recipient}) in {}",
+                                context.method_name()
+                            )));
+                        }
+                        // Without a program account the loader only closes a buffer.
+                        if program.is_none() {
+                            require_buffer_signer("Close", target, &verified_signers, context)?;
+                        }
                     }
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram { .. } => {
@@ -1019,13 +1029,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_accepts_close_back_to_kora() {
+    async fn v3_accepts_buffer_close_back_to_kora_signed_by_the_buffer() {
         use solana_loader_v3_interface::instruction as loader_v3;
         let (config, rpc_client) = build_runner_v3();
         let fee_payer = Pubkey::new_unique();
-        let buffer = Pubkey::new_unique();
-        let ix = loader_v3::close(&buffer, &fee_payer, &fee_payer);
-        assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
+        let buffer = Keypair::new();
+        let ix = signed_by_buffer(
+            loader_v3::close(&buffer.pubkey(), &fee_payer, &fee_payer),
+            &buffer.pubkey(),
+        );
+        assert!(run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&buffer])
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn v3_rejects_buffer_close_without_buffer_signature() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let (config, rpc_client) = build_runner_v3();
+        let fee_payer = Pubkey::new_unique();
+        let ix = loader_v3::close(&Pubkey::new_unique(), &fee_payer, &fee_payer);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("buffer keypair")),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]
@@ -1652,10 +1680,15 @@ mod tests {
         let config = registry_test_config();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
         let fee_payer = Pubkey::new_unique();
-        let buffer = Pubkey::new_unique();
+        let buffer = Keypair::new();
 
-        let ix = loader_v3::close(&buffer, &fee_payer, &fee_payer);
-        assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
+        let ix = signed_by_buffer(
+            loader_v3::close(&buffer.pubkey(), &fee_payer, &fee_payer),
+            &buffer.pubkey(),
+        );
+        assert!(run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&buffer])
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
