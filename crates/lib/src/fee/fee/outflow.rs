@@ -18,7 +18,7 @@ use crate::{
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program_pack::Pack;
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{account::Account, pubkey::Pubkey};
 use spl_token_2022_interface::{extension::ExtensionType, state::Account as Token2022Account};
 
 use super::FeeConfigUtil;
@@ -192,6 +192,61 @@ impl FeeConfigUtil {
         }
     }
 
+    async fn existing_account(
+        rpc_client: &RpcClient,
+        pubkey: &Pubkey,
+    ) -> Result<Option<Account>, KoraError> {
+        match rpc_client.get_account(pubkey).await {
+            Ok(account) => Ok(Some(account)),
+            Err(e) => match KoraError::from(e) {
+                KoraError::AccountNotFound(_) => Ok(None),
+                e => Err(e),
+            },
+        }
+    }
+
+    fn fee_payer_signs(fee_payer: &Pubkey, owner: &Pubkey, multisig_signers: &[Pubkey]) -> bool {
+        owner == fee_payer || multisig_signers.contains(fee_payer)
+    }
+
+    fn charged_amount_from(
+        outflows: &[ParsedSPLInstructionData],
+        fee_payer: &Pubkey,
+        account: &Pubkey,
+    ) -> u64 {
+        outflows
+            .iter()
+            .filter_map(|outflow| match outflow {
+                ParsedSPLInstructionData::SplTokenTransfer {
+                    amount,
+                    owner,
+                    multisig_signers,
+                    source_address,
+                    ..
+                }
+                | ParsedSPLInstructionData::SplTokenBurn {
+                    amount,
+                    owner,
+                    multisig_signers,
+                    source_address,
+                    ..
+                }
+                | ParsedSPLInstructionData::SplTokenApprove {
+                    amount,
+                    owner,
+                    multisig_signers,
+                    source_address,
+                    ..
+                } if source_address == account
+                    && Self::fee_payer_signs(fee_payer, owner, multisig_signers) =>
+                {
+                    Some(*amount)
+                }
+                _ => None,
+            })
+            .fold(0u64, u64::saturating_add)
+    }
+
     /// Calculate the total outflow (SOL + SPL token value) that could occur for a fee payer account in a transaction.
     /// This includes SOL transfers, account creation, SPL token transfers, and other operations that could drain the fee payer's balance.
     pub async fn calculate_fee_payer_outflow(
@@ -327,7 +382,9 @@ impl FeeConfigUtil {
                 let fee_payer_signs = *nonce_authority == *fee_payer_pubkey
                     || extra_signers.contains(fee_payer_pubkey);
                 if fee_payer_signs && *new_authority != *fee_payer_pubkey {
-                    let lamports = rpc_client.get_account(nonce_account).await?.lamports;
+                    let lamports = Self::existing_account(rpc_client, nonce_account)
+                        .await?
+                        .map_or(0, |account| account.lamports);
                     Self::add_outflow(&mut total, lamports, "SystemAuthorizeNonceAccount")?;
                 }
             }
@@ -434,9 +491,9 @@ impl FeeConfigUtil {
                 ..
             } = instruction
             {
-                let fee_payer_signs =
-                    authority == fee_payer_pubkey || multisig_signers.contains(fee_payer_pubkey);
-                if !fee_payer_signs || *new_authority == Some(*fee_payer_pubkey) {
+                if !Self::fee_payer_signs(fee_payer_pubkey, authority, multisig_signers)
+                    || *new_authority == Some(*fee_payer_pubkey)
+                {
                     continue;
                 }
                 if new_authority.is_some() {
@@ -448,12 +505,20 @@ impl FeeConfigUtil {
                             .filter_map(|transfer| match transfer {
                                 ParsedSPLInstructionData::SplTokenTransfer {
                                     amount,
+                                    owner,
+                                    multisig_signers,
                                     mint,
                                     source_address,
                                     destination_address,
                                     is_2022,
                                     ..
-                                } if destination_address == account => {
+                                } if destination_address == account
+                                    && !Self::fee_payer_signs(
+                                        fee_payer_pubkey,
+                                        owner,
+                                        multisig_signers,
+                                    ) =>
+                                {
                                     Some(ParsedSPLInstructionData::SplTokenApprove {
                                         amount: *amount,
                                         owner: *fee_payer_pubkey,
@@ -467,12 +532,8 @@ impl FeeConfigUtil {
                             }),
                     );
                 }
-                let token_account = match rpc_client.get_account(account).await {
-                    Ok(token_account) => token_account,
-                    Err(e) => match KoraError::from(e) {
-                        KoraError::AccountNotFound(_) => continue,
-                        e => return Err(e),
-                    },
+                let Some(token_account) = Self::existing_account(rpc_client, account).await? else {
+                    continue;
                 };
                 let state = TokenType::get_token_program_from_owner(&token_account.owner)?
                     .unpack_token_account(&token_account.data)
@@ -485,9 +546,14 @@ impl FeeConfigUtil {
                     continue;
                 }
                 Self::add_outflow(&mut total, token_account.lamports, "SplTokenSetAuthority")?;
-                if state.amount() > 0 {
+                let uncharged_amount = state.amount().saturating_sub(Self::charged_amount_from(
+                    &spl_token_outflows,
+                    fee_payer_pubkey,
+                    account,
+                ));
+                if uncharged_amount > 0 {
                     spl_token_outflows.push(ParsedSPLInstructionData::SplTokenApprove {
-                        amount: state.amount(),
+                        amount: uncharged_amount,
                         owner: *fee_payer_pubkey,
                         multisig_signers: vec![],
                         mint: Some(state.mint()),
@@ -578,7 +644,10 @@ impl FeeConfigUtil {
                                     "Token deposits into unwrapped account overflow".to_string(),
                                 )
                             })?;
-                        rpc_client.get_account(source).await?.lamports.saturating_add(deposits)
+                        Self::existing_account(rpc_client, source)
+                            .await?
+                            .map_or(0, |account| account.lamports)
+                            .saturating_add(deposits)
                     }
                 };
                 Self::add_outflow(&mut total, lamports, "SplTokenUnwrapLamports")?;
@@ -605,7 +674,9 @@ impl FeeConfigUtil {
                 ) {
                     continue;
                 }
-                let account = rpc_client.get_account(source).await?;
+                let Some(account) = Self::existing_account(rpc_client, source).await? else {
+                    continue;
+                };
                 let rent_exempt_minimum =
                     rpc_client.get_minimum_balance_for_rent_exemption(account.data.len()).await?;
                 Self::add_outflow(
@@ -625,6 +696,6 @@ impl FeeConfigUtil {
         multisig_signers: &[Pubkey],
         destination: &Pubkey,
     ) -> bool {
-        (owner == fee_payer || multisig_signers.contains(fee_payer)) && destination != fee_payer
+        Self::fee_payer_signs(fee_payer, owner, multisig_signers) && destination != fee_payer
     }
 }

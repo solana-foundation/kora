@@ -3064,6 +3064,68 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_set_authority_handoff_counts_each_token_once() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        setup_spl_config_with_policy(FeePayerPolicy::default());
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mint = allowed_mint();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+
+        let transfer_then_handoff = |source: &Pubkey, destination: &Pubkey, amount: u64| {
+            let transfer = spl_token_interface::instruction::transfer_checked(
+                &spl_token_interface::id(),
+                source,
+                &mint,
+                destination,
+                &fee_payer,
+                &[],
+                amount,
+                6,
+            )
+            .unwrap();
+            let handoff = spl_token_interface::instruction::set_authority(
+                &spl_token_interface::id(),
+                &token_account,
+                Some(&Pubkey::new_unique()),
+                spl_token_interface::instruction::AuthorityType::AccountOwner,
+                &fee_payer,
+                &[],
+            )
+            .unwrap();
+            let message =
+                VersionedMessage::Legacy(Message::new(&[transfer, handoff], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_account_responses(vec![None, Some(&mint_account)]);
+        let mut transaction = transfer_then_handoff(&Pubkey::new_unique(), &token_account, 600_000);
+        assert_eq!(
+            validator.calculate_total_outflow(config, &mut transaction, &rpc_client).await.unwrap(),
+            600_000,
+            "a fee payer transfer into the handed off account is already charged as a transfer"
+        );
+
+        let funded_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&fee_payer)
+            .with_amount(600_000)
+            .with_lamports(100_000)
+            .build();
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&funded_account, &mint_account]);
+        let mut transaction = transfer_then_handoff(&token_account, &Pubkey::new_unique(), 400_000);
+        assert_eq!(
+            validator.calculate_total_outflow(config, &mut transaction, &rpc_client).await.unwrap(),
+            700_000,
+            "tokens transferred out before the handoff no longer leave with the account"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_approve() {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();

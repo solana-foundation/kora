@@ -312,26 +312,35 @@ impl BundleProcessor {
         )?;
         self.validate_payment()?;
 
+        let mut asserted_transactions = Vec::new();
         if config.kora.lighthouse.enabled && !will_send {
             let balance = LighthouseUtil::fetch_fee_payer_balance(rpc_client, fee_payer).await?;
             for ((resolved, cumulative_fee), cumulative_outflow) in self
                 .resolved_transactions
-                .iter_mut()
+                .iter()
                 .zip(&self.cumulative_solana_fees)
                 .zip(&self.cumulative_lamport_outflows)
             {
+                let mut transaction = resolved.transaction.clone();
                 LighthouseUtil::add_fee_payer_assertion_for_balance(
-                    &mut resolved.transaction,
+                    &mut transaction,
                     fee_payer,
                     balance,
                     *cumulative_fee,
                     *cumulative_outflow,
                     &config.kora.lighthouse,
                 )?;
+                asserted_transactions.push(transaction);
             }
         }
 
         self.check_usage_limit(config, user_id, fee_payer, rpc_client).await?;
+
+        for (resolved, transaction) in
+            self.resolved_transactions.iter_mut().zip(asserted_transactions)
+        {
+            resolved.transaction = transaction;
+        }
 
         let mut blockhash = None;
         for resolved in self.resolved_transactions.iter_mut() {

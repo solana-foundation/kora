@@ -1788,6 +1788,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_accepts_accounts_created_in_the_transaction() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let account = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let not_found = RpcMockBuilder::new().with_account_not_found().build();
+
+        let nonce_handoff = authorize_nonce_account(&account, &fee_payer, &recipient);
+        let full_unwrap = spl_token_interface::instruction::unwrap_lamports(
+            &spl_token_interface::id(),
+            &account,
+            &recipient,
+            &fee_payer,
+            &[],
+            None,
+        )
+        .unwrap();
+        let withdraw_excess = spl_token_2022_interface::instruction::withdraw_excess_lamports(
+            &spl_token_2022_interface::id(),
+            &account,
+            &recipient,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        for ix in [nonce_handoff, full_unwrap, withdraw_excess] {
+            assert_eq!(
+                outflow_of(&fee_payer, ix, &not_found).await,
+                0,
+                "an account that does not exist yet holds nothing before the transaction"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn test_calculate_fee_payer_outflow_reuses_first_snapshot_per_transaction() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let fee_payer = Pubkey::new_unique();
