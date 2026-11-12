@@ -1439,8 +1439,8 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(
-            outflow, -25_000,
-            "WithdrawNonceAccount to fee payer from an unrelated authority should be negative (net inflow)"
+            outflow, 0,
+            "WithdrawNonceAccount to the fee payer must not offset other outflow: as the recipient it signs, so the nonce account may be its own"
         );
 
         let other_authority = Pubkey::new_unique();

@@ -4057,6 +4057,49 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_nonce_withdraw_to_fee_payer_recipient_is_gated_and_never_an_inflow() {
+        use solana_system_interface::instruction::withdraw_nonce_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let decoy_authority = Pubkey::new_unique();
+        let instructions = vec![
+            withdraw_nonce_account(&Pubkey::new_unique(), &decoy_authority, &fee_payer, 1_000),
+            transfer(&fee_payer, &Pubkey::new_unique(), 900),
+        ];
+
+        for (allow_withdraw, expected) in
+            [(false, "System Withdraw Nonce Account"), (true, "exceeds maximum allowed")]
+        {
+            let rpc_client = RpcMockBuilder::new().build();
+            let mut policy = FeePayerPolicy::default();
+            policy.system.allow_transfer = true;
+            policy.system.nonce.allow_withdraw = allow_withdraw;
+            let config = ConfigMockBuilder::new()
+                .with_price_source(PriceSource::Mock)
+                .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+                .with_max_allowed_lamports(800)
+                .with_fee_payer_policy(policy)
+                .with_allow_durable_transactions(true)
+                .build();
+            update_config(config).unwrap();
+
+            let config = get_config().unwrap();
+            let validator = TransactionValidator::new(config, fee_payer).unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+            match validator.validate_transaction(config, &mut transaction, &rpc_client).await {
+                Err(KoraError::InvalidTransaction(msg)) => assert!(msg.contains(expected), "{msg}"),
+                other => {
+                    panic!("allow_withdraw={allow_withdraw}: expected rejection, got {other:?}")
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_withdraw_from_allocated_fee_payer_is_gated_and_capped() {
         use solana_system_interface::instruction::{allocate, withdraw_nonce_account};
 

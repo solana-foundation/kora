@@ -298,14 +298,12 @@ impl FeeConfigUtil {
                 let fee_payer_controlled = *nonce_authority == *fee_payer_pubkey
                     || *nonce_account == *fee_payer_pubkey
                     || extra_signers.contains(fee_payer_pubkey);
-                if *recipient == *fee_payer_pubkey && fee_payer_controlled {
-                    // Self-withdrawals only move lamports between fee-payer-controlled accounts.
-                    // They should not reduce unrelated outflow elsewhere in the transaction.
+                if *recipient == *fee_payer_pubkey {
+                    // The fee payer signs wherever it appears, so as the recipient it also
+                    // authorizes a withdrawal from any nonce account whose stored authority it
+                    // is. The lamports may already be the fee payer's, so they never reduce
+                    // unrelated outflow elsewhere in the transaction.
                     continue;
-                } else if *recipient == *fee_payer_pubkey {
-                    // Lamports arriving from a nonce account not controlled by the fee payer are
-                    // a real inflow that reduces net outflow.
-                    Self::add_inflow(&mut total, *lamports, "SystemWithdrawNonceAccount")?;
                 } else if fee_payer_controlled {
                     // The lamports leave a nonce account the fee payer controls for a third
                     // party, so count them as outflow so that max_allowed_lamports enforcement

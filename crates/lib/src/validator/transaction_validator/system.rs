@@ -128,8 +128,10 @@ impl TransactionValidator {
         // Note: SystemUpgradeNonceAccount not validated - no authority parameter
 
         deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemWithdrawNonceAccount,
-            ParsedSystemInstructionData::SystemWithdrawNonceAccount { nonce_account, nonce_authority, extra_signers, .. } =>
-            self.fee_payer_signs(nonce_authority, extra_signers) || *nonce_account == self.fee_payer_pubkey,
+            ParsedSystemInstructionData::SystemWithdrawNonceAccount { nonce_account, nonce_authority, recipient, extra_signers, .. } =>
+            self.fee_payer_signs(nonce_authority, extra_signers)
+                || *nonce_account == self.fee_payer_pubkey
+                || *recipient == self.fee_payer_pubkey,
             unless self.fee_payer_policy.system.nonce.allow_withdraw,
             "Fee payer cannot be used for 'System Withdraw Nonce Account'");
 
