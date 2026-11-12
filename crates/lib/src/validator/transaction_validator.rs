@@ -5,13 +5,14 @@ use crate::{
     fee::fee::{FeeConfigUtil, TotalFeeCalculation, TransactionFeeUtil},
     token::token::TokenUtil,
     transaction::{
-        ParsedSPLInstructionData, ParsedSystemInstructionData, VersionedTransactionResolved,
+        InstructionOrigin, ParsedSPLInstructionData, ParsedSystemInstructionData,
+        VersionedTransactionResolved,
     },
     validator::parse_pubkey_set,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
-use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
 use solana_transaction::versioned::TransactionVersion;
 use std::collections::HashSet;
 
@@ -300,9 +301,18 @@ impl TransactionValidator {
         &self,
         transaction_resolved: &VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
-        let fee_payer_in_stake_or_vote = transaction_resolved.all_instructions().iter().any(|ix| {
-            (ix.program_id == STAKE_PROGRAM_ID || ix.program_id == VOTE_PROGRAM_ID)
-                && ix.accounts.iter().any(|meta| meta.pubkey == self.fee_payer_pubkey)
+        let instructions: Vec<_> = transaction_resolved.instructions_with_origins().collect();
+        let references_fee_payer =
+            |ix: &Instruction| ix.accounts.iter().any(|meta| meta.pubkey == self.fee_payer_pubkey);
+        let fee_payer_in_stake_or_vote = instructions.iter().any(|(ix, origin)| {
+            if ix.program_id != STAKE_PROGRAM_ID && ix.program_id != VOTE_PROGRAM_ID {
+                return false;
+            }
+            // Simulation returns inner Stake and Vote instructions without their accounts, and
+            // a CPI can only pass on accounts its top-level instruction received.
+            references_fee_payer(ix)
+                || matches!(origin, InstructionOrigin::Inner { parent_index, .. }
+                    if instructions.get(*parent_index).is_some_and(|(parent, _)| references_fee_payer(parent)))
         });
 
         if fee_payer_in_stake_or_vote {
@@ -3740,6 +3750,37 @@ mod tests {
                     assert!(msg.contains("Stake or Vote"), "{msg}");
                 }
                 other => panic!("expected Stake/Vote fee payer rejection, got {other:?}"),
+            }
+
+            let forwarder = Pubkey::new_unique();
+            let forward = |account: Pubkey| {
+                Instruction::new_with_bytes(
+                    forwarder,
+                    &[0],
+                    vec![AccountMeta::new_readonly(account, true)],
+                )
+            };
+            for (forwarded_account, rejected) in [(Pubkey::new_unique(), false), (fee_payer, true)]
+            {
+                let message = VersionedMessage::Legacy(Message::new(
+                    &[forward(forwarded_account)],
+                    Some(&fee_payer),
+                ));
+                let mut transaction =
+                    TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+                transaction
+                    .push_inner_instruction(
+                        0,
+                        Some(0),
+                        Instruction::new_with_bytes(program_id, &[], vec![]),
+                    )
+                    .unwrap();
+                let result = validator.validate_stake_vote_fee_payer_usage(&transaction);
+                assert_eq!(
+                    result.is_err(),
+                    rejected,
+                    "inner {program_id} call under a top-level instruction holding the fee payer: {result:?}"
+                );
             }
         }
     }

@@ -61,6 +61,8 @@ Do not go looking for a `fee_payer_policy` flag for these. They are rejected reg
   authority, the recipient must also be the fee payer.
 - Stake and Vote (`validate_stake_vote_fee_payer_usage` in `transaction_validator.rs`): any
   instruction for either program that references the fee payer in any account position is rejected.
+  Simulation returns inner Stake and Vote instructions without accounts, so a CPI into either
+  program is also rejected when its top-level instruction references the fee payer.
 
 ### Fee payer policy must fail closed
 
