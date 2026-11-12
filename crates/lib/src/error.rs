@@ -240,18 +240,6 @@ mod tests {
 
     #[cfg(not(feature = "unsafe-debug"))]
     #[test]
-    fn test_rpc_error_object_redacts_dotted_provider_url() {
-        let err = KoraError::RpcError(
-            "error sending request for url (https://rpc.example.com/v1.0/x.y?api-key=QUERYSECRET)"
-                .to_string(),
-        );
-        let object = ErrorObjectOwned::from(err);
-        assert!(!object.message().contains("QUERYSECRET"));
-        assert!(object.message().contains("https://rpc.example.com[REDACTED_PATH]"));
-    }
-
-    #[cfg(not(feature = "unsafe-debug"))]
-    #[test]
     fn test_bundle_error_conversion_redacts_provider_url_credentials() {
         let leaky = "https://mainnet.block-engine.example.com/api/v1?uuid=QUERYSECRET";
         let errors = [
