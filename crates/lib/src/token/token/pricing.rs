@@ -7,7 +7,7 @@ use crate::{
         spl_token_2022::{Token2022Extensions, Token2022Mint},
         spl_token_2022_util::{MintExtension, ParsedExtension},
     },
-    transaction::ParsedSPLInstructionData,
+    transaction::{ParsedSPLInstructionData, TokenMovement},
     CacheUtil,
 };
 use rust_decimal::{
@@ -345,37 +345,21 @@ impl TokenUtil {
         let mut mint_to_transfers: HashMap<Pubkey, Vec<u64>> = HashMap::new();
 
         for transfer in spl_transfers {
-            if let ParsedSPLInstructionData::SplTokenTransfer {
+            if let Some(TokenMovement {
                 amount,
                 owner,
                 multisig_signers,
                 mint,
                 source_address,
                 ..
-            }
-            | ParsedSPLInstructionData::SplTokenBurn {
-                amount,
-                owner,
-                multisig_signers,
-                mint,
-                source_address,
-                ..
-            }
-            | ParsedSPLInstructionData::SplTokenApprove {
-                amount,
-                owner,
-                multisig_signers,
-                mint,
-                source_address,
-                ..
-            } = transfer
+            }) = transfer.token_movement()
             {
-                if *owner == *fee_payer || multisig_signers.contains(fee_payer) {
+                if owner == *fee_payer || multisig_signers.contains(fee_payer) {
                     let mint_pubkey = if let Some(m) = mint {
-                        *m
+                        m
                     } else {
                         let source_account =
-                            CacheUtil::get_account(config, rpc_client, source_address, false)
+                            CacheUtil::get_account(config, rpc_client, &source_address, false)
                                 .await?;
                         let token_program =
                             TokenType::get_token_program_from_owner(&source_account.owner)?;
@@ -394,7 +378,7 @@ impl TokenUtil {
                             "Fee payer cannot move tokens of mint {mint_pubkey}: it is not in allowed_tokens"
                         )));
                     }
-                    mint_to_transfers.entry(mint_pubkey).or_default().push(*amount);
+                    mint_to_transfers.entry(mint_pubkey).or_default().push(amount);
                 }
             }
         }

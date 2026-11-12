@@ -294,99 +294,53 @@ pub struct InstructionIdentifier;
 
 impl InstructionIdentifier {
     pub fn identify(program_id: &Pubkey, data: &[u8]) -> Option<String> {
-        match *program_id {
-            _ if *program_id == SYSTEM_PROGRAM_ID => Self::system(data),
-            _ if *program_id == ATA_PROGRAM_ID => Self::ata(data),
-            _ if *program_id == LOADER_V4_PROGRAM_ID => Self::loader_v4(data),
-            _ if *program_id == BPF_LOADER_UPGRADEABLE_PROGRAM_ID => {
-                Self::bpf_loader_upgradeable(data)
-            }
-            _ => None,
-        }
+        let discriminator = if *program_id == ATA_PROGRAM_ID {
+            data.first().copied().map_or(0, u32::from)
+        } else {
+            // bincode serializes enum variants as a little-endian u32 discriminator.
+            u32::from_le_bytes(data.get(..4)?.try_into().ok()?)
+        };
+        Self::instructions(program_id)
+            .iter()
+            .find(|(value, _)| *value == discriminator)
+            .map(|(_, name)| name.to_string())
     }
 
     /// Whether `identify` can ever return `instruction` for `program`, so a rule on the pair
     /// can be counted.
     pub fn is_supported(program_id: &Pubkey, instruction: &str) -> bool {
-        let names: &[&str] = match *program_id {
+        let instruction = instruction.to_lowercase();
+        Self::instructions(program_id).iter().any(|(_, name)| *name == instruction)
+    }
+
+    fn instructions(program_id: &Pubkey) -> &'static [(u32, &'static str)] {
+        match *program_id {
             _ if *program_id == SYSTEM_PROGRAM_ID => {
-                &[SYSTEM_CREATE_ACCOUNT, SYSTEM_CREATE_ACCOUNT_WITH_SEED]
+                &[(0, SYSTEM_CREATE_ACCOUNT), (3, SYSTEM_CREATE_ACCOUNT_WITH_SEED)]
             }
-            _ if *program_id == ATA_PROGRAM_ID => &[ATA_CREATE, ATA_CREATE_IDEMPOTENT],
+            _ if *program_id == ATA_PROGRAM_ID => &[(0, ATA_CREATE), (1, ATA_CREATE_IDEMPOTENT)],
             _ if *program_id == LOADER_V4_PROGRAM_ID => &[
-                LOADER_V4_WRITE,
-                LOADER_V4_COPY,
-                LOADER_V4_SET_PROGRAM_LENGTH,
-                LOADER_V4_DEPLOY,
-                LOADER_V4_RETRACT,
-                LOADER_V4_TRANSFER_AUTHORITY,
-                LOADER_V4_FINALIZE,
+                (0, LOADER_V4_WRITE),
+                (1, LOADER_V4_COPY),
+                (2, LOADER_V4_SET_PROGRAM_LENGTH),
+                (3, LOADER_V4_DEPLOY),
+                (4, LOADER_V4_RETRACT),
+                (5, LOADER_V4_TRANSFER_AUTHORITY),
+                (6, LOADER_V4_FINALIZE),
             ],
             _ if *program_id == BPF_LOADER_UPGRADEABLE_PROGRAM_ID => &[
-                BPF_LOADER_INITIALIZE_BUFFER,
-                BPF_LOADER_WRITE,
-                BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN,
-                BPF_LOADER_UPGRADE,
-                BPF_LOADER_SET_AUTHORITY,
-                BPF_LOADER_CLOSE,
-                BPF_LOADER_EXTEND_PROGRAM,
-                BPF_LOADER_SET_AUTHORITY_CHECKED,
-                BPF_LOADER_MIGRATE,
-                BPF_LOADER_EXTEND_PROGRAM_CHECKED,
+                (0, BPF_LOADER_INITIALIZE_BUFFER),
+                (1, BPF_LOADER_WRITE),
+                (2, BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN),
+                (3, BPF_LOADER_UPGRADE),
+                (4, BPF_LOADER_SET_AUTHORITY),
+                (5, BPF_LOADER_CLOSE),
+                (6, BPF_LOADER_EXTEND_PROGRAM),
+                (7, BPF_LOADER_SET_AUTHORITY_CHECKED),
+                (8, BPF_LOADER_MIGRATE),
+                (9, BPF_LOADER_EXTEND_PROGRAM_CHECKED),
             ],
             _ => &[],
-        };
-        names.contains(&instruction.to_lowercase().as_str())
-    }
-
-    fn system(data: &[u8]) -> Option<String> {
-        let discriminator = u32::from_le_bytes(data.get(..4)?.try_into().ok()?);
-        match discriminator {
-            0 => Some(SYSTEM_CREATE_ACCOUNT.to_string()),
-            3 => Some(SYSTEM_CREATE_ACCOUNT_WITH_SEED.to_string()),
-            _ => None,
-        }
-    }
-
-    fn ata(data: &[u8]) -> Option<String> {
-        match data.first().copied() {
-            None | Some(0) => Some(ATA_CREATE.to_string()),
-            Some(1) => Some(ATA_CREATE_IDEMPOTENT.to_string()),
-            _ => None,
-        }
-    }
-
-    fn loader_v4(data: &[u8]) -> Option<String> {
-        // bincode serializes enum variants as a little-endian u32 discriminator.
-        // Values match `LoaderV4Instruction` declaration order.
-        let discriminator = u32::from_le_bytes(data.get(..4)?.try_into().ok()?);
-        match discriminator {
-            0 => Some(LOADER_V4_WRITE.to_string()),
-            1 => Some(LOADER_V4_COPY.to_string()),
-            2 => Some(LOADER_V4_SET_PROGRAM_LENGTH.to_string()),
-            3 => Some(LOADER_V4_DEPLOY.to_string()),
-            4 => Some(LOADER_V4_RETRACT.to_string()),
-            5 => Some(LOADER_V4_TRANSFER_AUTHORITY.to_string()),
-            6 => Some(LOADER_V4_FINALIZE.to_string()),
-            _ => None,
-        }
-    }
-
-    fn bpf_loader_upgradeable(data: &[u8]) -> Option<String> {
-        // Values match `UpgradeableLoaderInstruction` declaration order.
-        let discriminator = u32::from_le_bytes(data.get(..4)?.try_into().ok()?);
-        match discriminator {
-            0 => Some(BPF_LOADER_INITIALIZE_BUFFER.to_string()),
-            1 => Some(BPF_LOADER_WRITE.to_string()),
-            2 => Some(BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN.to_string()),
-            3 => Some(BPF_LOADER_UPGRADE.to_string()),
-            4 => Some(BPF_LOADER_SET_AUTHORITY.to_string()),
-            5 => Some(BPF_LOADER_CLOSE.to_string()),
-            6 => Some(BPF_LOADER_EXTEND_PROGRAM.to_string()),
-            7 => Some(BPF_LOADER_SET_AUTHORITY_CHECKED.to_string()),
-            8 => Some(BPF_LOADER_MIGRATE.to_string()),
-            9 => Some(BPF_LOADER_EXTEND_PROGRAM_CHECKED.to_string()),
-            _ => None,
         }
     }
 }
@@ -460,20 +414,22 @@ mod tests {
     #[test]
     fn test_identify_system_instructions() {
         assert_eq!(
-            InstructionIdentifier::system(&[0, 0, 0, 0]),
+            InstructionIdentifier::identify(&SYSTEM_PROGRAM_ID, &[0, 0, 0, 0]),
             Some(SYSTEM_CREATE_ACCOUNT.to_string())
         );
         assert_eq!(
-            InstructionIdentifier::system(&[3, 0, 0, 0]),
+            InstructionIdentifier::identify(&SYSTEM_PROGRAM_ID, &[3, 0, 0, 0]),
             Some(SYSTEM_CREATE_ACCOUNT_WITH_SEED.to_string())
         );
     }
 
     #[test]
     fn test_identify_ata_instructions() {
-        assert_eq!(InstructionIdentifier::ata(&[]), Some(ATA_CREATE.to_string()));
-        assert_eq!(InstructionIdentifier::ata(&[0]), Some(ATA_CREATE.to_string()));
-        assert_eq!(InstructionIdentifier::ata(&[1]), Some(ATA_CREATE_IDEMPOTENT.to_string()));
+        let identify = |data: &[u8]| InstructionIdentifier::identify(&ATA_PROGRAM_ID, data);
+        assert_eq!(identify(&[]), Some(ATA_CREATE.to_string()));
+        assert_eq!(identify(&[0]), Some(ATA_CREATE.to_string()));
+        assert_eq!(identify(&[1]), Some(ATA_CREATE_IDEMPOTENT.to_string()));
+        assert_eq!(identify(&[2]), None);
     }
 
     #[test]

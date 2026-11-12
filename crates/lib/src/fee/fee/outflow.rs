@@ -216,35 +216,12 @@ impl FeeConfigUtil {
     ) -> u64 {
         outflows
             .iter()
-            .filter_map(|outflow| match outflow {
-                ParsedSPLInstructionData::SplTokenTransfer {
-                    amount,
-                    owner,
-                    multisig_signers,
-                    source_address,
-                    ..
-                }
-                | ParsedSPLInstructionData::SplTokenBurn {
-                    amount,
-                    owner,
-                    multisig_signers,
-                    source_address,
-                    ..
-                }
-                | ParsedSPLInstructionData::SplTokenApprove {
-                    amount,
-                    owner,
-                    multisig_signers,
-                    source_address,
-                    ..
-                } if source_address == account
-                    && Self::fee_payer_signs(fee_payer, owner, multisig_signers) =>
-                {
-                    Some(*amount)
-                }
-                _ => None,
+            .filter_map(ParsedSPLInstructionData::token_movement)
+            .filter(|movement| {
+                movement.source_address == *account
+                    && Self::fee_payer_signs(fee_payer, &movement.owner, movement.multisig_signers)
             })
-            .fold(0u64, u64::saturating_add)
+            .fold(0u64, |total, movement| total.saturating_add(movement.amount))
     }
 
     /// Calculate the total outflow (SOL + SPL token value) that could occur for a fee payer account in a transaction.

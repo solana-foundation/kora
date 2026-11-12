@@ -196,6 +196,55 @@ instruction_type!(ParsedSPLInstructionData => ParsedSPLInstructionType {
     SplTokenUnknownExtension,
 });
 
+pub struct TokenMovement<'a> {
+    pub amount: u64,
+    pub owner: Pubkey,
+    pub multisig_signers: &'a [Pubkey],
+    pub mint: Option<Pubkey>,
+    pub source_address: Pubkey,
+    pub is_2022: bool,
+}
+
+impl ParsedSPLInstructionData {
+    pub fn token_movement(&self) -> Option<TokenMovement<'_>> {
+        match self {
+            Self::SplTokenTransfer {
+                amount,
+                owner,
+                multisig_signers,
+                mint,
+                source_address,
+                is_2022,
+                ..
+            }
+            | Self::SplTokenBurn {
+                amount,
+                owner,
+                multisig_signers,
+                mint,
+                source_address,
+                is_2022,
+            }
+            | Self::SplTokenApprove {
+                amount,
+                owner,
+                multisig_signers,
+                mint,
+                source_address,
+                is_2022,
+            } => Some(TokenMovement {
+                amount: *amount,
+                owner: *owner,
+                multisig_signers,
+                mint: *mint,
+                source_address: *source_address,
+                is_2022: *is_2022,
+            }),
+            _ => None,
+        }
+    }
+}
+
 /// Emits the instruction arms spl-token and Token-2022 share. `TokenInstruction` resolves at
 /// the call site, so each program matches against its own interface crate.
 macro_rules! match_shared_token_instruction {

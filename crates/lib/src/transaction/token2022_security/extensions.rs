@@ -1,4 +1,4 @@
-use solana_sdk::instruction::Instruction;
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use spl_token_2022_interface::{
     extension::{
         group_member_pointer::{self, instruction::GroupMemberPointerInstruction},
@@ -12,7 +12,7 @@ use spl_token_2022_interface::{
         transfer_hook::{self, instruction::TransferHookInstruction},
         ExtensionType,
     },
-    instruction::{decode_instruction_data, decode_instruction_type},
+    instruction::{decode_instruction_data, decode_instruction_type, TokenInstruction},
 };
 
 use crate::{error::KoraError, sanitize_error};
@@ -603,6 +603,20 @@ impl Token2022SecurityParser {
                 ))
             }
         }
+    }
+
+    pub(crate) fn permissioned_burn_source(instruction: &Instruction) -> Option<Pubkey> {
+        let is_burn = matches!(
+            TokenInstruction::unpack(&instruction.data),
+            Ok(TokenInstruction::PermissionedBurnExtension)
+        ) && !matches!(
+            Self::decode_extension_type(instruction, "PermissionedBurn"),
+            Ok(PermissionedBurnInstruction::Initialize)
+        );
+        if !is_burn {
+            return None;
+        }
+        instruction.accounts.first().map(|meta| meta.pubkey)
     }
 
     fn decode_extension_type<T>(instruction: &Instruction, name: &str) -> Result<T, KoraError>

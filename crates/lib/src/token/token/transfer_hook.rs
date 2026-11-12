@@ -7,7 +7,8 @@ use crate::{
         TokenInterface,
     },
     transaction::{
-        ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionResolved,
+        ParsedSPLInstructionData, ParsedSPLInstructionType, TokenMovement,
+        VersionedTransactionResolved,
     },
     validator::parse_pubkey_set,
     CacheUtil,
@@ -93,30 +94,9 @@ impl TokenUtil {
         .collect();
 
         for movement in token_movements {
-            let (ParsedSPLInstructionData::SplTokenTransfer {
-                owner,
-                multisig_signers,
-                source_address,
-                mint,
-                is_2022,
-                ..
-            }
-            | ParsedSPLInstructionData::SplTokenBurn {
-                owner,
-                multisig_signers,
-                source_address,
-                mint,
-                is_2022,
-                ..
-            }
-            | ParsedSPLInstructionData::SplTokenApprove {
-                owner,
-                multisig_signers,
-                source_address,
-                mint,
-                is_2022,
-                ..
-            }) = movement
+            let Some(TokenMovement {
+                owner, multisig_signers, source_address, mint, is_2022, ..
+            }) = movement.token_movement()
             else {
                 continue;
             };
