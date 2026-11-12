@@ -3896,6 +3896,7 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.allow_allocate = true;
+        policy.system.nonce.allow_initialize = true;
         setup_config_with_policy(policy);
 
         let config = get_config().unwrap();
@@ -3912,7 +3913,7 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .unwrap_err();
-        assert!(err.to_string().contains("System Initialize Nonce Account"), "{err}");
+        assert!(err.to_string().contains("cannot be initialized as a nonce account"), "{err}");
     }
 
     #[tokio::test]
