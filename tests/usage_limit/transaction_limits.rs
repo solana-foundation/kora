@@ -121,7 +121,6 @@ async fn test_independent_wallet_limits() {
     }
 }
 
-/// A request Kora rejects must not consume the caller's quota
 /// Config: windowed=4/30s
 #[tokio::test]
 async fn test_rejected_transaction_does_not_consume_quota() {

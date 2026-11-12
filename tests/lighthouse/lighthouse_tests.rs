@@ -417,7 +417,6 @@ async fn test_lighthouse_end_to_end_with_client_resign() {
     );
 }
 
-/// A policy-allowed fee-payer transfer must still pass the assertion Kora appends
 #[tokio::test]
 async fn test_lighthouse_assertion_permits_allowed_fee_payer_transfer() {
     let ctx = crate::ctx().await;

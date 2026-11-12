@@ -331,10 +331,9 @@ impl FeeConfigUtil {
                     || *nonce_account == *fee_payer_pubkey
                     || extra_signers.contains(fee_payer_pubkey);
                 if *recipient == *fee_payer_pubkey {
-                    // The fee payer signs wherever it appears, so as the recipient it also
-                    // authorizes a withdrawal from any nonce account whose stored authority it
-                    // is. The lamports may already be the fee payer's, so they never reduce
-                    // unrelated outflow elsewhere in the transaction.
+                    // As the recipient the fee payer also signs, which authorizes a withdrawal
+                    // from any nonce account whose stored authority it is. Those lamports may
+                    // already be its own, so they never offset other outflow.
                     continue;
                 } else if fee_payer_controlled {
                     // The lamports leave a nonce account the fee payer controls for a third
