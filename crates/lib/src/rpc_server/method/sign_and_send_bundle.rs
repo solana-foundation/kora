@@ -86,9 +86,29 @@ mod tests {
     use mockito::{Matcher, Server};
     use serde_json::json;
     use solana_message::{Message, VersionedMessage};
-    use solana_sdk::pubkey::Pubkey;
+    use solana_sdk::{
+        pubkey::Pubkey,
+        signature::{Keypair, Signature},
+        signer::Signer,
+    };
     use solana_system_interface::instruction::transfer;
     use solana_transaction::versioned::TransactionVersion;
+
+    fn transfer_with_sender_signature(
+        fee_payer: &Pubkey,
+        sender: &Keypair,
+        sender_signature: impl FnOnce(&[u8]) -> Signature,
+    ) -> String {
+        let ix = transfer(&sender.pubkey(), &Pubkey::new_unique(), 1_000_000_000);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        transaction.signatures[1] = sender_signature(&transaction.message.serialize());
+        TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
+    }
+
+    fn encoded_transfer_signed_by_sender(fee_payer: &Pubkey, sender: &Keypair) -> String {
+        transfer_with_sender_signature(fee_payer, sender, |message| sender.sign_message(message))
+    }
 
     #[tokio::test]
     async fn test_sign_and_send_bundle_empty_bundle() {
@@ -244,13 +264,7 @@ mod tests {
         };
 
         // Signed transaction (index 1) uses the signer_pubkey as fee payer
-        let signed_ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1000000000);
-        let signed_message =
-            VersionedMessage::Legacy(Message::new(&[signed_ix], Some(&signer_pubkey)));
-        let signed_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction(signed_message);
-        let signed_encoded =
-            TransactionUtil::encode_versioned_transaction(&signed_transaction).unwrap();
+        let signed_encoded = encoded_transfer_signed_by_sender(&signer_pubkey, &Keypair::new());
 
         let transactions = vec![make_non_signed_tx(), signed_encoded, make_non_signed_tx()];
 
@@ -318,13 +332,7 @@ mod tests {
             TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
         };
 
-        let signed_ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1_000_000_000);
-        let signed_message =
-            VersionedMessage::Legacy(Message::new(&[signed_ix], Some(&signer_pubkey)));
-        let signed_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction(signed_message);
-        let signed_encoded =
-            TransactionUtil::encode_versioned_transaction(&signed_transaction).unwrap();
+        let signed_encoded = encoded_transfer_signed_by_sender(&signer_pubkey, &Keypair::new());
 
         let transactions = vec![make_non_signed_tx(), signed_encoded, make_non_signed_tx()];
         let request = SignAndSendBundleRequest {
@@ -443,10 +451,7 @@ mod tests {
         // Fee payer is signer_pubkey, but is NOT the transfer sender.
         // process_bundle passes; the Jito simulation mock returns a large lamport drop
         // for the fee payer account, which exceeds max_allowed_lamports.
-        let ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1_000_000_000);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&signer_pubkey)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let encoded = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
+        let encoded = encoded_transfer_signed_by_sender(&signer_pubkey, &Keypair::new());
 
         let request = SignAndSendBundleRequest {
             transactions: vec![encoded],
@@ -463,6 +468,40 @@ mod tests {
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Total transfer amount"), "Unexpected error: {err}");
         assert!(err.contains("exceeds maximum allowed"), "Unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn test_sign_and_send_bundle_rejects_forged_co_signer_signature() {
+        let mut config = ConfigMockBuilder::new()
+            .with_bundle_enabled(true)
+            .with_usage_limit_enabled(false)
+            .build();
+        config.validation.price = PriceConfig { model: PriceModel::Free };
+        let _m = setup_config_mock(config);
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let signer_pubkey = setup_or_get_test_signer();
+        let rpc_client = Arc::new(
+            RpcMockBuilder::new()
+                .with_fee_estimate(5000)
+                .with_blockhash()
+                .with_simulation()
+                .build(),
+        );
+
+        let encoded = transfer_with_sender_signature(&signer_pubkey, &Keypair::new(), |_| {
+            Signature::from([0xA5; 64])
+        });
+        let request = SignAndSendBundleRequest {
+            transactions: vec![encoded],
+            signer_key: Some(signer_pubkey.to_string()),
+            sig_verify: false,
+            user_id: None,
+            sign_only_indices: None,
+        };
+
+        let err = sign_and_send_bundle(&rpc_client, request).await.unwrap_err().to_string();
+        assert!(err.contains("missing or has invalid required signatures"), "{err}");
     }
 
     #[tokio::test]

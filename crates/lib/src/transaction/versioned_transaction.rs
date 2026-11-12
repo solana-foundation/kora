@@ -184,7 +184,10 @@ pub trait VersionedTransactionOps {
 }
 
 impl VersionedTransactionResolved {
-    fn require_verified_signatures_except(&self, fee_payer: &Pubkey) -> Result<(), KoraError> {
+    pub(crate) fn require_verified_signatures_except(
+        &self,
+        fee_payer: &Pubkey,
+    ) -> Result<(), KoraError> {
         let verified_signers = self.verified_signers();
         if self
             .signer_pubkeys()

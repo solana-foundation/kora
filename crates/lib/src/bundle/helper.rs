@@ -127,6 +127,9 @@ impl BundleProcessor {
             .await?;
 
             validator.validate_transaction(config, &mut resolved_tx, rpc_client).await?;
+            if matches!(plugin_context, Some(PluginExecutionContext::SignAndSendBundle)) {
+                resolved_tx.require_verified_signatures_except(&fee_payer)?;
+            }
             let outflow =
                 validator.calculate_total_outflow(config, &mut resolved_tx, rpc_client).await?;
             total_transfer_outflow =
