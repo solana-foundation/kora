@@ -2985,6 +2985,44 @@ mod tests {
             "an account created in the same transaction holds nothing yet: {result:?}"
         );
 
+        let deposit_then_handoff = || {
+            let deposit = spl_token_interface::instruction::transfer_checked(
+                &spl_token_interface::id(),
+                &Pubkey::new_unique(),
+                &mint,
+                &token_account,
+                &Pubkey::new_unique(),
+                &[],
+                1_100_000,
+                6,
+            )
+            .unwrap();
+            let handoff = spl_token_interface::instruction::set_authority(
+                &spl_token_interface::id(),
+                &token_account,
+                Some(&Pubkey::new_unique()),
+                spl_token_interface::instruction::AuthorityType::AccountOwner,
+                &fee_payer,
+                &[],
+            )
+            .unwrap();
+            let message =
+                VersionedMessage::Legacy(Message::new(&[deposit, handoff], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_account_responses(vec![None, Some(&mint_account)]);
+        let mut transaction = deposit_then_handoff();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(
+                &result,
+                Err(KoraError::InvalidTransaction(message))
+                    if message.contains("Total transfer amount 1100000 exceeds maximum allowed 1000000")
+            ),
+            "tokens paid into a new account leave with it when it is handed off: {result:?}"
+        );
+
         let rpc_client =
             RpcMockBuilder::new().build_with_sequential_accounts(vec![&funded_account]);
         let mut transaction = clear_close_authority();

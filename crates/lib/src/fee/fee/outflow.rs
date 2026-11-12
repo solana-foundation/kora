@@ -439,6 +439,34 @@ impl FeeConfigUtil {
                 if !fee_payer_signs || *new_authority == Some(*fee_payer_pubkey) {
                     continue;
                 }
+                if new_authority.is_some() {
+                    spl_token_outflows.extend(
+                        spl_instructions
+                            .get(&ParsedSPLInstructionType::SplTokenTransfer)
+                            .unwrap_or(&empty_vec)
+                            .iter()
+                            .filter_map(|transfer| match transfer {
+                                ParsedSPLInstructionData::SplTokenTransfer {
+                                    amount,
+                                    mint,
+                                    source_address,
+                                    destination_address,
+                                    is_2022,
+                                    ..
+                                } if destination_address == account => {
+                                    Some(ParsedSPLInstructionData::SplTokenApprove {
+                                        amount: *amount,
+                                        owner: *fee_payer_pubkey,
+                                        multisig_signers: vec![],
+                                        mint: *mint,
+                                        source_address: *source_address,
+                                        is_2022: *is_2022,
+                                    })
+                                }
+                                _ => None,
+                            }),
+                    );
+                }
                 let token_account = match rpc_client.get_account(account).await {
                     Ok(token_account) => token_account,
                     Err(e) => match KoraError::from(e) {
