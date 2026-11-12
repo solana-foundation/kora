@@ -265,14 +265,13 @@ impl BundleProcessor {
         })
     }
 
-    pub async fn check_usage_limit(
+    async fn check_usage_limit(
         &mut self,
         config: &Config,
         user_id: Option<&str>,
         fee_payer: &Pubkey,
         rpc_client: &RpcClient,
     ) -> Result<(), KoraError> {
-        self.validate_payment()?;
         for resolved_tx in self.resolved_transactions.iter_mut() {
             UsageTracker::check_transaction_usage_limit(
                 config,
@@ -304,6 +303,7 @@ impl BundleProcessor {
         rpc_client: &RpcClient,
         config: &Config,
         will_send: bool,
+        user_id: Option<&str>,
     ) -> Result<Vec<VersionedTransactionResolved>, KoraError> {
         TransactionValidator::validate_strict_pricing(
             config,
@@ -312,29 +312,14 @@ impl BundleProcessor {
         )?;
         self.validate_payment()?;
 
-        let mut blockhash = None;
-        let fee_payer_balance = if config.kora.lighthouse.enabled && !will_send {
-            Some(LighthouseUtil::fetch_fee_payer_balance(rpc_client, fee_payer).await?)
-        } else {
-            None
-        };
-
-        for ((resolved, cumulative_fee), cumulative_outflow) in self
-            .resolved_transactions
-            .iter_mut()
-            .zip(&self.cumulative_solana_fees)
-            .zip(&self.cumulative_lamport_outflows)
-        {
-            if blockhash.is_none() && resolved.transaction.signatures.is_empty() {
-                blockhash = Some(
-                    rpc_client
-                        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
-                        .await?
-                        .0,
-                );
-            }
-
-            if let Some(balance) = fee_payer_balance {
+        if config.kora.lighthouse.enabled && !will_send {
+            let balance = LighthouseUtil::fetch_fee_payer_balance(rpc_client, fee_payer).await?;
+            for ((resolved, cumulative_fee), cumulative_outflow) in self
+                .resolved_transactions
+                .iter_mut()
+                .zip(&self.cumulative_solana_fees)
+                .zip(&self.cumulative_lamport_outflows)
+            {
                 LighthouseUtil::add_fee_payer_assertion_for_balance(
                     &mut resolved.transaction,
                     fee_payer,
@@ -343,6 +328,20 @@ impl BundleProcessor {
                     *cumulative_outflow,
                     &config.kora.lighthouse,
                 )?;
+            }
+        }
+
+        self.check_usage_limit(config, user_id, fee_payer, rpc_client).await?;
+
+        let mut blockhash = None;
+        for resolved in self.resolved_transactions.iter_mut() {
+            if blockhash.is_none() && resolved.transaction.signatures.is_empty() {
+                blockhash = Some(
+                    rpc_client
+                        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+                        .await?
+                        .0,
+                );
             }
 
             BundleSigner::sign_transaction_for_bundle(
@@ -439,7 +438,7 @@ mod tests {
             Arc::new(solana_keychain::Signer::from_memory(&keypair.to_base58_string()).unwrap());
         let rpc_client = crate::tests::rpc_mock::RpcMockBuilder::new().build();
         let fee_payer = solana_sdk::signer::Signer::pubkey(&keypair);
-        processor.sign_all(&signer, &fee_payer, &rpc_client, config, false).await
+        processor.sign_all(&signer, &fee_payer, &rpc_client, config, false, None).await
     }
 
     #[tokio::test]

@@ -82,7 +82,7 @@ pub(super) async fn sign_bundle_transactions(
     let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
     let sig_verify = sig_verify || config.kora.force_sig_verify;
-    let mut processor = BundleProcessor::process_bundle(
+    let processor = BundleProcessor::process_bundle(
         &transactions_to_process,
         fee_payer,
         &payment_destination,
@@ -113,11 +113,10 @@ pub(super) async fn sign_bundle_transactions(
         .await?;
     }
 
-    processor.check_usage_limit(config, user_id.as_deref(), &fee_payer, rpc_client).await?;
-
     let will_send = matches!(plugin_context, PluginExecutionContext::SignAndSendBundle);
-    let signed_resolved =
-        processor.sign_all(&signer, &fee_payer, rpc_client, config, will_send).await?;
+    let signed_resolved = processor
+        .sign_all(&signer, &fee_payer, rpc_client, config, will_send, user_id.as_deref())
+        .await?;
 
     let encoded_signed: Vec<String> = signed_resolved
         .iter()

@@ -557,9 +557,6 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             .ok_or_else(|| KoraError::ValidationError("Estimated fee overflow".to_string()))?;
         validator.validate_lamport_fee(estimated_fee)?;
 
-        UsageTracker::check_transaction_usage_limit(config, self, user_id, &fee_payer, rpc_client)
-            .await?;
-
         let permitted_lamport_outflow = if appends_lighthouse_assertion {
             FeeConfigUtil::calculate_fee_payer_lamport_outflow(&fee_payer, self, rpc_client, config)
                 .await?
@@ -576,6 +573,9 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             will_send,
         )
         .await?;
+
+        UsageTracker::check_transaction_usage_limit(config, self, user_id, &fee_payer, rpc_client)
+            .await?;
 
         let signature = sign_with_signer_pool(
             config,
