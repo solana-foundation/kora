@@ -19,6 +19,7 @@ use crate::cache::CacheUtil;
 
 #[cfg(test)]
 use crate::tests::cache_mock::MockCacheUtil as CacheUtil;
+use borsh::BorshDeserialize;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableMessage};
 use solana_compute_budget::compute_budget_limits::{
     ComputeBudgetLimits, DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT,
@@ -435,7 +436,9 @@ impl TransactionFeeUtil {
                 continue;
             }
             compute_budget_instructions = compute_budget_instructions.saturating_add(1);
-            match borsh::from_slice(&instruction.data) {
+            // The runtime ignores trailing bytes here, so a strict parse would miss a price or
+            // limit that still takes effect on-chain.
+            match ComputeBudgetInstruction::deserialize(&mut instruction.data.as_slice()) {
                 Ok(ComputeBudgetInstruction::SetComputeUnitPrice(micro_lamports)) => {
                     compute_unit_price.get_or_insert(micro_lamports);
                 }
@@ -2869,6 +2872,23 @@ mod tests {
                 transfer(&payer, &recipient, 1_000),
             ],
         );
+
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
+            7_500
+        );
+    }
+
+    #[test]
+    fn test_get_requested_priority_fee_reads_instructions_with_trailing_bytes() {
+        let payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let mut limit = ComputeBudgetInstruction::set_compute_unit_limit(300_000);
+        limit.data.push(0);
+        let mut price = ComputeBudgetInstruction::set_compute_unit_price(25_000);
+        price.data.push(0);
+        let message =
+            create_legacy_message(&payer, &[limit, price, transfer(&payer, &recipient, 1_000)]);
 
         assert_eq!(
             TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
