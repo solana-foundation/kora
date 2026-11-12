@@ -426,8 +426,10 @@ pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be used as the current authority for Token2022 extension update/admin
     /// instructions.
     pub allow_update_extension_authority: bool,
-    /// Allow fee payer to be the mint authority that signs Token2022 TokenMetadata Initialize and
-    /// TokenGroup InitializeGroup instructions. The caller chooses the resulting update authority.
+    /// Allow fee payer to be the mint authority that signs Token2022 TokenMetadata Initialize,
+    /// TokenGroup InitializeGroup and TokenGroup InitializeMember instructions, or the group
+    /// update authority in InitializeMember. The caller chooses the resulting update authority
+    /// or group.
     pub allow_initialize_interface_extension: bool,
     /// Allow fee payer to be the withdraw-withheld authority in Token2022
     /// WithdrawWithheldTokensFromMint/WithdrawWithheldTokensFromAccounts instructions. The

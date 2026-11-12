@@ -127,12 +127,14 @@ impl Token2022SecurityParser {
         instruction: &Instruction,
         group_instruction: TokenGroupInstruction,
     ) -> Result<Token2022SecurityInstruction, KoraError> {
-        let authority_kind =
-            if matches!(group_instruction, TokenGroupInstruction::InitializeGroup(_)) {
-                Token2022AuthorityKind::InterfaceInitialize
-            } else {
-                Token2022AuthorityKind::ExtensionUpdate
-            };
+        let authority_kind = if matches!(
+            group_instruction,
+            TokenGroupInstruction::InitializeGroup(_) | TokenGroupInstruction::InitializeMember(_)
+        ) {
+            Token2022AuthorityKind::InterfaceInitialize
+        } else {
+            Token2022AuthorityKind::ExtensionUpdate
+        };
         let (instruction_name, extension_type, update_authority, multisig_signers, data_pubkeys) =
             match group_instruction {
                 TokenGroupInstruction::InitializeGroup(data) => (

@@ -7572,6 +7572,14 @@ mod tests {
                 Some(foreign_authority),
                 8,
             ),
+            spl_token_group_interface::instruction::initialize_member(
+                &spl_token_2022_interface::id(),
+                &mint,
+                &mint,
+                &fee_payer,
+                &Pubkey::new_unique(),
+                &foreign_authority,
+            ),
         ];
 
         for instruction in initializers {
