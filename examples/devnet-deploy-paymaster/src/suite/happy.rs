@@ -32,9 +32,16 @@ pub async fn run(kora_url: &str, rpc_url: &str, program_so: &Path) -> Result<()>
         user_id: user_id.clone(),
         program: result.program,
         wallet: &owner,
+        resume: false,
+        cleanup_on_failure: true,
+        state_path: env::temp_dir()
+            .join(format!(".kora-upgrade-state-{}.json", Pubkey::new_unique())),
     })
     .await?;
-    println!("  upgraded program as registered owner (sig {sig})");
+    match sig {
+        Some(s) => println!("  upgraded program as registered owner (sig {s})"),
+        None => println!("  program was already upgraded"),
+    }
 
     let sig = close(
         rpc_url,

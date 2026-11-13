@@ -39,8 +39,11 @@ struct Args {
     /// Existing program to upgrade. Omit to deploy a fresh program.
     #[arg(long)]
     program_id: Option<Pubkey>,
-    #[arg(long, help = "Resume a previous deployment from the local state file")]
+    #[arg(long, help = "Resume a previous deployment or upgrade from the local state file")]
     resume: bool,
+    /// Custom path for the state file (defaults to current working directory).
+    #[arg(long)]
+    state_path: Option<PathBuf>,
     #[arg(
         long,
         hide = true,
@@ -65,14 +68,12 @@ async fn main() -> Result<()> {
         args.user_id.clone().unwrap_or_else(|| format!("kora-deploy-{}", Pubkey::new_unique()));
     let wallet = load_wallet(args.wallet.as_deref())?;
 
+    if !args.program_so.exists() {
+        bail!("program binary {} does not exist", args.program_so.display());
+    }
+
     match args.program_id {
         Some(program) => {
-            if args.resume {
-                bail!("--resume is currently only supported for fresh deployments, not upgrades.");
-            }
-            if args.no_cleanup_on_failure {
-                log::warn!("--no-cleanup-on-failure is not supported during program upgrades and will be ignored.");
-            }
             if !program_is_live(&args.rpc_url, &program).await? {
                 bail!(
                     "program {program} is not live on-chain (never deployed or reaped); \
@@ -87,13 +88,18 @@ async fn main() -> Result<()> {
 
 async fn run_deploy(args: &Args, wallet: Option<&Keypair>, user_id: String) -> Result<()> {
     match wallet {
-        Some(w) => log::info!("registering {} as upgrade owner", w.pubkey()),
+        Some(w) => println!("Registering {} as upgrade owner", w.pubkey()),
         None => {
-            log::warn!("no wallet provided; the program will be immutable through the paymaster")
+            println!("No wallet provided; the program will be immutable through the paymaster")
         }
     }
 
-    let state_path = env::current_dir()?.join(".kora-deploy-state.json");
+    let state_path = match &args.state_path {
+        Some(path) => path.clone(),
+        None => env::current_dir()
+            .context("resolving current working directory")?
+            .join(".kora-deploy-state.json"),
+    };
     let result = deploy(&DeployConfig {
         kora_url: &args.kora_url,
         rpc_url: &args.rpc_url,
@@ -134,8 +140,14 @@ async fn run_upgrade(
     let wallet = wallet.ok_or_else(|| {
         anyhow!("upgrading {program} requires the wallet it was registered with (--wallet)")
     })?;
-    log::info!("upgrading {program} as {}", wallet.pubkey());
+    println!("Upgrading {program} as {}", wallet.pubkey());
 
+    let state_path = match &args.state_path {
+        Some(path) => path.clone(),
+        None => env::current_dir()
+            .context("resolving current working directory")?
+            .join(".kora-upgrade-state.json"),
+    };
     let signature = upgrade(&UpgradeConfig {
         kora_url: &args.kora_url,
         rpc_url: &args.rpc_url,
@@ -143,12 +155,18 @@ async fn run_upgrade(
         user_id,
         program,
         wallet,
+        resume: args.resume,
+        cleanup_on_failure: !args.no_cleanup_on_failure,
+        state_path,
     })
     .await?;
 
     println!();
     println!("Upgraded {program} via {}", args.kora_url);
-    println!("  signature: {signature}");
+    match signature {
+        Some(sig) => println!("  signature: {sig}"),
+        None => println!("  signature: (already upgraded)"),
+    }
     Ok(())
 }
 
@@ -158,7 +176,10 @@ fn load_wallet(path: Option<&Path>) -> Result<Option<Keypair>> {
     match path {
         Some(p) => read(p).map(Some),
         None => {
-            let home = std::env::var("HOME").context("HOME is not set")?;
+            let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"));
+            let Ok(home) = home else {
+                return Ok(None);
+            };
             let default = Path::new(&home).join(".config/solana/id.json");
             if default.exists() {
                 read(&default).map(Some)

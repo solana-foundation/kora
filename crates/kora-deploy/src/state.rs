@@ -9,9 +9,9 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
-// NOTE: keypairs are raw bytes in JSON; file security relies on OS-level permissions (see save()).
+// Keypairs are serialized as raw bytes in JSON; file security relies on OS-level permissions (see save_state_file()).
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeployState {
     pub program_keypair: Vec<u8>,
@@ -22,6 +22,21 @@ pub struct DeployState {
     pub program_hash: String,
     #[serde(default = "legacy_chunk_size")]
     pub chunk_size: usize,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_wallet_pubkey",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub wallet_pubkey: Option<Option<String>>,
+}
+
+fn deserialize_wallet_pubkey<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<Option<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(deserializer).map(Some)
 }
 
 /// State files written before `chunk_size` was recorded used 900-byte chunks, and resuming
@@ -54,36 +69,34 @@ fn save_state_file<T: Serialize>(state: &T, path: &Path, type_name: &str) -> Res
     let temp_path = path.with_extension("tmp");
 
     let write_res = (|| -> Result<()> {
-        #[cfg(unix)]
-        {
-            let mut options = fs::OpenOptions::new();
-            options.write(true).create(true).truncate(true).mode(0o600);
-            let mut file = options.open(&temp_path).with_context(|| {
-                format!("failed to open temp {type_name} for writing: {}", temp_path.display())
-            })?;
-            file.write_all(data.as_bytes()).with_context(|| {
-                format!("failed to write temp {type_name} to {}", temp_path.display())
-            })?;
-            file.sync_data().with_context(|| format!("failed to sync temp {type_name} to disk"))?;
+        let mut file = {
+            #[cfg(unix)]
+            {
+                let mut options = fs::OpenOptions::new();
+                options.write(true).create(true).truncate(true).mode(0o600);
+                options.open(&temp_path)
+            }
+            #[cfg(not(unix))]
+            {
+                // share_mode(0) limits concurrent access, but does not enforce
+                // file-level ACL restrictions (unlike Unix 0o600).
+                fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .share_mode(0)
+                    .open(&temp_path)
+            }
         }
-        #[cfg(not(unix))]
-        {
-            // share_mode(0) limits concurrent access, but does not enforce
-            // file-level ACL restrictions (unlike Unix 0o600).
-            let mut file = fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .share_mode(0)
-                .open(&temp_path)
-                .with_context(|| {
-                    format!("failed to create temp {type_name}: {}", temp_path.display())
-                })?;
-            file.write_all(data.as_bytes()).with_context(|| {
-                format!("failed to write temp {type_name} to {}", temp_path.display())
-            })?;
-            file.sync_data().with_context(|| format!("failed to sync temp {type_name} to disk"))?;
-        }
+        .with_context(|| {
+            format!("failed to open temp {type_name} for writing: {}", temp_path.display())
+        })?;
+
+        file.write_all(data.as_bytes()).with_context(|| {
+            format!("failed to write temp {type_name} to {}", temp_path.display())
+        })?;
+        file.sync_data().with_context(|| format!("failed to sync temp {type_name} to disk"))?;
+        drop(file);
 
         fs::rename(&temp_path, path).with_context(|| {
             format!("failed to rename {} to {}", temp_path.display(), path.display())
@@ -109,7 +122,7 @@ impl DeployState {
     }
 }
 
-// NOTE: buffer_keypair is raw bytes in JSON; file security relies on OS-level permissions (see save()).
+// Buffer keypair is serialized as raw bytes in JSON; file security relies on OS-level permissions (see save_state_file()).
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpgradeState {
     pub program: String,
@@ -119,6 +132,7 @@ pub struct UpgradeState {
     pub program_hash: String,
     #[serde(default = "legacy_chunk_size")]
     pub chunk_size: usize,
+    /// ProgramData slot before upgrade; verifies advancement on resume if buffer was closed after timeout.
     pub program_data_slot_at_start: u64,
 }
 
@@ -141,14 +155,25 @@ impl ChunkWriterState for UpgradeState {
         self.written_chunks = count;
     }
 
+    fn program_hash(&self) -> &str {
+        &self.program_hash
+    }
+
+    fn chunk_size(&self) -> usize {
+        self.chunk_size
+    }
+
     fn save(&self, path: &Path) -> Result<()> {
         self.save(path)
     }
 }
 
+/// Shared interface for chunk uploading and invariant checks across deploy and upgrade states.
 pub trait ChunkWriterState: Send {
     fn written_chunks(&self) -> usize;
     fn set_written_chunks(&mut self, count: usize);
+    fn program_hash(&self) -> &str;
+    fn chunk_size(&self) -> usize;
     fn save(&self, path: &Path) -> Result<()>;
 }
 
@@ -159,6 +184,14 @@ impl ChunkWriterState for DeployState {
 
     fn set_written_chunks(&mut self, count: usize) {
         self.written_chunks = count;
+    }
+
+    fn program_hash(&self) -> &str {
+        &self.program_hash
+    }
+
+    fn chunk_size(&self) -> usize {
+        self.chunk_size
     }
 
     fn save(&self, path: &Path) -> Result<()> {
@@ -174,14 +207,14 @@ pub struct StateLockGuard {
 }
 
 impl StateLockGuard {
-    /// Appends `.lock` to the full state file path to avoid colliding with `.tmp` files.
+    /// Preserves full path and extension to prevent collisions between distinct state files.
     pub fn lock_path(state_path: &Path) -> PathBuf {
         let mut os_str = state_path.as_os_str().to_os_string();
         os_str.push(".lock");
         PathBuf::from(os_str)
     }
 
-    /// Acquires an advisory file lock on `<state_path>.lock`.
+    /// Fails fast if another process holds the state lock.
     pub fn acquire(state_path: &Path) -> Result<Self> {
         let lock_path = Self::lock_path(state_path);
         let file = fs::OpenOptions::new()
@@ -237,6 +270,7 @@ mod tests {
             kora_pubkey: "Base58KoraPubkey111111111111111111111111111".to_string(),
             program_hash: "dummyhash123".to_string(),
             chunk_size: 3800,
+            wallet_pubkey: Some(Some("TestWalletPubkey111111111111111111111111".to_string())),
         };
 
         let temp_file =
@@ -277,6 +311,40 @@ mod tests {
             }"#,
         )?;
         assert_eq!(state.chunk_size, 900);
+        assert_eq!(state.wallet_pubkey, None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_deploy_state_wallet_pubkey_serde_backward_compat() -> Result<()> {
+        let base_json = r#"{
+            "program_keypair": [1],
+            "buffer_keypair": [2],
+            "program_data": "11111111111111111111111111111111",
+            "written_chunks": 7,
+            "kora_pubkey": "11111111111111111111111111111111",
+            "program_hash": "dummyhash123""#;
+
+        // Missing field -> None (old state file)
+        let missing_state: DeployState = serde_json::from_str(&format!("{base_json}}}"))?;
+        assert_eq!(missing_state.wallet_pubkey, None);
+        let serialized_missing = serde_json::to_string(&missing_state)?;
+        assert!(!serialized_missing.contains("wallet_pubkey"));
+
+        // Explicit null -> Some(None) (immutable deployment)
+        let null_state: DeployState =
+            serde_json::from_str(&format!("{base_json}, \"wallet_pubkey\": null}}"))?;
+        assert_eq!(null_state.wallet_pubkey, Some(None));
+        let serialized_null = serde_json::to_string(&null_state)?;
+        assert!(serialized_null.contains(r#""wallet_pubkey":null"#));
+
+        // Explicit string -> Some(Some(pubkey)) (wallet-bound deployment)
+        let wallet_state: DeployState =
+            serde_json::from_str(&format!("{base_json}, \"wallet_pubkey\": \"wallet_abc\"}}"))?;
+        assert_eq!(wallet_state.wallet_pubkey, Some(Some("wallet_abc".to_string())));
+        let serialized_wallet = serde_json::to_string(&wallet_state)?;
+        assert!(serialized_wallet.contains(r#""wallet_pubkey":"wallet_abc""#));
+
         Ok(())
     }
 
@@ -377,6 +445,8 @@ mod tests {
 
         fn exercise_chunk_writer<S: ChunkWriterState>(state: &mut S, path: &Path) -> Result<()> {
             assert_eq!(state.written_chunks(), 10);
+            assert_eq!(state.program_hash(), "hash");
+            assert_eq!(state.chunk_size(), 900);
             state.set_written_chunks(25);
             assert_eq!(state.written_chunks(), 25);
             state.save(path)
@@ -413,6 +483,32 @@ mod tests {
         assert!(
             res.is_err(),
             "UpgradeState must reject DeployState missing program and program_data_slot_at_start"
+        );
+
+        fs::remove_file(&temp_file)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_deploy_state_load_rejects_upgrade_state_json() -> Result<()> {
+        let upgrade_json = r#"{
+            "program": "Base58ProgramPubkey1111111111111111111111111",
+            "buffer_keypair": [1, 2],
+            "written_chunks": 5,
+            "kora_pubkey": "Base58KoraPubkey111111111111111111111111111",
+            "program_hash": "dummy_hash",
+            "chunk_size": 900,
+            "program_data_slot_at_start": 42
+        }"#;
+
+        let temp_file =
+            temp_dir().join(format!("kora-cross-state-deploy-test-{}.json", Pubkey::new_unique()));
+        fs::write(&temp_file, upgrade_json)?;
+
+        let res = DeployState::load(&temp_file);
+        assert!(
+            res.is_err(),
+            "DeployState must reject UpgradeState missing program_keypair and program_data"
         );
 
         fs::remove_file(&temp_file)?;
