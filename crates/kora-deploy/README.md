@@ -36,23 +36,26 @@ Flags:
 | `--user-id` | random per run | Tag the paymaster buckets by for usage limits |
 | `--wallet` | `~/.config/solana/id.json` | Owner wallet registered for upgrades; without one the program is immutable |
 | `--program-id` | _(none)_ | Existing program to upgrade; omit to deploy fresh |
-| `--resume` | `false` | Resume a previous deployment from the local `.kora-deploy-state.json` file |
+| `--resume` | `false` | Resume a previous deployment or upgrade from the local state file |
 | `--no-cleanup-on-failure` | `false` | Do not close the buffer on failure, leaving it open so you can `--resume` later |
+| `--state-path` | `.(kora-deploy\|kora-upgrade)-state.json` | Custom path for the deployment or upgrade state file |
 
-## Recovering from a failed deploy
+## Recovering from a failed deploy or upgrade
 
-When you start a fresh deployment, `kora-deploy` writes a `.kora-deploy-state.json`
-file to your directory. This stores the program and buffer keypairs required to
-deploy your code. If deployment succeeds, the file is automatically removed.
-If it fails (e.g., timeout or rate limit), the file remains for recovery.
+When you start a fresh deployment, `kora-deploy` writes
+`.kora-deploy-state.json`; for an upgrade, it writes
+`.kora-upgrade-state.json`. These store the buffer keypair and progress
+required to resume. If the operation succeeds, the file is automatically
+removed. When `--no-cleanup-on-failure` is active (or if buffer reclamation
+fails), the file remains for recovery.
 
 **Normal Resume Flow**:
 Run the exact same `kora-deploy` command but add the `--resume` flag.
-It reads `.kora-deploy-state.json`, skips already-written chunks,
-and continues where it left off.
+It reads the state file, skips already-written chunks, and continues
+where it left off.
 
 **Cleanup on Failure**:
-By default, failed or interrupted deploys automatically close the buffer
+By default, failed or interrupted runs automatically close the buffer
 to return rent to the paymaster. This prevents you from resuming.
 If you anticipate connection issues, pass `--no-cleanup-on-failure`
 on your initial run to leave the buffer open for `--resume`.
@@ -61,7 +64,7 @@ on your initial run to leave the buffer open for `--resume`.
 If you recompile your `.so` file before resuming, the hashes won't match.
 `kora-deploy` will refuse to resume to prevent corrupted data.
 Either restore the original `.so` file, or delete the state file
-and start a fresh deploy.
+and start over.
 
 **Manual Recovery / Deploy Timeout**:
 Rarely, the final transaction might time out, leaving an ambiguous state.
