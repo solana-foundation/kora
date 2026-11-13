@@ -80,7 +80,7 @@ config = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 prometheus = { workspace = true }
-regex = "1.11.1"
+regex = { workspace = true }
 subtle = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
