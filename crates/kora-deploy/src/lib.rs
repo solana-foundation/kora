@@ -363,8 +363,6 @@ async fn load_or_init_deploy_state(
         let program = Keypair::new();
         let buffer = Keypair::new();
 
-        create_buffer_account(ctx, &kora_pubkey, &buffer, bytes.len()).await?;
-
         let program_data = derive_program_data_address(&program.pubkey());
         let new_state = DeployState {
             program_keypair: program.to_bytes().to_vec(),
@@ -376,21 +374,21 @@ async fn load_or_init_deploy_state(
             chunk_size: WRITE_CHUNK_SIZE,
             wallet_pubkey: Some(wallet.map(|w| w.pubkey().to_string())),
         };
-        if let Err(e) = new_state.save(state_path) {
-            // Without the state file, the buffer keypair cannot be recovered on failure.
+        new_state.save(state_path).context("failed to save initial deploy state")?;
+
+        if let Err(e) = create_buffer_account(ctx, &kora_pubkey, &buffer, bytes.len()).await {
             cleanup_buffer!(
-                true,
-                "failed to save initial state",
+                false,
+                "failed to create buffer account",
                 |err| log::warn!(
-                    "failed to close buffer: {}; please manually close the buffer with pubkey {}",
-                    err,
-                    buffer.pubkey()
+                    "failed to close buffer: {}; keeping state file for manual recovery",
+                    err
                 ),
                 ctx,
                 &buffer,
                 &kora_pubkey
             );
-            return Err(e.context("failed to save initial deploy state"));
+            return Err(e.context("failed to create buffer account"));
         }
 
         Ok((program, buffer, program_data, kora_pubkey, new_state))
@@ -582,8 +580,6 @@ async fn load_or_init_upgrade_state(
         }
 
         let buffer = Keypair::new();
-        create_buffer_account(ctx, &kora_pubkey, &buffer, bytes.len()).await?;
-
         let new_state = UpgradeState {
             program: program.to_string(),
             buffer_keypair: buffer.to_bytes().to_vec(),
@@ -593,21 +589,21 @@ async fn load_or_init_upgrade_state(
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start,
         };
-        if let Err(e) = new_state.save(state_path) {
-            // Without the state file, the buffer keypair cannot be recovered on failure.
+        new_state.save(state_path).context("failed to save initial upgrade state")?;
+
+        if let Err(e) = create_buffer_account(ctx, &kora_pubkey, &buffer, bytes.len()).await {
             cleanup_buffer!(
-                true,
-                "failed to save initial state",
+                false,
+                "failed to create buffer account",
                 |err| log::warn!(
-                    "failed to close buffer: {}; please manually close the buffer with pubkey {}",
-                    err,
-                    buffer.pubkey()
+                    "failed to close buffer: {}; keeping state file for manual recovery",
+                    err
                 ),
                 ctx,
                 &buffer,
                 &kora_pubkey
             );
-            return Err(e.context("failed to save initial upgrade state"));
+            return Err(e.context("failed to create buffer account"));
         }
 
         Ok(Some((buffer, kora_pubkey, new_state)))
@@ -811,6 +807,12 @@ async fn check_upgrade_already_landed(
         log::info!("Program {program} is already upgraded, skipping upgrade transaction.");
         remove_state_file_on_success(ctx.state_path, "Upgrade");
         Ok(true)
+    } else if state.written_chunks == 0 {
+        bail!(
+            "Buffer {} was not found on-chain. Since no chunks were written, please delete {} to start over.",
+            buffer.pubkey(),
+            ctx.state_path.display()
+        );
     } else {
         bail!(
             "Buffer {} is gone, but ProgramData {program_data} does not contain the expected binary. \
@@ -1209,7 +1211,7 @@ async fn submit_returning_signature(
         .error_for_status()?
         .json()
         .await?;
-    if let Some(err) = resp.get("error") {
+    if let Some(err) = resp.get("error").filter(|e| !e.is_null()) {
         bail!("Kora rejected: {err}");
     }
     let sig_str = resp["result"]["signature"]
@@ -1503,7 +1505,7 @@ mod inline_tests {
     }
 
     #[tokio::test]
-    async fn test_load_or_init_deploy_state_save_failure_triggers_forced_cleanup() {
+    async fn test_load_or_init_deploy_state_save_failure_aborts_before_buffer_creation() {
         let mut kora_server = mockito::Server::new_async().await;
         let kora_url = kora_server.url();
         let payer_mock = mock_get_payer_signer(&mut kora_server, &Pubkey::new_unique().to_string())
@@ -1512,13 +1514,9 @@ mod inline_tests {
         let sign_mock =
             mock_sign_and_send_success(&mut kora_server, &Signature::new_unique().to_string())
                 .await
-                .expect(2);
+                .expect(0);
 
-        let mock_rpc = DeployRpcMockBuilder::new()
-            .with_minimum_balance_for_rent_exemption(1_000_000)
-            .with_blockhash()
-            .with_signature_status(10)
-            .build();
+        let mock_rpc = DeployRpcMockBuilder::new().build();
 
         let state_path = std::env::temp_dir()
             .join(format!("kora-deploy-test-nonexistent-dir-{}", Pubkey::new_unique()))
@@ -1552,6 +1550,60 @@ mod inline_tests {
         if let Some(parent) = state_path.parent() {
             let _ = std::fs::remove_dir(parent);
         }
+    }
+
+    #[tokio::test]
+    async fn test_load_or_init_deploy_state_buffer_creation_failure_triggers_cleanup() {
+        let mut kora_server = mockito::Server::new_async().await;
+        let kora_url = kora_server.url();
+        let payer_mock = mock_get_payer_signer(&mut kora_server, &Pubkey::new_unique().to_string())
+            .await
+            .expect(1);
+        let create_fail_mock =
+            mock_sign_and_send_error(&mut kora_server, 1, "simulated buffer creation timeout")
+                .await
+                .expect(1);
+        let cleanup_close_mock =
+            mock_sign_and_send_success(&mut kora_server, &Signature::new_unique().to_string())
+                .await
+                .expect(1);
+
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_minimum_balance_for_rent_exemption(1_000_000)
+            .with_blockhash()
+            .with_signature_status(10)
+            .build();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-deploy-test-create-fail-{}.json", Pubkey::new_unique()));
+
+        let cfg = DeployConfig {
+            kora_url: &kora_url,
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            wallet: None,
+            resume: false,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+
+        let res = load_or_init_deploy_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", cfg.wallet).await;
+        match res {
+            Err(e) => {
+                let err_msg = e.to_string();
+                assert!(err_msg.contains("failed to create buffer account"));
+            }
+            Ok(_) => panic!("Expected an error"),
+        }
+
+        payer_mock.assert_async().await;
+        create_fail_mock.assert_async().await;
+        cleanup_close_mock.assert_async().await;
+
+        let _ = std::fs::remove_file(&state_path);
     }
 
     #[tokio::test]
@@ -2566,7 +2618,7 @@ mod inline_tests {
     }
 
     #[tokio::test]
-    async fn test_load_or_init_upgrade_state_save_failure_triggers_forced_cleanup() {
+    async fn test_load_or_init_upgrade_state_save_failure_aborts_before_buffer_creation() {
         let mut kora_server = mockito::Server::new_async().await;
         let kora_url = kora_server.url();
         let payer_mock = mock_get_payer_signer(&mut kora_server, &Pubkey::new_unique().to_string())
@@ -2575,15 +2627,12 @@ mod inline_tests {
         let sign_mock =
             mock_sign_and_send_success(&mut kora_server, &Signature::new_unique().to_string())
                 .await
-                .expect(2);
+                .expect(0);
 
         let program = Pubkey::new_unique();
         let upgrade_authority = Pubkey::new_unique();
         let mock_rpc = DeployRpcMockBuilder::new()
             .with_program_data_account(77, Some(&upgrade_authority), &[9, 9, 9, 9, 9])
-            .with_minimum_balance_for_rent_exemption(1_000_000)
-            .with_blockhash()
-            .with_signature_status(10)
             .build();
 
         let state_path = std::env::temp_dir()
@@ -2619,6 +2668,64 @@ mod inline_tests {
         if let Some(parent) = state_path.parent() {
             let _ = std::fs::remove_dir(parent);
         }
+    }
+
+    #[tokio::test]
+    async fn test_load_or_init_upgrade_state_buffer_creation_failure_triggers_cleanup() {
+        let mut kora_server = mockito::Server::new_async().await;
+        let kora_url = kora_server.url();
+        let payer_mock = mock_get_payer_signer(&mut kora_server, &Pubkey::new_unique().to_string())
+            .await
+            .expect(1);
+        let create_fail_mock =
+            mock_sign_and_send_error(&mut kora_server, 1, "simulated buffer creation timeout")
+                .await
+                .expect(1);
+        let cleanup_close_mock =
+            mock_sign_and_send_success(&mut kora_server, &Signature::new_unique().to_string())
+                .await
+                .expect(1);
+
+        let program = Pubkey::new_unique();
+        let upgrade_authority = Pubkey::new_unique();
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_program_data_account(77, Some(&upgrade_authority), &[9, 9, 9, 9, 9])
+            .with_minimum_balance_for_rent_exemption(1_000_000)
+            .with_blockhash()
+            .with_signature_status(10)
+            .build();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-upgrade-test-create-fail-{}.json", Pubkey::new_unique()));
+
+        let cfg = UpgradeConfig {
+            kora_url: &kora_url,
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            program,
+            wallet: &Keypair::new(),
+            resume: false,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
+
+        let res = load_or_init_upgrade_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", &program).await;
+        match res {
+            Err(e) => {
+                let err_msg = e.to_string();
+                assert!(err_msg.contains("failed to create buffer account"));
+            }
+            Ok(_) => panic!("Expected an error"),
+        }
+
+        payer_mock.assert_async().await;
+        create_fail_mock.assert_async().await;
+        cleanup_close_mock.assert_async().await;
+
+        let _ = std::fs::remove_file(&state_path);
     }
 
     #[tokio::test]
@@ -3078,6 +3185,76 @@ mod inline_tests {
 
         let _ = std::fs::remove_file(&program_so);
         let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[tokio::test]
+    async fn test_upgrade_resume_zero_chunks_buffer_not_found_bails_with_delete_instruction() {
+        let program = Pubkey::new_unique();
+        let wallet = Keypair::new();
+        let buffer = Keypair::new();
+        let kora_keypair = Keypair::new();
+        let kora_pubkey = kora_keypair.pubkey();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-upgrade-zero-chunks-state-{}.json", Pubkey::new_unique()));
+
+        let elf_bytes = vec![0xCA; 100];
+        let current_program_hash = hash(&elf_bytes).to_string();
+
+        let initial_state = UpgradeState {
+            program: program.to_string(),
+            buffer_keypair: buffer.to_bytes().to_vec(),
+            written_chunks: 0,
+            kora_pubkey: kora_pubkey.to_string(),
+            program_hash: current_program_hash,
+            chunk_size: WRITE_CHUNK_SIZE,
+            program_data_slot_at_start: 42,
+        };
+        initial_state.save(&state_path).unwrap();
+
+        let mut server = mockito::Server::new_async().await;
+        let no_call_mock =
+            mock_sign_and_send_success(&mut server, &Signature::new_unique().to_string())
+                .await
+                .expect(0);
+
+        let different_elf_bytes = vec![0xFE; 100];
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_registry_account(&DEFAULT_REGISTRY_PROGRAM, &wallet.pubkey())
+            .with_account_not_found()
+            .with_program_data_account(50, Some(&kora_pubkey), &different_elf_bytes)
+            .build();
+
+        let program_so = std::env::temp_dir()
+            .join(format!("kora-upgrade-zero-chunks-so-{}.so", Pubkey::new_unique()));
+        std::fs::write(&program_so, &elf_bytes).unwrap();
+
+        let cfg = UpgradeConfig {
+            kora_url: &server.url(),
+            rpc_url: "unused",
+            program_so: &program_so,
+            user_id: "test-user".to_string(),
+            program,
+            wallet: &wallet,
+            resume: true,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
+
+        let res = upgrade_inner(&ctx, &cfg).await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("Buffer"));
+        assert!(err_msg.contains("was not found on-chain"));
+        assert!(err_msg.contains("Since no chunks were written, please delete"));
+        assert!(state_path.exists(), "State file should be preserved on error");
+
+        no_call_mock.assert_async().await;
+        let _ = std::fs::remove_file(&state_path);
+        let _ = std::fs::remove_file(&program_so);
     }
 
     #[tokio::test]
