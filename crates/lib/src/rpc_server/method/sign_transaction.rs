@@ -63,14 +63,9 @@ pub async fn sign_transaction(
     let fee_payer = signer.pubkey();
 
     let sig_verify = request.sig_verify || config.kora.force_sig_verify;
-    let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
-        &transaction,
-        config,
-        rpc_client,
-        sig_verify,
-        None,
-    )
-    .await?;
+    let mut resolved_transaction =
+        VersionedTransactionResolved::from_transaction(&transaction, rpc_client, sig_verify)
+            .await?;
 
     UsageTracker::check_transaction_usage_limit(
         config,
@@ -104,22 +99,24 @@ mod tests {
                 setup_or_get_test_usage_limiter, RpcMockBuilder,
             },
             config_mock::ConfigMockBuilder,
-            transaction_mock::create_mock_encoded_transaction,
+            transaction_mock::{
+                create_mock_encoded_legacy_transaction, create_mock_encoded_transaction,
+                create_test_message,
+            },
         },
         transaction::TransactionUtil,
     };
     use serial_test::serial;
     use solana_compute_budget_interface::ComputeBudgetInstruction;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::pubkey::Pubkey;
-    use solana_transaction::versioned::TransactionVersion;
     use std::str::FromStr;
 
     fn create_compute_budget_only_encoded_transaction() -> String {
-        let message = VersionedMessage::Legacy(Message::new(
+        let message = create_test_message(
+            &Pubkey::new_unique(),
             &[ComputeBudgetInstruction::set_compute_unit_limit(200_000)],
-            Some(&Pubkey::new_unique()),
-        ));
+        );
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
@@ -201,17 +198,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sign_transaction_rejects_disallowed_transaction_version() {
-        let _m = ConfigMockBuilder::new()
-            .with_allowed_transaction_versions(vec![TransactionVersion::Number(0)])
-            .build_and_setup();
+    async fn test_sign_transaction_rejects_legacy_transaction() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
         let _ = setup_or_get_test_signer();
         let _ = setup_or_get_test_usage_limiter().await;
 
         let rpc_client = Arc::new(RpcMockBuilder::new().with_simulation().build());
 
         let request = SignTransactionRequest {
-            transaction: create_mock_encoded_transaction(),
+            transaction: create_mock_encoded_legacy_transaction(),
             signer_key: None,
             sig_verify: false,
             user_id: None,
@@ -221,7 +216,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err(),
-            KoraError::InvalidTransaction("Transaction version is not allowed".to_string())
+            KoraError::InvalidTransaction("Only V1 transactions are supported".to_string())
         );
     }
 }

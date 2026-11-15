@@ -66,14 +66,9 @@ pub async fn estimate_transaction_fee(
     let fee_payer = signer.pubkey();
 
     let sig_verify = request.sig_verify || config.kora.force_sig_verify;
-    let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
-        &transaction,
-        config,
-        rpc_client,
-        sig_verify,
-        None,
-    )
-    .await?;
+    let mut resolved_transaction =
+        VersionedTransactionResolved::from_transaction(&transaction, rpc_client, sig_verify)
+            .await?;
 
     let fee_calculation = FeeConfigUtil::estimate_kora_fee(
         &mut resolved_transaction,

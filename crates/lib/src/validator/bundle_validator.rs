@@ -266,14 +266,17 @@ impl BundleValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{config_mock::ConfigMockBuilder, rpc_mock::RpcMockBuilder};
+    use crate::tests::{
+        config_mock::ConfigMockBuilder, rpc_mock::RpcMockBuilder,
+        transaction_mock::create_test_message,
+    };
     use serde_json::json;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_system_interface::instruction::transfer;
 
     fn make_test_transaction(fee_payer: &Pubkey) -> String {
         let instruction = transfer(fee_payer, &Pubkey::new_unique(), 1_000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(fee_payer)));
+        let message = create_test_message(fee_payer, &[instruction]);
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
     }

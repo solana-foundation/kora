@@ -13,6 +13,7 @@ import {
     type KeyPairSigner,
     partiallySignTransaction,
     pipe,
+    setTransactionMessageConfig,
     setTransactionMessageFeePayerSigner,
     setTransactionMessageLifetimeUsingBlockhash,
     type TransactionSigner,
@@ -54,8 +55,13 @@ async function main() {
     const buildMessage = async () => {
         const { blockhash } = await client.getBlockhash();
         return pipe(
-            createTransactionMessage({ version: 0 }),
+            createTransactionMessage({ version: 1 }),
             tx => setTransactionMessageFeePayerSigner(feePayer, tx),
+            tx =>
+                setTransactionMessageConfig(
+                    { computeUnitLimit: 200_000, loadedAccountsDataSizeLimit: 64 * 1024 * 1024 },
+                    tx,
+                ),
             tx =>
                 setTransactionMessageLifetimeUsingBlockhash(
                     { blockhash: blockhash as Blockhash, lastValidBlockHeight: BigInt(Number.MAX_SAFE_INTEGER) },

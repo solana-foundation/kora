@@ -32,7 +32,6 @@ import {
     RpcSubscriptions,
     Rpc,
     SolanaRpcSubscriptionsApi,
-    MicroLamports,
     Commitment,
     Signature,
     signTransactionMessageWithSigners,
@@ -46,13 +45,10 @@ import {
     assertIsTransactionWithBlockhashLifetime,
     TransactionMessageWithSigners,
     TransactionMessageWithFeePayer,
+    fillTransactionMessageProvisoryResourceLimits,
+    estimateAndSetResourceLimitsFactory,
+    estimateResourceLimitsFactory,
 } from "@solana/kit";
-import {
-    updateOrAppendSetComputeUnitLimitInstruction,
-    updateOrAppendSetComputeUnitPriceInstruction,
-    MAX_COMPUTE_UNIT_LIMIT,
-    estimateComputeUnitLimitFactory
-} from "@solana-program/compute-budget";
 import { appendFile } from 'fs/promises';
 import path from "path";
 import dotenv from "dotenv";
@@ -71,18 +67,15 @@ interface Client {
 export const createDefaultTransaction = async (
     client: Client,
     feePayer: TransactionSigner,
-    computeLimit: number = MAX_COMPUTE_UNIT_LIMIT,
-    feeMicroLamports: MicroLamports = 1n as MicroLamports
 ): Promise<TransactionMessage & TransactionMessageWithFeePayer & TransactionMessageWithSigners> => {
     const { value: latestBlockhash } = await client.rpc
         .getLatestBlockhash()
         .send();
     return pipe(
-        createTransactionMessage({ version: 0 }),
+        createTransactionMessage({ version: 1 }),
         (tx) => setTransactionMessageFeePayerSigner(feePayer, tx),
         (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
-        (tx) => updateOrAppendSetComputeUnitPriceInstruction(feeMicroLamports, tx),
-        (tx) => updateOrAppendSetComputeUnitLimitInstruction(computeLimit, tx),
+        (tx) => fillTransactionMessageProvisoryResourceLimits(tx),
     );
 };
 
@@ -109,17 +102,13 @@ async function sendAndConfirmInstructions(
     description: string
 ): Promise<Signature> {
     try {
-        const simulationTx = await pipe(
-            await createDefaultTransaction(client, payer),
-            (tx) => appendTransactionMessageInstructions(instructions, tx),
+        const estimateAndSetResourceLimits = estimateAndSetResourceLimitsFactory(
+            estimateResourceLimitsFactory({ rpc: client.rpc }),
         );
-        const estimateCompute = estimateComputeUnitLimitFactory({ rpc: client.rpc });
-        const computeUnitLimit = await estimateCompute(simulationTx);
-        const signature = await pipe(
-            await createDefaultTransaction(client, payer, computeUnitLimit),
-            (tx) => appendTransactionMessageInstructions(instructions, tx),
-            (tx) => signAndSendTransaction(client, tx)
+        const transactionMessage = await estimateAndSetResourceLimits(
+            appendTransactionMessageInstructions(instructions, await createDefaultTransaction(client, payer)),
         );
+        const signature = await signAndSendTransaction(client, transactionMessage);
         console.log(`    - ${description} - Signature: ${signature}`);
 
         return signature;
@@ -298,12 +287,12 @@ async function main() {
     // 3 - Airdrop SOL to test sender and kora wallets
     await Promise.all([
         airdrop({
-            commitment: 'processed',
+            commitment: 'confirmed',
             lamports: lamports(LAMPORTS_PER_SOL),
             recipientAddress: KORA_PRIVATE_KEY.address
         }),
         airdrop({
-            commitment: 'processed',
+            commitment: 'confirmed',
             lamports: lamports(LAMPORTS_PER_SOL),
             recipientAddress: TEST_SENDER_KEYPAIR.address
         }),

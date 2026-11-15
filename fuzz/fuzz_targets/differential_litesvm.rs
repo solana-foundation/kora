@@ -1,4 +1,5 @@
 #![no_main]
+#![recursion_limit = "256"]
 
 use std::{cell::RefCell, collections::HashMap, sync::LazyLock};
 
@@ -20,7 +21,7 @@ use solana_client::{
     rpc_request::RpcRequest,
     rpc_sender::{RpcSender, RpcTransportStats},
 };
-use solana_message::{inner_instruction::InnerInstruction, VersionedMessage};
+use solana_message::inner_instruction::InnerInstruction;
 use solana_nonce::{
     state::{Data, DurableNonce, State},
     versions::Versions,
@@ -44,8 +45,6 @@ const WALLET_LAMPORTS: u64 = 1_000_000_000;
 const TOKEN_AMOUNT: u64 = 1_000_000_000;
 const MINT_DECIMALS: u8 = 6;
 const LAMPORTS_PER_SIGNATURE: u64 = 5_000;
-const COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
-const LOADED_ACCOUNTS_DATA_SIZE_LIMIT: u32 = 64 * 1024 * 1024;
 const FREEZE_ACCOUNT_TAG: u8 = 10;
 const BATCH_TAG: u8 = 255;
 
@@ -398,13 +397,9 @@ fuzz_target!(|input: Input| {
     if instructions.is_empty() {
         return;
     }
-    let Some(mut transaction) = scenario.transaction(&instructions) else {
+    let Some(transaction) = scenario.transaction(&instructions) else {
         return;
     };
-    if let VersionedMessage::V1(message) = &mut transaction.message {
-        message.config.compute_unit_limit = Some(COMPUTE_UNIT_LIMIT);
-        message.config.loaded_accounts_data_size_limit = Some(LOADED_ACCOUNTS_DATA_SIZE_LIMIT);
-    }
 
     let mut svm = BASE_SVM.with(|svm| svm.borrow().clone());
     let fee_payer =
@@ -435,14 +430,8 @@ fuzz_target!(|input: Input| {
         RpcClientConfig::default(),
     );
     let accepted = RUNTIME.block_on(async {
-        let Ok(mut resolved) = VersionedTransactionResolved::from_transaction(
-            &transaction,
-            &config,
-            &rpc_client,
-            false,
-            None,
-        )
-        .await
+        let Ok(mut resolved) =
+            VersionedTransactionResolved::from_transaction(&transaction, &rpc_client, false).await
         else {
             return false;
         };

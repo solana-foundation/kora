@@ -79,16 +79,15 @@ mod tests {
         tests::{
             common::{setup_or_get_test_signer, setup_or_get_test_usage_limiter, RpcMockBuilder},
             config_mock::{mock_state::setup_config_mock, ConfigMockBuilder},
-            transaction_mock::create_mock_encoded_transaction,
+            transaction_mock::{create_mock_encoded_legacy_transaction, create_test_message},
         },
         transaction::TransactionUtil,
     };
     use mockito::{Matcher, Server};
     use serde_json::json;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::pubkey::Pubkey;
     use solana_system_interface::instruction::transfer;
-    use solana_transaction::versioned::TransactionVersion;
 
     #[tokio::test]
     async fn test_sign_and_send_bundle_empty_bundle() {
@@ -238,15 +237,14 @@ mod tests {
         let make_non_signed_tx = || {
             let payer = Pubkey::new_unique();
             let ix = transfer(&payer, &Pubkey::new_unique(), 1000000000);
-            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer)));
+            let message = create_test_message(&payer, &[ix]);
             let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
             TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
         };
 
         // Signed transaction (index 1) uses the signer_pubkey as fee payer
         let signed_ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1000000000);
-        let signed_message =
-            VersionedMessage::Legacy(Message::new(&[signed_ix], Some(&signer_pubkey)));
+        let signed_message = create_test_message(&signer_pubkey, &[signed_ix]);
         let signed_transaction =
             TransactionUtil::new_unsigned_versioned_transaction(signed_message);
         let signed_encoded =
@@ -313,14 +311,13 @@ mod tests {
         let make_non_signed_tx = || {
             let payer = Pubkey::new_unique();
             let ix = transfer(&payer, &Pubkey::new_unique(), 1_000_000_000);
-            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer)));
+            let message = create_test_message(&payer, &[ix]);
             let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
             TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
         };
 
         let signed_ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1_000_000_000);
-        let signed_message =
-            VersionedMessage::Legacy(Message::new(&[signed_ix], Some(&signer_pubkey)));
+        let signed_message = create_test_message(&signer_pubkey, &[signed_ix]);
         let signed_transaction =
             TransactionUtil::new_unsigned_versioned_transaction(signed_message);
         let signed_encoded =
@@ -444,7 +441,7 @@ mod tests {
         // process_bundle passes; the Jito simulation mock returns a large lamport drop
         // for the fee payer account, which exceeds max_allowed_lamports.
         let ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1_000_000_000);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&signer_pubkey)));
+        let message = create_test_message(&signer_pubkey, &[ix]);
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let encoded = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
 
@@ -466,18 +463,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sign_and_send_bundle_rejects_disallowed_transaction_version() {
-        let _m = ConfigMockBuilder::new()
-            .with_bundle_enabled(true)
-            .with_allowed_transaction_versions(vec![TransactionVersion::Number(0)])
-            .build_and_setup();
+    async fn test_sign_and_send_bundle_rejects_legacy_transaction() {
+        let _m = ConfigMockBuilder::new().with_bundle_enabled(true).build_and_setup();
         let _ = setup_or_get_test_signer();
         let _ = setup_or_get_test_usage_limiter().await;
 
         let rpc_client = Arc::new(RpcMockBuilder::new().with_simulation().build());
 
         let request = SignAndSendBundleRequest {
-            transactions: vec![create_mock_encoded_transaction()],
+            transactions: vec![create_mock_encoded_legacy_transaction()],
             signer_key: None,
             sig_verify: false,
             user_id: None,
@@ -488,7 +482,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err(),
-            KoraError::InvalidTransaction("Transaction version is not allowed".to_string())
+            KoraError::InvalidTransaction("Only V1 transactions are supported".to_string())
         );
     }
 }

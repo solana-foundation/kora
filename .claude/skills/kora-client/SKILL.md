@@ -8,7 +8,9 @@ description: "Kora TypeScript SDK and JSON-RPC API integration for Solana gasles
 Kora is a Solana paymaster: users pay fees in SPL tokens (e.g. USDC) instead of SOL.
 
 **Docs**: https://launch.solana.com/docs/kora/ · **SDK**: `@solana/kora` (npm)
-**Peer deps**: `@solana/kit` v6+, `@solana-program/token` v0.10+
+**Peer deps**: `@solana/kit` v8.5+, `@solana-program/token` v0.17+
+**Transactions**: V1 only (`createTransactionMessage({ version: 1 })`); legacy and V0 are rejected. Set
+`computeUnitLimit` and `loadedAccountsDataSizeLimit` in the message config, since an unset limit is zero.
 
 ## Where things are
 

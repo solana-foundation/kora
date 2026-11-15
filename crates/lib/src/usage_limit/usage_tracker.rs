@@ -426,14 +426,16 @@ mod tests {
     use crate::{
         config::SplTokenConfig,
         tests::{
-            account_mock::create_mock_token_account, config_mock::ConfigMockBuilder,
-            rpc_mock::RpcMockBuilder, transaction_mock::create_mock_resolved_transaction,
+            account_mock::create_mock_token_account,
+            config_mock::ConfigMockBuilder,
+            rpc_mock::RpcMockBuilder,
+            transaction_mock::{create_mock_resolved_transaction, create_test_message},
         },
         transaction::TransactionUtil,
         usage_limit::{InMemoryUsageStore, UsageLimitConfig, UsageLimitRuleConfig},
     };
     use async_trait::async_trait;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         account::Account, instruction::Instruction, signature::Keypair, signer::Signer,
     };
@@ -866,9 +868,9 @@ mod tests {
                 0,
                 &solana_system_interface::program::ID,
             );
-            let message = Message::new(&[create_ix], Some(&signer_a.pubkey()));
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(VersionedMessage::Legacy(
-                message,
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(create_test_message(
+                &signer_a.pubkey(),
+                &[create_ix],
             ))
             .unwrap()
         };
@@ -960,8 +962,7 @@ mod tests {
         signing_keypairs: &[&Keypair],
         fee_payer: &Keypair,
     ) -> VersionedTransactionResolved {
-        let message =
-            VersionedMessage::Legacy(Message::new(instructions, Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), instructions);
         let mut tx = TransactionUtil::new_unsigned_versioned_transaction(message);
         let message_bytes = tx.message.serialize();
 

@@ -9,7 +9,7 @@ use crate::{
         spl_token_2022::Token2022Mint,
         token::{TokenType, TokenUtil, TransferHookValidationFlow},
     },
-    transaction::{VersionedTransactionOps, VersionedTransactionResolved},
+    transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
 };
 use solana_sdk::instruction::Instruction;
 
@@ -19,10 +19,6 @@ use crate::cache::CacheUtil;
 #[cfg(test)]
 use crate::tests::cache_mock::MockCacheUtil as CacheUtil;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableMessage};
-use solana_compute_budget::compute_budget_limits::{
-    ComputeBudgetLimits, DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT, MAX_COMPUTE_UNIT_LIMIT,
-};
-use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
 
@@ -159,9 +155,9 @@ impl FeeConfigUtil {
         config: &Config,
         bundle_instructions: Option<&[Instruction]>,
     ) -> Result<TotalFeeCalculation, KoraError> {
-        // Get base transaction fee using resolved transaction to handle lookup tables
         let base_fee =
-            TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, transaction).await?;
+            TransactionFeeUtil::get_estimate_fee(rpc_client, &transaction.transaction.message)
+                .await?;
 
         // If the Kora signer is not included in the signers, add LAMPORTS_PER_SIGNATURE
         let mut kora_signature_fee = 0u64;
@@ -324,77 +320,11 @@ impl TransactionFeeUtil {
         rpc_client: &RpcClient,
         message: &VersionedMessage,
     ) -> Result<u64, KoraError> {
-        match message {
-            VersionedMessage::Legacy(message) => rpc_client.get_fee_for_message(message).await,
-            VersionedMessage::V0(message) => rpc_client.get_fee_for_message(message).await,
-            VersionedMessage::V1(message) => {
-                rpc_client.get_fee_for_message(&V1FeeMessage(message)).await
-            }
-        }
-        .map_err(|e| KoraError::RpcError(e.to_string()))
-    }
-
-    /// Get fee estimate for a resolved transaction, handling V0 transactions with lookup tables
-    pub async fn get_estimate_fee_resolved(
-        rpc_client: &RpcClient,
-        resolved_transaction: &VersionedTransactionResolved,
-    ) -> Result<u64, KoraError> {
-        Self::get_estimate_fee(rpc_client, &resolved_transaction.transaction.message).await
-    }
-
-    /// Priority fee in lamports the transaction requests: the config field for V1,
-    /// ComputeBudget price times limit for legacy/V0.
-    ///
-    /// When no SetComputeUnitLimit is present the runtime derives a default limit per
-    /// instruction, charging a builtin less than a program. Deriving it here would take the
-    /// cluster's feature set, so every instruction is billed at the higher per-instruction
-    /// default instead: an upper bound on the runtime's own default, so the cap can only
-    /// over-reject, never under.
-    ///
-    /// `account_keys` must be the resolved key list: the runtime resolves program
-    /// ids against lookup-table loaded keys too.
-    pub fn get_requested_priority_fee(message: &VersionedMessage, account_keys: &[Pubkey]) -> u64 {
-        if let VersionedMessage::V1(v1_message) = message {
-            return v1_message.config.priority_fee.unwrap_or(0);
-        }
-
-        let compute_budget_program_id = solana_compute_budget_interface::id();
-        let mut compute_unit_price: Option<u64> = None;
-        let mut compute_unit_limit: Option<u32> = None;
-        let mut non_compute_budget_instructions: u32 = 0;
-        for instruction in message.instructions() {
-            if account_keys.get(instruction.program_id_index as usize)
-                != Some(&compute_budget_program_id)
-            {
-                non_compute_budget_instructions = non_compute_budget_instructions.saturating_add(1);
-                continue;
-            }
-            match borsh::from_slice(&instruction.data) {
-                Ok(ComputeBudgetInstruction::SetComputeUnitPrice(micro_lamports)) => {
-                    compute_unit_price.get_or_insert(micro_lamports);
-                }
-                Ok(ComputeBudgetInstruction::SetComputeUnitLimit(units)) => {
-                    compute_unit_limit.get_or_insert(units);
-                }
-                _ => {}
-            }
-        }
-
-        let Some(price) = compute_unit_price.filter(|price| *price > 0) else {
-            return 0;
-        };
-
-        let default_compute_unit_limit =
-            non_compute_budget_instructions.saturating_mul(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT);
-
-        ComputeBudgetLimits {
-            compute_unit_price: price,
-            compute_unit_limit: compute_unit_limit
-                .unwrap_or(default_compute_unit_limit)
-                .min(MAX_COMPUTE_UNIT_LIMIT),
-            ..Default::default()
-        }
-        .get_prioritization_fee()
+        let message = TransactionUtil::as_v1_message(message)?;
+        rpc_client
+            .get_fee_for_message(&V1FeeMessage(message))
+            .await
+            .map_err(|e| KoraError::RpcError(e.to_string()))
     }
 }
 
@@ -416,16 +346,14 @@ mod tests {
             },
             config_mock::{mock_state::get_config, ConfigMockBuilder},
             rpc_mock::RpcMockBuilder,
-            transaction_mock::{
-                create_legacy_message, create_v0_message_with_alt_loaded_program, create_v1_message,
-            },
+            transaction_mock::create_test_message,
         },
         transaction::TransactionUtil,
     };
     use solana_address_lookup_table_interface::{
         instruction as alt_instruction, program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
     };
-    use solana_message::{v0, v1, Message, VersionedMessage};
+    use solana_message::{v1, VersionedMessage};
     use solana_sdk::{
         account::Account,
         hash::Hash,
@@ -461,7 +389,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(owner)));
+        let message = create_test_message(owner, &[transfer_ix]);
         TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
             .expect("failed to build resolved transaction")
     }
@@ -486,7 +414,7 @@ mod tests {
             )
             .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(owner)));
+        let message = create_test_message(owner, &[transfer_ix]);
         TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
             .expect("failed to build resolved transaction")
     }
@@ -502,7 +430,7 @@ mod tests {
             *lookup_table_authority,
             *recipient,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(fee_payer)));
+        let message = create_test_message(fee_payer, &[close_ix]);
         TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
             .expect("failed to build ALT close transaction")
     }
@@ -672,7 +600,7 @@ mod tests {
         let _lock =
             ConfigMockBuilder::new().with_validation(config.validation.clone()).build_and_setup();
 
-        let message = VersionedMessage::Legacy(Message::new(instructions, Some(owner)));
+        let message = create_test_message(owner, instructions);
         let mut resolved_tx = TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
             .expect("failed to build resolved transaction");
         let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(rpc_accounts);
@@ -818,7 +746,7 @@ mod tests {
             6,
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&owner)));
+        let message = create_test_message(&owner, &[transfer_ix]);
         let mut resolved_tx = TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
             .expect("failed to build resolved transaction");
 
@@ -864,14 +792,14 @@ mod tests {
     }
 
     #[test]
-    fn test_is_fee_payer_in_signers_legacy_fee_payer_is_signer() {
+    fn test_is_fee_payer_in_signers_fee_payer_is_signer() {
         let fee_payer = setup_or_get_test_signer();
         let other_signer = Keypair::new();
         let recipient = Keypair::new();
 
         let instruction = transfer(&other_signer.pubkey(), &recipient.pubkey(), 1000);
 
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
 
         let resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
@@ -880,59 +808,15 @@ mod tests {
     }
 
     #[test]
-    fn test_is_fee_payer_in_signers_legacy_fee_payer_not_signer() {
+    fn test_is_fee_payer_in_signers_fee_payer_not_signer() {
         let fee_payer_pubkey = setup_or_get_test_signer();
         let sender = Keypair::new();
         let recipient = Keypair::new();
 
         let instruction = transfer(&sender.pubkey(), &recipient.pubkey(), 1000);
 
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instruction], Some(&sender.pubkey())));
+        let message = create_test_message(&sender.pubkey(), &[instruction]);
 
-        let resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-
-        assert!(!FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction, &fee_payer_pubkey)
-            .unwrap());
-    }
-
-    #[test]
-    fn test_is_fee_payer_in_signers_v0_fee_payer_is_signer() {
-        let fee_payer = setup_or_get_test_signer();
-        let other_signer = Keypair::new();
-        let recipient = Keypair::new();
-
-        let v0_message = v0::Message::try_compile(
-            &fee_payer,
-            &[transfer(&other_signer.pubkey(), &recipient.pubkey(), 1000)],
-            &[],
-            Hash::default(),
-        )
-        .expect("Failed to compile V0 message");
-
-        let message = VersionedMessage::V0(v0_message);
-        let resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-
-        assert!(FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction, &fee_payer).unwrap());
-    }
-
-    #[test]
-    fn test_is_fee_payer_in_signers_v0_fee_payer_not_signer() {
-        let fee_payer_pubkey = setup_or_get_test_signer();
-        let sender = Keypair::new();
-        let recipient = Keypair::new();
-
-        let v0_message = v0::Message::try_compile(
-            &sender.pubkey(),
-            &[transfer(&sender.pubkey(), &recipient.pubkey(), 1000)],
-            &[],
-            Hash::default(),
-        )
-        .expect("Failed to compile V0 message");
-
-        let message = VersionedMessage::V0(v0_message);
         let resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -948,8 +832,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
 
         let transfer_instruction = transfer(&fee_payer, &recipient, 100_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -966,8 +849,7 @@ mod tests {
 
         let sender = Pubkey::new_unique();
         let transfer_instruction = transfer(&sender, &fee_payer, 50_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = get_config().unwrap();
@@ -983,8 +865,7 @@ mod tests {
 
         let other_sender = Pubkey::new_unique();
         let transfer_instruction = transfer(&other_sender, &recipient, 500_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = get_config().unwrap();
@@ -1013,8 +894,7 @@ mod tests {
             &recipient,
             150_000,
         );
-        let message =
-            VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = get_config().unwrap();
@@ -1037,8 +917,7 @@ mod tests {
             &fee_payer,
             75_000,
         );
-        let message =
-            VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = get_config().unwrap();
@@ -1064,8 +943,7 @@ mod tests {
         let new_account = Pubkey::new_unique();
         let create_instruction =
             create_account(&fee_payer, &new_account, 200_000, 100, &SYSTEM_PROGRAM_ID);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[create_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = get_config().unwrap();
@@ -1082,8 +960,7 @@ mod tests {
         let other_funder = Pubkey::new_unique();
         let create_instruction =
             create_account(&other_funder, &new_account, 1_000_000, 100, &SYSTEM_PROGRAM_ID);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[create_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = get_config().unwrap();
@@ -1118,7 +995,7 @@ mod tests {
             Some(&fee_payer),
             4096,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut resolved =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
@@ -1140,7 +1017,7 @@ mod tests {
             Some(&other_payer),
             4096,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut resolved =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
@@ -1154,7 +1031,7 @@ mod tests {
         assert_eq!(outflow, 0, "extension funded by another payer should not affect outflow");
 
         let ix = solana_loader_v3_interface::instruction::extend_program(&program, None, 4096);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut resolved =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
@@ -1183,8 +1060,7 @@ mod tests {
             100,
             &SYSTEM_PROGRAM_ID,
         );
-        let message =
-            VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[create_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = get_config().unwrap();
@@ -1211,8 +1087,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
         let withdraw_instruction =
             withdraw_nonce_account(&nonce_account, &fee_payer, &recipient, 50_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[withdraw_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = setup_or_get_test_config();
@@ -1232,8 +1107,7 @@ mod tests {
         let nonce_account = Pubkey::new_unique();
         let withdraw_instruction =
             withdraw_nonce_account(&nonce_account, &fee_payer, &fee_payer, 25_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[withdraw_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = setup_or_get_test_config();
@@ -1253,8 +1127,7 @@ mod tests {
         let other_authority = Pubkey::new_unique();
         let withdraw_instruction =
             withdraw_nonce_account(&nonce_account, &other_authority, &fee_payer, 25_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[withdraw_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = setup_or_get_test_config();
@@ -1275,8 +1148,7 @@ mod tests {
         let other_recipient = Pubkey::new_unique();
         let withdraw_instruction =
             withdraw_nonce_account(&nonce_account, &other_authority, &other_recipient, 75_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[withdraw_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = setup_or_get_test_config();
@@ -1295,8 +1167,7 @@ mod tests {
 
         let withdraw_instruction =
             withdraw_nonce_account(&fee_payer, &other_authority, &other_recipient, 60_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[withdraw_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = setup_or_get_test_config();
@@ -1456,7 +1327,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut resolved =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
@@ -1482,7 +1353,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut resolved =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
@@ -1505,7 +1376,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut resolved =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
@@ -1531,7 +1402,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut resolved =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
@@ -1605,7 +1476,7 @@ mod tests {
             transfer(&sender, &fee_payer, 30_000),
             create_account(&fee_payer, &new_account, 50_000, 100, &SYSTEM_PROGRAM_ID),
         ];
-        let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &instructions);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = get_config().unwrap();
@@ -1635,7 +1506,7 @@ mod tests {
             &[0u8],
             vec![], // no accounts needed for this test
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let config = get_config().unwrap();
@@ -1671,7 +1542,7 @@ mod tests {
                 &mint,
                 &spl_token_interface::id(),
             );
-        let message = VersionedMessage::Legacy(Message::new(&[ata_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ata_ix]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1719,8 +1590,7 @@ mod tests {
         let system_create_ix =
             create_account(&fee_payer, &ata_address, 123_456, 165, &spl_token_interface::id());
 
-        let message =
-            VersionedMessage::Legacy(Message::new(&[ata_ix, system_create_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ata_ix, system_create_ix]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1769,8 +1639,7 @@ mod tests {
                 &spl_token_interface::id(),
             );
 
-        let message =
-            VersionedMessage::Legacy(Message::new(&[ata_ix_1, ata_ix_2], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ata_ix_1, ata_ix_2]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1820,8 +1689,7 @@ mod tests {
                 &spl_token_interface::id(),
             );
 
-        let message =
-            VersionedMessage::Legacy(Message::new(&[ata_ix_a, ata_ix_b], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ata_ix_a, ata_ix_b]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1870,7 +1738,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_instruction], None));
+        let message = create_test_message(&sender.pubkey(), &[transfer_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1914,7 +1782,7 @@ mod tests {
             1000,
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_instruction], None));
+        let message = create_test_message(&sender.pubkey(), &[transfer_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1997,7 +1865,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ata_create_ix, transfer_ix], None));
+        let message = create_test_message(&sender.pubkey(), &[ata_create_ix, transfer_ix]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2029,7 +1897,7 @@ mod tests {
 
         let sol_transfer = transfer(&sender.pubkey(), &recipient, 100_000);
 
-        let message = VersionedMessage::Legacy(Message::new(&[sol_transfer], None));
+        let message = create_test_message(&sender.pubkey(), &[sol_transfer]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2073,7 +1941,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_instruction], None));
+        let message = create_test_message(&sender.pubkey(), &[transfer_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2102,10 +1970,7 @@ mod tests {
         let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(5000).build();
 
         let transfer_instruction = transfer(&fee_payer.pubkey(), &recipient, 100_000);
-        let message = VersionedMessage::Legacy(Message::new(
-            &[transfer_instruction],
-            Some(&fee_payer.pubkey()),
-        ));
+        let message = create_test_message(&fee_payer.pubkey(), &[transfer_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2136,8 +2001,7 @@ mod tests {
         let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(5000).build();
 
         let transfer_instruction = transfer(&sender.pubkey(), &recipient, 100_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&sender.pubkey())));
+        let message = create_test_message(&sender.pubkey(), &[transfer_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2173,10 +2037,7 @@ mod tests {
         let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(5000).build();
 
         let transfer_instruction = transfer(&fee_payer.pubkey(), &recipient, 100_000);
-        let message = VersionedMessage::Legacy(Message::new(
-            &[transfer_instruction],
-            Some(&fee_payer.pubkey()),
-        ));
+        let message = create_test_message(&fee_payer.pubkey(), &[transfer_instruction]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2241,7 +2102,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_1, transfer_2], None));
+        let message = create_test_message(&sender.pubkey(), &[transfer_1, transfer_2]);
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2258,49 +2119,6 @@ mod tests {
 
         assert!(has_payment, "Should detect payment instructions");
         assert_eq!(transfer_fees, 0, "Should have no transfer fees for SPL tokens");
-    }
-
-    #[tokio::test]
-    async fn test_transaction_fee_util_get_estimate_fee_legacy() {
-        let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(7500).build();
-
-        let fee_payer = Keypair::new();
-        let recipient = Pubkey::new_unique();
-        let transfer_instruction = transfer(&fee_payer.pubkey(), &recipient, 50_000);
-
-        let legacy_message = Message::new(&[transfer_instruction], Some(&fee_payer.pubkey()));
-        let versioned_message = VersionedMessage::Legacy(legacy_message);
-
-        let result = TransactionFeeUtil::get_estimate_fee(&mocked_rpc_client, &versioned_message)
-            .await
-            .unwrap();
-
-        assert_eq!(result, 7500, "Should return mocked base fee for legacy message");
-    }
-
-    #[tokio::test]
-    async fn test_transaction_fee_util_get_estimate_fee_v0() {
-        let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(12500).build();
-
-        let fee_payer = Keypair::new();
-        let recipient = Pubkey::new_unique();
-        let transfer_instruction = transfer(&fee_payer.pubkey(), &recipient, 50_000);
-
-        let v0_message = v0::Message::try_compile(
-            &fee_payer.pubkey(),
-            &[transfer_instruction],
-            &[],
-            Hash::default(),
-        )
-        .expect("Failed to compile V0 message");
-
-        let versioned_message = VersionedMessage::V0(v0_message);
-
-        let result = TransactionFeeUtil::get_estimate_fee(&mocked_rpc_client, &versioned_message)
-            .await
-            .unwrap();
-
-        assert_eq!(result, 12500, "Should return mocked base fee for V0 message");
     }
 
     #[tokio::test]
@@ -2322,173 +2140,5 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, 9000, "Should return mocked base fee for V1 message");
-    }
-
-    #[test]
-    fn test_get_requested_priority_fee_legacy_price_and_limit() {
-        let payer = Pubkey::new_unique();
-        let recipient = Pubkey::new_unique();
-        let message = create_legacy_message(
-            &payer,
-            &[
-                ComputeBudgetInstruction::set_compute_unit_limit(300_000),
-                ComputeBudgetInstruction::set_compute_unit_price(25_000),
-                transfer(&payer, &recipient, 1_000),
-            ],
-        );
-
-        assert_eq!(
-            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
-            7_500
-        );
-    }
-
-    #[test]
-    fn test_get_requested_priority_fee_rounds_up() {
-        let payer = Pubkey::new_unique();
-        let recipient = Pubkey::new_unique();
-        let message = create_legacy_message(
-            &payer,
-            &[
-                ComputeBudgetInstruction::set_compute_unit_limit(100),
-                ComputeBudgetInstruction::set_compute_unit_price(1),
-                transfer(&payer, &recipient, 1_000),
-            ],
-        );
-
-        assert_eq!(
-            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
-            1
-        );
-    }
-
-    #[test]
-    fn test_get_requested_priority_fee_price_without_limit_bills_per_instruction_default() {
-        let payer = Pubkey::new_unique();
-        let recipient = Pubkey::new_unique();
-        let message = create_legacy_message(
-            &payer,
-            &[
-                ComputeBudgetInstruction::set_compute_unit_price(2_000),
-                transfer(&payer, &recipient, 1_000),
-            ],
-        );
-
-        // The lone transfer defaults to 200_000 CU, so 2_000 micro-lamports over it = 400 lamports.
-        // Billing the 1.4M protocol maximum instead would overstate this sevenfold.
-        assert_eq!(
-            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
-            400
-        );
-    }
-
-    #[test]
-    fn test_get_requested_priority_fee_default_limit_clamps_to_protocol_maximum() {
-        let payer = Pubkey::new_unique();
-        let recipient = Pubkey::new_unique();
-        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_price(2_000)];
-        instructions.extend((0..8).map(|_| transfer(&payer, &recipient, 1_000)));
-        let message = create_legacy_message(&payer, &instructions);
-
-        // 8 instructions x 200_000 = 1.6M CU, over the 1.4M the runtime will grant,
-        // so the fee is 2_000 micro-lamports over 1.4M = 2_800 lamports.
-        assert_eq!(
-            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
-            2_800
-        );
-    }
-
-    #[test]
-    fn test_get_requested_priority_fee_zero_without_price() {
-        let payer = Pubkey::new_unique();
-        let recipient = Pubkey::new_unique();
-
-        let no_compute_budget =
-            create_legacy_message(&payer, &[transfer(&payer, &recipient, 1_000)]);
-        assert_eq!(
-            TransactionFeeUtil::get_requested_priority_fee(
-                &no_compute_budget,
-                no_compute_budget.static_account_keys()
-            ),
-            0
-        );
-
-        let zero_price = create_legacy_message(
-            &payer,
-            &[
-                ComputeBudgetInstruction::set_compute_unit_limit(300_000),
-                ComputeBudgetInstruction::set_compute_unit_price(0),
-                transfer(&payer, &recipient, 1_000),
-            ],
-        );
-        assert_eq!(
-            TransactionFeeUtil::get_requested_priority_fee(
-                &zero_price,
-                zero_price.static_account_keys()
-            ),
-            0
-        );
-    }
-
-    #[test]
-    fn test_get_requested_priority_fee_v1_reads_config() {
-        let message = create_v1_message(
-            &Pubkey::new_unique(),
-            v1::TransactionConfig::empty().with_priority_fee(1_234).with_compute_unit_limit(200),
-        );
-        assert_eq!(
-            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
-            1_234
-        );
-
-        let no_fee = create_v1_message(&Pubkey::new_unique(), v1::TransactionConfig::empty());
-        assert_eq!(
-            TransactionFeeUtil::get_requested_priority_fee(&no_fee, no_fee.static_account_keys()),
-            0
-        );
-    }
-
-    #[test]
-    fn test_get_requested_priority_fee_v1_ignores_compute_budget_instructions() {
-        let payer = Keypair::new();
-        let recipient = Pubkey::new_unique();
-        let message = v1::Message::try_compile(
-            &payer.pubkey(),
-            &[
-                ComputeBudgetInstruction::set_compute_unit_price(50_000),
-                transfer(&payer.pubkey(), &recipient, 1_000),
-            ],
-            Hash::default(),
-        )
-        .expect("Failed to compile V1 message");
-
-        // The runtime treats ComputeBudget instructions in V1 transactions as
-        // no-ops; only the config field carries the priority fee.
-        let message = VersionedMessage::V1(message);
-        assert_eq!(
-            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
-            0
-        );
-    }
-
-    #[test]
-    fn test_get_requested_priority_fee_v0_with_alt_loaded_compute_budget() {
-        let payer = Pubkey::new_unique();
-        let limit_data = ComputeBudgetInstruction::set_compute_unit_limit(300_000).data;
-        let price_data = ComputeBudgetInstruction::set_compute_unit_price(2_000).data;
-
-        // The ComputeBudget program id lives past the static keys (loaded from a
-        // lookup table); the runtime still processes these instructions, so the
-        // extraction must resolve program ids against the full resolved key list.
-        let message =
-            create_v0_message_with_alt_loaded_program(&payer, vec![limit_data, price_data]);
-        let resolved_keys = vec![payer, solana_compute_budget_interface::id()];
-
-        assert_eq!(
-            TransactionFeeUtil::get_requested_priority_fee(&message, &resolved_keys),
-            600,
-            "300_000 CU * 2_000 micro-lamports = 600 lamports must be counted \
-             even when the ComputeBudget program is loaded via a lookup table"
-        );
     }
 }

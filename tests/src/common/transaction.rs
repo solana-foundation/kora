@@ -1,26 +1,22 @@
 use anyhow::Result;
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use kora_lib::{
     constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR,
     transaction::TransactionUtil,
 };
-use solana_address_lookup_table_interface::state::AddressLookupTable;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::{
-    v0::Message as V0Message,
     v1::{Message as V1Message, TransactionConfig},
-    AddressLookupTableAccount, Message, VersionedMessage,
+    VersionedMessage,
 };
 use solana_program_pack::Pack;
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
     rent::Rent,
-    signature::{Keypair, Signature},
+    signature::Keypair,
     signer::Signer,
-    transaction::VersionedTransaction,
 };
 use solana_system_interface::{
     instruction::{create_account, transfer},
@@ -31,75 +27,18 @@ use spl_associated_token_account_interface::address::{
 };
 use std::sync::Arc;
 
-/// Transaction version types
-#[derive(Debug, Clone)]
-pub enum TransactionVersion {
-    Legacy,
-    V0,
-    V0WithLookup(Vec<Pubkey>),
-    V1,
-}
-
-/// Fluent transaction builder for tests
+/// Fluent V1 transaction builder for tests
+#[derive(Default)]
 pub struct TransactionBuilder {
-    version: TransactionVersion,
     instructions: Vec<Instruction>,
     fee_payer: Option<Pubkey>,
     signers: Vec<Keypair>,
     rpc_client: Option<Arc<RpcClient>>,
-    v1_priority_fee: Option<u64>,
-    v1_unset_resource_limits: bool,
+    priority_fee: Option<u64>,
+    unset_resource_limits: bool,
 }
 
 impl TransactionBuilder {
-    pub fn legacy() -> Self {
-        Self {
-            version: TransactionVersion::Legacy,
-            instructions: Vec::new(),
-            fee_payer: None,
-            signers: Vec::new(),
-            rpc_client: None,
-            v1_priority_fee: None,
-            v1_unset_resource_limits: false,
-        }
-    }
-
-    pub fn v0() -> Self {
-        Self {
-            version: TransactionVersion::V0,
-            instructions: Vec::new(),
-            fee_payer: None,
-            signers: Vec::new(),
-            rpc_client: None,
-            v1_priority_fee: None,
-            v1_unset_resource_limits: false,
-        }
-    }
-
-    pub fn v0_with_lookup(lookup_tables: Vec<Pubkey>) -> Self {
-        Self {
-            version: TransactionVersion::V0WithLookup(lookup_tables),
-            instructions: Vec::new(),
-            fee_payer: None,
-            signers: Vec::new(),
-            rpc_client: None,
-            v1_priority_fee: None,
-            v1_unset_resource_limits: false,
-        }
-    }
-
-    pub fn v1() -> Self {
-        Self {
-            version: TransactionVersion::V1,
-            instructions: Vec::new(),
-            fee_payer: None,
-            signers: Vec::new(),
-            rpc_client: None,
-            v1_priority_fee: None,
-            v1_unset_resource_limits: false,
-        }
-    }
-
     pub fn with_rpc_client(mut self, client: Arc<RpcClient>) -> Self {
         self.rpc_client = Some(client);
         self
@@ -245,7 +184,6 @@ impl TransactionBuilder {
         self
     }
 
-    // Includes mint address for lookup table testing
     pub fn with_spl_transfer_checked(
         mut self,
         token_mint: &Pubkey,
@@ -274,14 +212,14 @@ impl TransactionBuilder {
     }
 
     // Flat lamports amount for priority fee
-    pub fn with_v1_priority_fee(mut self, lamports: u64) -> Self {
-        self.v1_priority_fee = Some(lamports);
+    pub fn with_priority_fee(mut self, lamports: u64) -> Self {
+        self.priority_fee = Some(lamports);
         self
     }
 
-    // Omit resource limits from V1 config (requests zero compute units and zero data size)
-    pub fn with_v1_unset_resource_limits(mut self) -> Self {
-        self.v1_unset_resource_limits = true;
+    // Omit resource limits from the config (requests zero compute units and zero data size)
+    pub fn with_unset_resource_limits(mut self) -> Self {
+        self.unset_resource_limits = true;
         self
     }
 
@@ -643,97 +581,16 @@ impl TransactionBuilder {
 
     pub async fn build(self) -> Result<String> {
         let rpc_client =
-            self.rpc_client.ok_or_else(|| anyhow::anyhow!("RPC client is required"))?;
-
-        let fee_payer = self.fee_payer.ok_or_else(|| anyhow::anyhow!("Fee payer is required"))?;
-
+            self.rpc_client.as_ref().ok_or_else(|| anyhow::anyhow!("RPC client is required"))?;
         let blockhash =
             rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::confirmed()).await?;
 
-        let message =
-            match self.version {
-                TransactionVersion::Legacy => VersionedMessage::Legacy(
-                    Message::new_with_blockhash(&self.instructions, Some(&fee_payer), &blockhash.0),
-                ),
-                TransactionVersion::V0 => {
-                    let v0_message = V0Message::try_compile(
-                        &fee_payer,
-                        &self.instructions,
-                        &[], // No lookup tables
-                        blockhash.0,
-                    )?;
-                    VersionedMessage::V0(v0_message)
-                }
-                TransactionVersion::V0WithLookup(lookup_table_keys) => {
-                    let mut lookup_table_accounts = Vec::new();
-                    for key in lookup_table_keys {
-                        let account = rpc_client.get_account(&key).await?;
-                        let lookup_table = AddressLookupTable::deserialize(&account.data)?;
-                        lookup_table_accounts.push(AddressLookupTableAccount {
-                            key,
-                            addresses: lookup_table.addresses.to_vec(),
-                        });
-                    }
-
-                    let v0_message = V0Message::try_compile(
-                        &fee_payer,
-                        &self.instructions,
-                        &lookup_table_accounts,
-                        blockhash.0,
-                    )?;
-                    VersionedMessage::V0(v0_message)
-                }
-                TransactionVersion::V1 => {
-                    // Empty config requests 0 compute units and 0 (32KiB) data cap; must set limits explicitly
-                    let mut config = if self.v1_unset_resource_limits {
-                        TransactionConfig::empty()
-                    } else {
-                        TransactionConfig::empty()
-                            .with_compute_unit_limit(1_400_000)
-                            .with_loaded_accounts_data_size_limit(64 * 1024 * 1024)
-                    };
-                    if let Some(priority_fee) = self.v1_priority_fee {
-                        config = config.with_priority_fee(priority_fee);
-                    }
-                    let v1_message = V1Message::try_compile_with_config(
-                        &fee_payer,
-                        &self.instructions,
-                        blockhash.0,
-                        config,
-                    )?;
-                    VersionedMessage::V1(v1_message)
-                }
-            };
-
-        let transaction = if self.signers.is_empty() {
-            TransactionUtil::new_unsigned_versioned_transaction(message)
-        } else {
-            let num_required_signatures = message.header().num_required_signatures as usize;
-            let mut tx = VersionedTransaction {
-                signatures: vec![Signature::default(); num_required_signatures],
-                message,
-            };
-
-            let message_bytes = tx.message.serialize();
-            for signer in &self.signers {
-                let account_keys = tx.message.static_account_keys();
-                if let Some(position) = account_keys.iter().position(|key| key == &signer.pubkey())
-                {
-                    let signature = signer.sign_message(&message_bytes);
-                    tx.signatures[position] = signature;
-                }
-            }
-            tx
-        };
-
-        Ok(TransactionUtil::encode_versioned_transaction(&transaction)?)
+        self.compile_and_sign(blockhash.0)
     }
 
-    pub async fn build_with_nonce(self, nonce_pubkey: &Pubkey) -> Result<String> {
+    pub async fn build_with_nonce(mut self, nonce_pubkey: &Pubkey) -> Result<String> {
         let rpc_client =
-            self.rpc_client.ok_or_else(|| anyhow::anyhow!("RPC client is required"))?;
-
-        let fee_payer = self.fee_payer.ok_or_else(|| anyhow::anyhow!("Fee payer is required"))?;
+            self.rpc_client.as_ref().ok_or_else(|| anyhow::anyhow!("RPC client is required"))?;
 
         // Nonce account data has a version prefix; deserialize as Versions
         let nonce_account = rpc_client.get_account(nonce_pubkey).await?;
@@ -746,50 +603,50 @@ impl TransactionBuilder {
                 return Err(anyhow::anyhow!("Nonce account is not initialized"));
             }
         };
-        let durable_nonce = nonce_data.blockhash();
 
-        let message = match self.version {
-            TransactionVersion::V0 => {
-                let mut instructions = self.instructions;
-                let advance_ix = solana_system_interface::instruction::advance_nonce_account(
-                    nonce_pubkey,
-                    &nonce_data.authority,
-                );
-                instructions.insert(0, advance_ix);
+        self.instructions.insert(
+            0,
+            solana_system_interface::instruction::advance_nonce_account(
+                nonce_pubkey,
+                &nonce_data.authority,
+            ),
+        );
+        self.compile_and_sign(nonce_data.blockhash())
+    }
 
-                let v0_message =
-                    V0Message::try_compile(&fee_payer, &instructions, &[], durable_nonce)?;
-                VersionedMessage::V0(v0_message)
+    fn compile_and_sign(&self, lifetime: solana_sdk::hash::Hash) -> Result<String> {
+        let message = self.compile(lifetime)?;
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+
+        let message_bytes = transaction.message.serialize();
+        for signer in &self.signers {
+            let account_keys = transaction.message.static_account_keys();
+            if let Some(position) = account_keys.iter().position(|key| key == &signer.pubkey()) {
+                transaction.signatures[position] = signer.sign_message(&message_bytes);
             }
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "Durable nonce transactions are only supported for V0 transactions."
-                ));
-            }
-        };
+        }
 
-        let transaction = if self.signers.is_empty() {
-            TransactionUtil::new_unsigned_versioned_transaction(message)
+        Ok(TransactionUtil::encode_versioned_transaction(&transaction)?)
+    }
+
+    fn compile(&self, lifetime: solana_sdk::hash::Hash) -> Result<VersionedMessage> {
+        let fee_payer = self.fee_payer.ok_or_else(|| anyhow::anyhow!("Fee payer is required"))?;
+        // An empty config requests 0 compute units and a 0 data cap, so limits are set explicitly
+        let mut config = if self.unset_resource_limits {
+            TransactionConfig::empty()
         } else {
-            let num_required_signatures = message.header().num_required_signatures as usize;
-            let mut tx = VersionedTransaction {
-                signatures: vec![Signature::default(); num_required_signatures],
-                message,
-            };
-
-            let message_bytes = tx.message.serialize();
-            for signer in &self.signers {
-                let account_keys = tx.message.static_account_keys();
-                if let Some(position) = account_keys.iter().position(|key| key == &signer.pubkey())
-                {
-                    let signature = signer.sign_message(&message_bytes);
-                    tx.signatures[position] = signature;
-                }
-            }
-            tx
+            TransactionConfig::empty()
+                .with_compute_unit_limit(1_400_000)
+                .with_loaded_accounts_data_size_limit(64 * 1024 * 1024)
         };
-
-        let serialized = bincode::serialize(&transaction)?;
-        Ok(STANDARD.encode(serialized))
+        if let Some(priority_fee) = self.priority_fee {
+            config = config.with_priority_fee(priority_fee);
+        }
+        Ok(VersionedMessage::V1(V1Message::try_compile_with_config(
+            &fee_payer,
+            &self.instructions,
+            lifetime,
+            config,
+        )?))
     }
 }

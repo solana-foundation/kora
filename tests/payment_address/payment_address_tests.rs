@@ -10,7 +10,7 @@ use spl_associated_token_account_interface::{
 use std::str::FromStr;
 
 #[tokio::test]
-async fn test_sign_transaction_if_paid_with_payment_address_legacy() {
+async fn test_sign_transaction_if_paid_with_payment_address() {
     let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let payment_address = Pubkey::from_str(TEST_PAYMENT_ADDRESS).unwrap();
@@ -38,7 +38,7 @@ async fn test_sign_transaction_if_paid_with_payment_address_legacy() {
         .with_instruction(fee_payer_instruction)
         .build()
         .await
-        .expect("Failed to create signed legacy transaction");
+        .expect("Failed to create signed transaction");
 
     let response: serde_json::Value = ctx
         .rpc_call("signTransaction", rpc_params![encoded_tx])
@@ -50,7 +50,7 @@ async fn test_sign_transaction_if_paid_with_payment_address_legacy() {
 }
 
 #[tokio::test]
-async fn test_sign_transaction_if_paid_with_wrong_destination_legacy() {
+async fn test_sign_transaction_if_paid_with_wrong_destination() {
     let ctx = crate::ctx().await;
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -87,7 +87,7 @@ async fn test_sign_transaction_if_paid_with_wrong_destination_legacy() {
         .with_instruction(fee_payer_instruction)
         .build()
         .await
-        .expect("Failed to create signed legacy transaction");
+        .expect("Failed to create signed transaction");
 
     // Call signTransaction endpoint - should fail when payment goes to wrong address
     let response: Result<serde_json::Value, _> =

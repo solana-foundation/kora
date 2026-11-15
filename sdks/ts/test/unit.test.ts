@@ -521,7 +521,7 @@ describe('KoraClient Unit Tests', () => {
                 [userOwnedIx, result.payment_instruction],
                 setTransactionMessageLifetimeUsingBlockhash(
                     { blockhash: '11111111111111111111111111111111' as Blockhash, lastValidBlockHeight: 0n },
-                    setTransactionMessageFeePayerSigner(feePayer, createTransactionMessage({ version: 0 })),
+                    setTransactionMessageFeePayerSigner(feePayer, createTransactionMessage({ version: 1 })),
                 ),
             );
 
@@ -565,7 +565,7 @@ describe('KoraClient Unit Tests', () => {
                 [userOwnedIx, result.payment_instruction],
                 setTransactionMessageLifetimeUsingBlockhash(
                     { blockhash: '11111111111111111111111111111111' as Blockhash, lastValidBlockHeight: 0n },
-                    setTransactionMessageFeePayerSigner(feePayer, createTransactionMessage({ version: 0 })),
+                    setTransactionMessageFeePayerSigner(feePayer, createTransactionMessage({ version: 1 })),
                 ),
             );
 
