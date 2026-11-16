@@ -62,11 +62,17 @@ fn load_state_file<T: serde::de::DeserializeOwned>(
     Ok(Some(state))
 }
 
+fn temp_path(path: &Path) -> PathBuf {
+    let mut os_str = path.as_os_str().to_os_string();
+    os_str.push(".tmp");
+    PathBuf::from(os_str)
+}
+
 fn save_state_file<T: Serialize>(state: &T, path: &Path, type_name: &str) -> Result<()> {
     let data = serde_json::to_string_pretty(state)
         .with_context(|| format!("failed to serialize {type_name}"))?;
 
-    let temp_path = path.with_extension("tmp");
+    let temp_path = temp_path(path);
 
     let write_res = (|| -> Result<()> {
         let mut file = {
@@ -281,7 +287,7 @@ mod tests {
 
         state.save(&temp_file)?;
 
-        let tmp_file = temp_file.with_extension("tmp");
+        let tmp_file = temp_path(&temp_file);
         assert!(!tmp_file.exists(), "temporary file should be cleaned up after atomic rename");
 
         #[cfg(unix)]
@@ -368,7 +374,7 @@ mod tests {
 
         state.save(&temp_file)?;
 
-        let tmp_file = temp_file.with_extension("tmp");
+        let tmp_file = temp_path(&temp_file);
         assert!(!tmp_file.exists(), "temporary file should be cleaned up after atomic rename");
 
         #[cfg(unix)]
@@ -415,7 +421,7 @@ mod tests {
 
         let temp_file = temp_dir()
             .join(format!("kora-upgrade-tmp-overwrite-test-{}.json", Pubkey::new_unique()));
-        let tmp_file = temp_file.with_extension("tmp");
+        let tmp_file = temp_path(&temp_file);
 
         // Simulate an orphaned .tmp file from a previous interrupted run.
         fs::write(&tmp_file, b"stale data")?;
@@ -591,10 +597,20 @@ mod tests {
     fn test_state_lock_path_appends_dot_lock_and_differs_from_save_tmp() {
         let state_path = Path::new("/tmp/test-state.json");
         let lock_path = StateLockGuard::lock_path(state_path);
-        let save_tmp_path = state_path.with_extension("tmp");
+        let save_tmp_path = temp_path(state_path);
 
         assert_eq!(lock_path, Path::new("/tmp/test-state.json.lock"));
-        assert_eq!(save_tmp_path, Path::new("/tmp/test-state.tmp"));
+        assert_eq!(save_tmp_path, Path::new("/tmp/test-state.json.tmp"));
         assert_ne!(lock_path, save_tmp_path);
+    }
+
+    #[test]
+    fn test_temp_path_preserves_extension_to_prevent_collision() {
+        let json_path = Path::new("/tmp/state.json");
+        let backup_path = Path::new("/tmp/state.backup");
+
+        assert_eq!(temp_path(json_path), Path::new("/tmp/state.json.tmp"));
+        assert_eq!(temp_path(backup_path), Path::new("/tmp/state.backup.tmp"));
+        assert_ne!(temp_path(json_path), temp_path(backup_path));
     }
 }
