@@ -61,7 +61,9 @@ The parts that trip people up:
 
 If the operator enables Lighthouse, `signTransaction` and `signBundle` may return a transaction
 with an extra balance-assertion instruction. That changes the message, so any signature already
-applied is void: re-sign the returned transaction client-side and submit it yourself.
+applied is void: re-sign the returned transaction client-side and submit it yourself. Kora also
+raises the message's compute unit and loaded accounts data size limits to cover the assertion, so
+limits sized from your own simulation still fit.
 
 Lighthouse never applies to `signAndSendTransaction` / `signAndSendBundle` — Kora broadcasts those
 itself, so there is no opportunity to re-sign and the assertion is skipped.

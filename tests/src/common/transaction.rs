@@ -35,6 +35,7 @@ pub struct TransactionBuilder {
     rpc_client: Option<Arc<RpcClient>>,
     priority_fee: Option<u64>,
     unset_resource_limits: bool,
+    resource_limits: Option<(u32, u32)>,
 }
 
 impl TransactionBuilder {
@@ -219,6 +220,15 @@ impl TransactionBuilder {
     // Omit resource limits from the config (requests zero compute units and zero data size)
     pub fn with_unset_resource_limits(mut self) -> Self {
         self.unset_resource_limits = true;
+        self
+    }
+
+    pub fn with_resource_limits(
+        mut self,
+        compute_unit_limit: u32,
+        loaded_accounts_data_size_limit: u32,
+    ) -> Self {
+        self.resource_limits = Some((compute_unit_limit, loaded_accounts_data_size_limit));
         self
     }
 
@@ -634,9 +644,11 @@ impl TransactionBuilder {
         let mut config = if self.unset_resource_limits {
             TransactionConfig::empty()
         } else {
+            let (compute_unit_limit, loaded_accounts_data_size_limit) =
+                self.resource_limits.unwrap_or((1_400_000, 64 * 1024 * 1024));
             TransactionConfig::empty()
-                .with_compute_unit_limit(1_400_000)
-                .with_loaded_accounts_data_size_limit(64 * 1024 * 1024)
+                .with_compute_unit_limit(compute_unit_limit)
+                .with_loaded_accounts_data_size_limit(loaded_accounts_data_size_limit)
         };
         if let Some(priority_fee) = self.priority_fee {
             config = config.with_priority_fee(priority_fee);

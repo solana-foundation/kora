@@ -280,6 +280,89 @@ async fn test_lighthouse_end_to_end_with_client_resign() {
     );
 }
 
+/// A client sizes its V1 limits from a simulation that ran before Kora appended the
+/// assertion, so the signed transaction must still fit once the assertion is in it.
+#[tokio::test]
+async fn test_lighthouse_assertion_fits_limits_sized_from_simulation() {
+    let ctx = crate::ctx().await;
+    let _fee_payer_sol = FEE_PAYER_SOL.read().await;
+    let rpc_client = ctx.rpc_client();
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let builder = || {
+        ctx.transaction_builder()
+            .with_fee_payer(fee_payer)
+            .with_signer(&sender)
+            .with_spl_transfer(
+                &token_mint,
+                &sender.pubkey(),
+                &fee_payer,
+                tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+            )
+            .with_transfer(&sender.pubkey(), &recipient, 10)
+    };
+
+    let unsized_tx = TransactionUtil::decode_b64_transaction(
+        &builder().build().await.expect("Failed to create transaction"),
+    )
+    .expect("Failed to decode transaction");
+    let usage = rpc_client
+        .simulate_transaction_with_config(
+            &unsized_tx,
+            RpcSimulateTransactionConfig {
+                sig_verify: false,
+                commitment: Some(rpc_client.commitment()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("Failed to simulate transaction")
+        .value;
+    assert!(usage.err.is_none(), "Sizing simulation failed: {:?}", usage.err);
+    let compute_units = usage.units_consumed.expect("Simulation reports compute units") as u32;
+    let loaded_accounts_data_size =
+        usage.loaded_accounts_data_size.expect("Simulation reports loaded accounts data size");
+
+    let base64_transaction = builder()
+        .with_resource_limits(compute_units, loaded_accounts_data_size)
+        .build()
+        .await
+        .expect("Failed to create transaction");
+
+    let response: serde_json::Value = ctx
+        .rpc_call("signTransaction", rpc_params![base64_transaction])
+        .await
+        .expect("Failed to sign transaction");
+    response.assert_success();
+
+    let mut signed_tx =
+        TransactionUtil::decode_b64_transaction(response["signed_transaction"].as_str().unwrap())
+            .expect("Failed to decode signed transaction");
+    assert!(verify_lighthouse_assertion_added(&signed_tx));
+    resign_transaction(&mut signed_tx, &sender).expect("Failed to re-sign transaction");
+
+    let sim_result = rpc_client
+        .simulate_transaction_with_config(
+            &signed_tx,
+            RpcSimulateTransactionConfig {
+                sig_verify: true,
+                commitment: Some(rpc_client.commitment()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("Failed to simulate transaction");
+    assert!(
+        sim_result.value.err.is_none(),
+        "The assertion must fit within limits sized without it. Error: {:?}",
+        sim_result.value.err
+    );
+}
+
 // **************************************************************************************
 // Negative Tests - Verify sign_and_send methods do NOT add lighthouse assertion
 // **************************************************************************************

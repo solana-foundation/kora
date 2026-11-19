@@ -1,4 +1,7 @@
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_compute_budget::compute_budget_limits::{
+    MAX_COMPUTE_UNIT_LIMIT, MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
+};
 use solana_message::{
     compiled_instruction::CompiledInstruction, v1, MessageHeader, VersionedMessage,
 };
@@ -24,6 +27,13 @@ const INTEGER_OPERATOR_GTE: u8 = 4;
 
 /// AccountInfoAssertion::Lamports variant (index 0 in the enum)
 const ACCOUNT_INFO_ASSERTION_LAMPORTS: u8 = 0;
+
+/// Lighthouse has no upgrade authority, so what the runtime charges to load it is fixed: 64
+/// bytes plus the data length for the program account (36) and for its program data (424,293).
+const LIGHTHOUSE_LOADED_ACCOUNTS_DATA_SIZE: u32 = 424_457;
+
+/// The assertion consumes 678 compute units on a fee payer, which holds no account data.
+const ASSERTION_COMPUTE_UNITS: u32 = 1_000;
 
 pub struct LighthouseUtil {}
 
@@ -180,6 +190,18 @@ impl LighthouseUtil {
         Ok(())
     }
 
+    fn reserve_assertion_resources(config: &mut v1::TransactionConfig) {
+        config.compute_unit_limit = config
+            .compute_unit_limit
+            .map(|limit| limit.saturating_add(ASSERTION_COMPUTE_UNITS).min(MAX_COMPUTE_UNIT_LIMIT));
+        config.loaded_accounts_data_size_limit =
+            config.loaded_accounts_data_size_limit.map(|limit| {
+                limit
+                    .saturating_add(LIGHTHOUSE_LOADED_ACCOUNTS_DATA_SIZE)
+                    .min(MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get())
+            });
+    }
+
     /// Handles size overflow based on config settings.
     /// Returns `true` when the assertion was appended, `false` when it was skipped for size.
     pub(crate) fn append_lighthouse_assertion(
@@ -190,6 +212,9 @@ impl LighthouseUtil {
         // Clone and append to get actual size
         let mut tx_with_assertion = transaction.clone();
         Self::append_instruction_to_transaction(&mut tx_with_assertion, assertion_ix)?;
+        if let VersionedMessage::V1(message) = &mut tx_with_assertion.message {
+            Self::reserve_assertion_resources(&mut message.config);
+        }
 
         let new_size = TransactionUtil::serialize_versioned_transaction(&tx_with_assertion)
             .map_err(|e| {
@@ -303,6 +328,50 @@ mod tests {
             original_readonly_unsigned + 1
         );
         assert!(transaction.message.static_account_keys().contains(&LIGHTHOUSE_PROGRAM_ID));
+    }
+
+    #[test]
+    fn test_append_lighthouse_assertion_reserves_resources_for_the_assertion() {
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(Pubkey::new_unique(), &[1, 2, 3], vec![]);
+        let build = |compute_unit_limit, loaded_accounts_data_size_limit| {
+            let message = v1::Message::try_compile_with_config(
+                &keypair.pubkey(),
+                std::slice::from_ref(&instruction),
+                Hash::new_unique(),
+                v1::TransactionConfig::empty()
+                    .with_compute_unit_limit(compute_unit_limit)
+                    .with_loaded_accounts_data_size_limit(loaded_accounts_data_size_limit),
+            )
+            .unwrap();
+            let mut transaction =
+                VersionedTransaction::try_new(VersionedMessage::V1(message), &[&keypair]).unwrap();
+            let appended = LighthouseUtil::append_lighthouse_assertion(
+                &mut transaction,
+                LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000),
+                &LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true },
+            )
+            .unwrap();
+            assert!(appended);
+            let VersionedMessage::V1(message) = transaction.message else {
+                panic!("expected a V1 message");
+            };
+            message.config
+        };
+
+        let config = build(5_000, 100_000);
+        assert_eq!(config.compute_unit_limit, Some(5_000 + ASSERTION_COMPUTE_UNITS));
+        assert_eq!(
+            config.loaded_accounts_data_size_limit,
+            Some(100_000 + LIGHTHOUSE_LOADED_ACCOUNTS_DATA_SIZE)
+        );
+
+        let config = build(MAX_COMPUTE_UNIT_LIMIT, MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get());
+        assert_eq!(config.compute_unit_limit, Some(MAX_COMPUTE_UNIT_LIMIT));
+        assert_eq!(
+            config.loaded_accounts_data_size_limit,
+            Some(MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get())
+        );
     }
 
     #[test]
