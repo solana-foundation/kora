@@ -27,7 +27,6 @@ use spl_associated_token_account_interface::address::{
 };
 use std::sync::Arc;
 
-/// Fluent V1 transaction builder for tests
 #[derive(Default)]
 pub struct TransactionBuilder {
     instructions: Vec<Instruction>,

@@ -321,10 +321,7 @@ impl TransactionFeeUtil {
         message: &VersionedMessage,
     ) -> Result<u64, KoraError> {
         let message = TransactionUtil::as_v1_message(message)?;
-        rpc_client
-            .get_fee_for_message(&V1FeeMessage(message))
-            .await
-            .map_err(|e| KoraError::RpcError(e.to_string()))
+        Ok(rpc_client.get_fee_for_message(&V1FeeMessage(message)).await?)
     }
 }
 

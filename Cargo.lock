@@ -12571,7 +12571,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "solana-address-lookup-table-interface 3.2.0",
  "solana-client",
  "solana-commitment-config",
  "solana-compute-budget-interface",

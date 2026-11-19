@@ -20,19 +20,15 @@ pub fn test_v1_config() -> v1::TransactionConfig {
         .with_loaded_accounts_data_size_limit(64 * 1024 * 1024)
 }
 
-/// V1 message with `test_v1_config` limits and a default blockhash.
 pub fn create_test_message(fee_payer: &Pubkey, instructions: &[Instruction]) -> VersionedMessage {
-    create_test_message_with_blockhash(fee_payer, instructions, &Hash::default())
-}
-
-pub fn create_test_message_with_blockhash(
-    fee_payer: &Pubkey,
-    instructions: &[Instruction],
-    blockhash: &Hash,
-) -> VersionedMessage {
     VersionedMessage::V1(
-        v1::Message::try_compile_with_config(fee_payer, instructions, *blockhash, test_v1_config())
-            .unwrap(),
+        v1::Message::try_compile_with_config(
+            fee_payer,
+            instructions,
+            Hash::default(),
+            test_v1_config(),
+        )
+        .unwrap(),
     )
 }
 
@@ -44,7 +40,6 @@ pub fn create_mock_encoded_transaction() -> String {
     TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
 }
 
-/// A legacy transaction, which every entry point must reject.
 pub fn create_mock_encoded_legacy_transaction() -> String {
     let ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1000000000);
     let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&Pubkey::new_unique())));
