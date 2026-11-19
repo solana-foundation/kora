@@ -3522,7 +3522,7 @@ dependencies = [
  "google-cloud-wkt",
  "http 1.5.0",
  "pin-project",
- "rand 0.10.3",
+ "rand 0.10.4",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -5026,7 +5026,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "prometheus",
  "proptest",
- "rand 0.10.3",
+ "rand 0.10.4",
  "redis",
  "regex",
  "reqwest 0.13.4",
@@ -6177,7 +6177,7 @@ dependencies = [
  "bytemuck",
  "phoenix-rise-math",
  "sha2-const-stable",
- "solana-pubkey 3.0.0",
+ "solana-pubkey 4.3.0",
  "thiserror 2.0.20",
 ]
 
@@ -6533,7 +6533,7 @@ dependencies = [
  "bytes 1.12.1",
  "getrandom 0.4.3",
  "lru-slab",
- "rand 0.10.3",
+ "rand 0.10.4",
  "rand_pcg",
  "ring",
  "rustc-hash 2.1.3",
@@ -6634,9 +6634,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.10.3"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af"
+checksum = "8f6fa277c67e6ea590466f04c3fe82cb509f0864fe470643e5570de9514a9b11"
 dependencies = [
  "chacha20",
  "getrandom 0.4.3",
@@ -8637,7 +8637,7 @@ dependencies = [
  "digest 0.11.3",
  "ed25519 2.2.3",
  "hashbrown 0.15.5",
- "rand 0.10.3",
+ "rand 0.10.4",
  "rand_core 0.10.1",
  "rustc_version",
  "sha2 0.11.0",
@@ -12538,7 +12538,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
