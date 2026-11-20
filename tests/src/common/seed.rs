@@ -1,10 +1,6 @@
 #![cfg(test)]
 
 use anyhow::Result;
-use solana_address_lookup_table_interface::{
-    instruction::derive_lookup_table_address,
-    state::{AddressLookupTable, LookupTableMeta},
-};
 use solana_program_pack::Pack;
 use solana_sdk::{
     native_token::LAMPORTS_PER_SOL, program_option::COption, pubkey::Pubkey, rent::Rent,
@@ -21,29 +17,17 @@ use spl_token_2022_interface::{
         Account as Token2022Account, AccountState as Token2022AccountState, Mint as Token2022Mint,
     },
 };
-use std::borrow::Cow;
 use surfpool_sdk::{cheatcodes::Cheatcodes, Surfnet};
 
 use crate::common::{
     setup::{ts_auth_wallet, ts_free_wallet},
-    FeePayerPolicyMintTestHelper, FeePayerTestHelper, LookupTableHelper, RecipientTestHelper,
-    SenderTestHelper, USDCMint2022TestHelper, USDCMintTestHelper,
+    FeePayerPolicyMintTestHelper, FeePayerTestHelper, RecipientTestHelper, SenderTestHelper,
+    USDCMint2022TestHelper, USDCMintTestHelper,
 };
 
 const SOL_FUNDING: u64 = 10 * LAMPORTS_PER_SOL;
 const TRANSFER_FEE_BASIS_POINTS: u16 = 100;
 const MAXIMUM_TRANSFER_FEE: u64 = 1_000_000;
-
-/// Only PDA seeds: no `CreateLookupTable` runs, so these need not be recent.
-const LOOKUP_TABLE_SLOTS: [u64; 3] = [1, 2, 3];
-
-/// The lookup tables the harness exports, the only seeded addresses a test
-/// cannot re-derive for itself.
-pub struct SeededLookupTables {
-    pub allowed: Pubkey,
-    pub disallowed: Pubkey,
-    pub transaction: Pubkey,
-}
 
 struct Holder {
     owner: Pubkey,
@@ -51,7 +35,7 @@ struct Holder {
 }
 
 /// Writes every account the test phases expect to already exist on chain.
-pub fn seed_accounts(surfnet: &Surfnet) -> Result<SeededLookupTables> {
+pub fn seed_accounts(surfnet: &Surfnet) -> Result<()> {
     let cheats = surfnet.cheatcodes();
 
     let sender_pubkey = SenderTestHelper::get_test_sender_keypair().pubkey();
@@ -118,14 +102,7 @@ pub fn seed_accounts(surfnet: &Surfnet) -> Result<SeededLookupTables> {
         &policy_holders,
     )?;
 
-    let (allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table) =
-        write_lookup_tables(&cheats, &sender_pubkey)?;
-
-    Ok(SeededLookupTables {
-        allowed: allowed_lookup_table,
-        disallowed: disallowed_lookup_table,
-        transaction: transaction_lookup_table,
-    })
+    Ok(())
 }
 
 fn write_spl_mint(
@@ -254,38 +231,6 @@ fn token_2022_account_data(mint: &Pubkey, holder: &Holder, transfer_fee: bool) -
     state.init_account_type()?;
 
     Ok(data)
-}
-
-/// The `LookupTableMeta` defaults (`deactivation_slot` `u64::MAX`,
-/// `last_extended_slot` 0) make the tables usable with no activation wait.
-fn write_lookup_tables(
-    cheats: &Cheatcodes,
-    authority: &Pubkey,
-) -> Result<(Pubkey, Pubkey, Pubkey)> {
-    let contents = [
-        vec![solana_system_interface::program::ID],
-        vec![LookupTableHelper::get_test_disallowed_address()?],
-        vec![USDCMintTestHelper::get_test_usdc_mint_pubkey(), spl_token_interface::ID],
-    ];
-
-    let mut addresses = Vec::with_capacity(contents.len());
-    for (slot, table_addresses) in LOOKUP_TABLE_SLOTS.iter().zip(contents) {
-        let (address, _) = derive_lookup_table_address(authority, *slot);
-        let data = AddressLookupTable {
-            meta: LookupTableMeta::new(*authority),
-            addresses: Cow::Owned(table_addresses),
-        }
-        .serialize_for_tests()?;
-        write_account(
-            cheats,
-            &address,
-            &data,
-            &solana_address_lookup_table_interface::program::id(),
-        )?;
-        addresses.push(address);
-    }
-
-    Ok((addresses[0], addresses[1], addresses[2]))
 }
 
 fn write_account(cheats: &Cheatcodes, address: &Pubkey, data: &[u8], owner: &Pubkey) -> Result<()> {

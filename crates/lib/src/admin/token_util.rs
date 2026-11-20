@@ -7,9 +7,12 @@ use crate::{
     validator::cross_cluster::probe_missing_mints,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_compute_budget_interface::ComputeBudgetInstruction;
+use solana_compute_budget::compute_budget_limits::{
+    ComputeBudgetLimits, DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT, MAX_COMPUTE_UNIT_LIMIT,
+    MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
+};
 use solana_keychain::SolanaSigner;
-use solana_message::{Message, VersionedMessage};
+use solana_message::{v1, VersionedMessage};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 
 use spl_associated_token_account_interface::{
@@ -125,6 +128,34 @@ pub async fn initialize_atas_with_chunk_size(
     Ok(())
 }
 
+/// V1 resource limits for an ATA creation transaction. An unset compute unit limit falls back
+/// to the per-instruction runtime default, and `compute_unit_price` (micro-lamports per compute
+/// unit) becomes the flat priority fee the runtime would have charged for it at that limit.
+fn ata_transaction_config(
+    instruction_count: usize,
+    compute_unit_price: Option<u64>,
+    compute_unit_limit: Option<u32>,
+) -> v1::TransactionConfig {
+    let compute_unit_limit = compute_unit_limit
+        .unwrap_or_else(|| {
+            u32::try_from(instruction_count)
+                .unwrap_or(u32::MAX)
+                .saturating_mul(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT)
+        })
+        .min(MAX_COMPUTE_UNIT_LIMIT);
+    let config = v1::TransactionConfig::empty()
+        .with_compute_unit_limit(compute_unit_limit)
+        .with_loaded_accounts_data_size_limit(MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get());
+
+    match compute_unit_price {
+        Some(compute_unit_price) => config.with_priority_fee(
+            ComputeBudgetLimits { compute_unit_price, compute_unit_limit, ..Default::default() }
+                .get_prioritization_fee(),
+        ),
+        None => config,
+    }
+}
+
 /// Helper function to create ATAs for a single signer
 async fn create_atas_for_signer(
     rpc_client: &RpcClient,
@@ -161,30 +192,23 @@ async fn create_atas_for_signer(
         let chunk_num = chunk_idx + 1;
         println!("Processing chunk {chunk_num}/{num_chunks}");
 
-        let mut chunk_instructions = Vec::new();
-
-        if let Some(compute_unit_price) = compute_unit_price {
-            chunk_instructions
-                .push(ComputeBudgetInstruction::set_compute_unit_price(compute_unit_price));
-        }
-        if let Some(compute_unit_limit) = compute_unit_limit {
-            chunk_instructions
-                .push(ComputeBudgetInstruction::set_compute_unit_limit(compute_unit_limit));
-        }
-
-        chunk_instructions.extend_from_slice(chunk);
-
         let blockhash = rpc_client
             .get_latest_blockhash()
             .await
             .map_err(|e| KoraError::RpcError(format!("Failed to get blockhash: {e}")))?;
 
         let fee_payer_pubkey = fee_payer.pubkey();
-        let message = VersionedMessage::Legacy(Message::new_with_blockhash(
-            &chunk_instructions,
-            Some(&fee_payer_pubkey),
-            &blockhash,
-        ));
+        let message = VersionedMessage::V1(
+            v1::Message::try_compile_with_config(
+                &fee_payer_pubkey,
+                chunk,
+                blockhash,
+                ata_transaction_config(chunk.len(), compute_unit_price, compute_unit_limit),
+            )
+            .map_err(|e| {
+                KoraError::InvalidTransaction(format!("Failed to compile ATA transaction: {e}"))
+            })?,
+        );
 
         let mut tx = TransactionUtil::new_unsigned_versioned_transaction(message);
         let message_bytes = tx.message.serialize();
@@ -705,6 +729,39 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_ata_transaction_config_defaults_limit_per_instruction() {
+        let config = ata_transaction_config(3, None, None);
+
+        assert_eq!(config.compute_unit_limit, Some(3 * DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT));
+        assert_eq!(
+            config.loaded_accounts_data_size_limit,
+            Some(MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get())
+        );
+        assert_eq!(config.priority_fee, None);
+    }
+
+    #[test]
+    fn test_ata_transaction_config_converts_compute_unit_price_to_priority_fee() {
+        // 100_000 CU at 1_000 micro-lamports per CU is 100 lamports
+        let config = ata_transaction_config(2, Some(1_000), Some(100_000));
+        assert_eq!(config.compute_unit_limit, Some(100_000));
+        assert_eq!(config.priority_fee, Some(100));
+
+        // A fraction of a lamport rounds up, as the runtime charges it
+        let config = ata_transaction_config(1, Some(1), Some(1));
+        assert_eq!(config.priority_fee, Some(1));
+    }
+
+    #[test]
+    fn test_ata_transaction_config_caps_compute_unit_limit() {
+        let config = ata_transaction_config(100, None, None);
+        assert_eq!(config.compute_unit_limit, Some(MAX_COMPUTE_UNIT_LIMIT));
+
+        let config = ata_transaction_config(1, None, Some(u32::MAX));
+        assert_eq!(config.compute_unit_limit, Some(MAX_COMPUTE_UNIT_LIMIT));
     }
 
     #[tokio::test]

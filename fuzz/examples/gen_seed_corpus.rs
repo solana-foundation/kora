@@ -9,7 +9,7 @@ use solana_loader_v4_interface::instruction::LoaderV4Instruction;
 use solana_sdk::{
     hash::Hash,
     instruction::{AccountMeta, Instruction},
-    message::{v0, AddressLookupTableAccount, Message, VersionedMessage},
+    message::{v1, VersionedMessage},
     pubkey::Pubkey,
     signature::Signature,
     transaction::VersionedTransaction,
@@ -258,16 +258,14 @@ fn sign_placeholder(message: VersionedMessage) -> VersionedTransaction {
     VersionedTransaction { signatures, message }
 }
 
-fn legacy(ixs: &[Instruction]) -> VersionedTransaction {
-    let mut message = Message::new(ixs, Some(&payer()));
-    message.recent_blockhash = Hash::new_from_array([7; 32]);
-    sign_placeholder(VersionedMessage::Legacy(message))
-}
-
-fn v0(ixs: &[Instruction], tables: &[AddressLookupTableAccount]) -> VersionedTransaction {
+fn tx(ixs: &[Instruction]) -> VersionedTransaction {
+    let config = v1::TransactionConfig::empty()
+        .with_compute_unit_limit(1_400_000)
+        .with_loaded_accounts_data_size_limit(64 * 1024 * 1024);
     let message =
-        v0::Message::try_compile(&payer(), ixs, tables, Hash::new_from_array([7; 32])).unwrap();
-    sign_placeholder(VersionedMessage::V0(message))
+        v1::Message::try_compile_with_config(&payer(), ixs, Hash::new_from_array([7; 32]), config)
+            .unwrap();
+    sign_placeholder(VersionedMessage::V1(message))
 }
 
 fn transactions() -> Vec<(String, VersionedTransaction)> {
@@ -281,33 +279,20 @@ fn transactions() -> Vec<(String, VersionedTransaction)> {
         loader_v4_cases(),
     ];
     for (name, ix) in groups.iter().flatten() {
-        out.push(((*name).to_string(), legacy(std::slice::from_ref(ix))));
+        out.push(((*name).to_string(), tx(std::slice::from_ref(ix))));
     }
 
-    out.push(("spl_p_token_batch".to_string(), legacy(&[p_token_batch()])));
-    out.push(("legacy_empty".to_string(), legacy(&[])));
+    out.push(("spl_p_token_batch".to_string(), tx(&[p_token_batch()])));
+    out.push(("empty".to_string(), tx(&[])));
 
     let transfer = system(SystemInstruction::Transfer { lamports: 1 }, 2);
     let advance = system(SystemInstruction::AdvanceNonceAccount, 3);
     let spl = spl_token_cases().remove(0).1;
-    out.push(("legacy_nonce_then_transfer".to_string(), legacy(&[advance, transfer.clone()])));
+    out.push(("nonce_then_transfer".to_string(), tx(&[advance, transfer.clone()])));
     out.push((
-        "legacy_mixed_programs".to_string(),
-        legacy(&[transfer.clone(), spl.clone(), alt(AltInstruction::FreezeLookupTable, 2)]),
+        "mixed_programs".to_string(),
+        tx(&[transfer, spl, alt(AltInstruction::FreezeLookupTable, 2)]),
     ));
-
-    out.push(("v0_system_transfer".to_string(), v0(&[transfer], &[])));
-    out.push(("v0_spl_transfer".to_string(), v0(std::slice::from_ref(&spl), &[])));
-    out.push((
-        "v0_t22_transfer_checked_with_fee".to_string(),
-        v0(&[token_2022_cases().remove(1).1], &[]),
-    ));
-    out.push((
-        "v0_loader_v4_deploy".to_string(),
-        v0(&[loader_v4(LoaderV4Instruction::Deploy, 2)], &[]),
-    ));
-    let table = AddressLookupTableAccount { key: key(200), addresses: vec![key(3), key(4)] };
-    out.push(("v0_with_lookup_table".to_string(), v0(&[spl], &[table])));
     out
 }
 
@@ -333,10 +318,8 @@ fn main() {
         "nonce_advance",
         "spl_transfer_multisig",
         "t22_transfer_checked_with_fee",
-        "legacy_empty",
-        "legacy_mixed_programs",
-        "v0_system_transfer",
-        "v0_with_lookup_table",
+        "empty",
+        "mixed_programs",
     ];
 
     let txs = transactions();

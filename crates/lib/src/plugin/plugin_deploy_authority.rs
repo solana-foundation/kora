@@ -509,11 +509,14 @@ mod tests {
     use crate::{
         config::{ProgramsConfig, TransactionPluginType},
         constant::LOADER_V4_PROGRAM_ID,
-        tests::{common::RpcMockBuilder, config_mock::ConfigMockBuilder},
+        tests::{
+            common::RpcMockBuilder, config_mock::ConfigMockBuilder,
+            transaction_mock::create_test_message,
+        },
         transaction::TransactionUtil,
     };
     use solana_loader_v4_interface::instruction as loader_v4;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::pubkey::Pubkey;
     use solana_system_interface::instruction::{
         create_account as system_create_account, transfer as system_transfer,
@@ -548,8 +551,8 @@ mod tests {
         fee_payer: &Pubkey,
         ixs: &[solana_sdk::instruction::Instruction],
     ) -> Result<(), KoraError> {
-        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
-            Message::new(ixs, Some(fee_payer)),
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+            fee_payer, ixs,
         ));
         let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
         let runner = TransactionPluginRunner::from_config(config);
@@ -734,8 +737,9 @@ mod tests {
         let write_ix = loader_v4::write(&program, &user, 0, vec![1]);
         let sol_ix = system_transfer(&fee_payer, &recipient, 1);
 
-        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
-            Message::new(&[sol_ix, write_ix], Some(&fee_payer)),
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+            &fee_payer,
+            &[sol_ix, write_ix],
         ));
         let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
         let runner = TransactionPluginRunner::from_config(&config);
@@ -1190,11 +1194,7 @@ mod tests {
     // ----------------------------------------------------------------------------
 
     use solana_sdk::{
-        account::Account,
-        instruction::AccountMeta,
-        signature::Keypair,
-        signer::Signer,
-        transaction::{Transaction, VersionedTransaction},
+        account::Account, instruction::AccountMeta, signature::Keypair, signer::Signer,
     };
 
     fn registry_test_config() -> Config {
@@ -1228,13 +1228,19 @@ mod tests {
         ixs: &[solana_sdk::instruction::Instruction],
         signers: &[&Keypair],
     ) -> Result<(), KoraError> {
-        let message = Message::new(ixs, Some(fee_payer));
-        let mut tx = Transaction::new_unsigned(message);
-        if !signers.is_empty() {
-            let blockhash = tx.message.recent_blockhash;
-            tx.partial_sign(signers, blockhash);
+        let mut tx = TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+            fee_payer, ixs,
+        ));
+        let message_bytes = tx.message.serialize();
+        for signer in signers {
+            let position = tx
+                .message
+                .static_account_keys()
+                .iter()
+                .position(|key| *key == signer.pubkey())
+                .unwrap();
+            tx.signatures[position] = signer.sign_message(&message_bytes);
         }
-        let tx = VersionedTransaction::from(tx);
         let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
         let runner = TransactionPluginRunner::from_config(config);
         runner

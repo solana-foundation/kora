@@ -3,7 +3,6 @@ use crate::common::{
     SenderTestHelper, TransactionBuilder, USDCMint2022TestHelper, USDCMintTestHelper,
     TRANSFER_HOOK_PROGRAM_ID,
 };
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use jsonrpsee::rpc_params;
 use solana_sdk::{
     instruction::AccountMeta,
@@ -85,7 +84,7 @@ async fn test_blocked_memo_transfer_extension() {
     .expect("Failed to mint tokens");
 
     // Build transaction with manual token accounts that have MemoTransfer extension
-    let transaction = TransactionBuilder::v0()
+    let transaction = TransactionBuilder::default()
         .with_rpc_client(ctx.rpc_client().clone())
         .with_fee_payer(fee_payer.pubkey())
         .with_signer(&sender)
@@ -193,7 +192,7 @@ async fn test_blocked_interest_bearing_config_extension() {
 
     // Use regular ATAs for the transfer (no blocked token account extensions)
     // This way we test ONLY the mint extension blocking (InterestBearingConfig)
-    let transaction = TransactionBuilder::v0()
+    let transaction = TransactionBuilder::default()
         .with_rpc_client(ctx.rpc_client().clone())
         .with_fee_payer(fee_payer.pubkey())
         .with_signer(&sender)
@@ -295,7 +294,7 @@ async fn test_transfer_fee_insufficient_payment() {
     // If we send 10,000 micro-USDC with 1% transfer fee, recipient gets 9,900 micro-USDC (insufficient)
     let payment_amount = 10_000; // 0.01 USDC in micro-units
 
-    let transaction = TransactionBuilder::v0()
+    let transaction = TransactionBuilder::default()
         .with_rpc_client(ctx.rpc_client().clone())
         .with_fee_payer(fee_payer.pubkey())
         .with_signer(&sender)
@@ -397,7 +396,7 @@ async fn test_transfer_fee_sufficient_payment() {
     // With 1% fee: floor(10_500 * 100 / 10_000) = 105, effective = 10_395 lamports
     let payment_amount = 10_500;
 
-    let transaction = TransactionBuilder::v0()
+    let transaction = TransactionBuilder::default()
         .with_rpc_client(ctx.rpc_client().clone())
         .with_fee_payer(fee_payer.pubkey())
         .with_signer(&sender)
@@ -560,17 +559,16 @@ async fn test_transfer_hook_allows_transfer() {
     .expect("Failed to create payment instruction");
 
     // Create transaction with payment and transfer instructions
-    let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
-    let test_transaction = Transaction::new_signed_with_payer(
-        &[payment_instruction, transfer_instruction],
-        Some(&fee_payer.pubkey()),
-        &[&fee_payer, &sender],
-        recent_blockhash,
-    );
-
-    // Encode as base64 for Kora RPC
-    let serialized = bincode::serialize(&test_transaction).unwrap();
-    let test_tx = STANDARD.encode(serialized);
+    let test_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer.pubkey())
+        .with_signer(&fee_payer)
+        .with_signer(&sender)
+        .with_instruction(payment_instruction)
+        .with_instruction(transfer_instruction)
+        .build()
+        .await
+        .unwrap();
 
     // Submit to Kora using immediate sign-and-send mode (default delayed-sign mode now
     // rejects mutable transfer-hook authority).
@@ -694,16 +692,15 @@ async fn test_transfer_hook_blocks_transfer() {
     transfer_instruction.accounts.push(AccountMeta::new_readonly(hook_program_id, false));
 
     // Create transaction with manual instruction
-    let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
-    let test_transaction = Transaction::new_signed_with_payer(
-        &[transfer_instruction],
-        Some(&fee_payer.pubkey()),
-        &[&fee_payer, &sender],
-        recent_blockhash,
-    );
-
-    let serialized = bincode::serialize(&test_transaction).unwrap();
-    let test_tx = STANDARD.encode(serialized);
+    let test_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer.pubkey())
+        .with_signer(&fee_payer)
+        .with_signer(&sender)
+        .with_instruction(transfer_instruction)
+        .build()
+        .await
+        .unwrap();
 
     // Submit to Kora using immediate sign-and-send mode. This should still fail because the hook
     // program blocks this transfer amount.

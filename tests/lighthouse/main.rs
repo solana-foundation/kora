@@ -2,7 +2,7 @@
 //
 // CONFIG: Uses tests/src/common/fixtures/lighthouse-test.toml (lighthouse enabled)
 // TESTS: Verifies lighthouse fee payer protection assertions are added to transactions
-//        - Single transaction signing with lighthouse assertion (legacy and V0)
+//        - Single transaction signing with lighthouse assertion
 //        - Bundle signing with lighthouse assertion (only on last tx)
 //
 // NOTE: signAndSendTransaction and signAndSendBundle are NOT tested here because

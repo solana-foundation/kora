@@ -69,7 +69,7 @@ fn resign_transaction(
 // **************************************************************************************
 
 #[tokio::test]
-async fn test_sign_transaction_with_lighthouse_legacy() {
+async fn test_sign_transaction_with_lighthouse() {
     let ctx = crate::ctx().await;
     let _fee_payer_sol = FEE_PAYER_SOL.read().await;
     let rpc_client = ctx.rpc_client();
@@ -131,77 +131,6 @@ async fn test_sign_transaction_with_lighthouse_legacy() {
     assert!(
         sim_result.value.err.is_none(),
         "Transaction simulation with lighthouse assertion should succeed: {:?}",
-        sim_result.value.err
-    );
-}
-
-#[tokio::test]
-async fn test_sign_transaction_with_lighthouse_v0() {
-    let ctx = crate::ctx().await;
-    let _fee_payer_sol = FEE_PAYER_SOL.read().await;
-    let rpc_client = ctx.rpc_client();
-
-    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
-    let sender = SenderTestHelper::get_test_sender_keypair();
-    let recipient = RecipientTestHelper::get_recipient_pubkey();
-    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-
-    let base64_transaction = ctx
-        .v0_transaction_builder()
-        .with_fee_payer(fee_payer)
-        .with_signer(&sender)
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &fee_payer,
-            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
-            TEST_USDC_MINT_DECIMALS,
-        )
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &recipient,
-            10,
-            TEST_USDC_MINT_DECIMALS,
-        )
-        .build()
-        .await
-        .expect("Failed to create V0 transaction");
-
-    let original_tx = TransactionUtil::decode_b64_transaction(&base64_transaction)
-        .expect("Failed to decode original V0 transaction");
-    let original_ix_count = original_tx.message.instructions().len();
-
-    let response: serde_json::Value = ctx
-        .rpc_call("signTransaction", rpc_params![base64_transaction])
-        .await
-        .expect("Failed to sign V0 transaction");
-
-    response.assert_success();
-
-    let signed_tx_b64 = response["signed_transaction"].as_str().unwrap();
-    let signed_tx = TransactionUtil::decode_b64_transaction(signed_tx_b64)
-        .expect("Failed to decode signed V0 transaction");
-
-    assert_eq!(
-        signed_tx.message.instructions().len(),
-        original_ix_count + 1,
-        "Expected one additional instruction (lighthouse assertion) for V0"
-    );
-
-    assert!(
-        verify_lighthouse_assertion_added(&signed_tx),
-        "Last instruction should be lighthouse program for V0 transaction"
-    );
-
-    let sim_result = rpc_client
-        .simulate_transaction(&signed_tx)
-        .await
-        .expect("Failed to simulate V0 transaction");
-
-    assert!(
-        sim_result.value.err.is_none(),
-        "V0 transaction simulation with lighthouse assertion should succeed: {:?}",
         sim_result.value.err
     );
 }
@@ -351,9 +280,10 @@ async fn test_lighthouse_end_to_end_with_client_resign() {
     );
 }
 
-/// V0 version of the end-to-end test
+/// A client sizes its V1 limits from a simulation that ran before Kora appended the
+/// assertion, so the signed transaction must still fit once the assertion is in it.
 #[tokio::test]
-async fn test_lighthouse_end_to_end_v0_with_client_resign() {
+async fn test_lighthouse_assertion_fits_limits_sized_from_simulation() {
     let ctx = crate::ctx().await;
     let _fee_payer_sol = FEE_PAYER_SOL.read().await;
     let rpc_client = ctx.rpc_client();
@@ -363,54 +293,57 @@ async fn test_lighthouse_end_to_end_v0_with_client_resign() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    let base64_transaction = ctx
-        .v0_transaction_builder()
-        .with_fee_payer(fee_payer)
-        .with_signer(&sender)
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &fee_payer,
-            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
-            TEST_USDC_MINT_DECIMALS,
+    let builder = || {
+        ctx.transaction_builder()
+            .with_fee_payer(fee_payer)
+            .with_signer(&sender)
+            .with_spl_transfer(
+                &token_mint,
+                &sender.pubkey(),
+                &fee_payer,
+                tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+            )
+            .with_transfer(&sender.pubkey(), &recipient, 10)
+    };
+
+    let unsized_tx = TransactionUtil::decode_b64_transaction(
+        &builder().build().await.expect("Failed to create transaction"),
+    )
+    .expect("Failed to decode transaction");
+    let usage = rpc_client
+        .simulate_transaction_with_config(
+            &unsized_tx,
+            RpcSimulateTransactionConfig {
+                sig_verify: false,
+                commitment: Some(rpc_client.commitment()),
+                ..Default::default()
+            },
         )
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &recipient,
-            10,
-            TEST_USDC_MINT_DECIMALS,
-        )
+        .await
+        .expect("Failed to simulate transaction")
+        .value;
+    assert!(usage.err.is_none(), "Sizing simulation failed: {:?}", usage.err);
+    let compute_units = usage.units_consumed.expect("Simulation reports compute units") as u32;
+    let loaded_accounts_data_size =
+        usage.loaded_accounts_data_size.expect("Simulation reports loaded accounts data size");
+
+    let base64_transaction = builder()
+        .with_resource_limits(compute_units, loaded_accounts_data_size)
         .build()
         .await
-        .expect("Failed to create V0 transaction");
-
-    let original_tx = TransactionUtil::decode_b64_transaction(&base64_transaction)
-        .expect("Failed to decode original V0 transaction");
-    let original_ix_count = original_tx.message.instructions().len();
+        .expect("Failed to create transaction");
 
     let response: serde_json::Value = ctx
         .rpc_call("signTransaction", rpc_params![base64_transaction])
         .await
-        .expect("Failed to sign V0 transaction");
-
+        .expect("Failed to sign transaction");
     response.assert_success();
 
-    let signed_tx_b64 = response["signed_transaction"].as_str().unwrap();
-    let mut signed_tx = TransactionUtil::decode_b64_transaction(signed_tx_b64)
-        .expect("Failed to decode signed V0 transaction");
-
-    assert_eq!(
-        signed_tx.message.instructions().len(),
-        original_ix_count + 1,
-        "Expected one additional instruction (lighthouse assertion) for V0"
-    );
-    assert!(
-        verify_lighthouse_assertion_added(&signed_tx),
-        "Last instruction should be lighthouse program for V0"
-    );
-
-    resign_transaction(&mut signed_tx, &sender).expect("Failed to re-sign V0 transaction");
+    let mut signed_tx =
+        TransactionUtil::decode_b64_transaction(response["signed_transaction"].as_str().unwrap())
+            .expect("Failed to decode signed transaction");
+    assert!(verify_lighthouse_assertion_added(&signed_tx));
+    resign_transaction(&mut signed_tx, &sender).expect("Failed to re-sign transaction");
 
     let sim_result = rpc_client
         .simulate_transaction_with_config(
@@ -422,11 +355,10 @@ async fn test_lighthouse_end_to_end_v0_with_client_resign() {
             },
         )
         .await
-        .expect("Failed to simulate V0 transaction");
-
+        .expect("Failed to simulate transaction");
     assert!(
         sim_result.value.err.is_none(),
-        "V0 transaction simulation should succeed after re-signing. Error: {:?}",
+        "The assertion must fit within limits sized without it. Error: {:?}",
         sim_result.value.err
     );
 }

@@ -48,14 +48,13 @@ mod tests {
     use crate::{
         signer::{pool::SignerWithMetadata, SignerPool},
         state::{update_config, update_signer_pool},
-        tests::config_mock::ConfigMockBuilder,
+        tests::{config_mock::ConfigMockBuilder, transaction_mock::create_test_message},
+        transaction::TransactionUtil,
     };
     use serial_test::serial;
     use solana_keychain::Signer;
-    use solana_message::Message;
-    use solana_sdk::{
-        hash::Hash, signature::Keypair, signer::Signer as SdkSigner, transaction::Transaction,
-    };
+
+    use solana_sdk::{hash::Hash, signature::Keypair, signer::Signer as SdkSigner};
     use solana_system_interface::instruction::transfer;
 
     fn setup_bundle_signer_state(
@@ -78,9 +77,10 @@ mod tests {
 
     fn create_test_resolved_with_fee_payer(fee_payer: &Keypair) -> VersionedTransactionResolved {
         let instruction = transfer(&fee_payer.pubkey(), &Pubkey::new_unique(), 1000);
-        let message = Message::new(&[instruction], Some(&fee_payer.pubkey()));
-        let transaction = Transaction::new_unsigned(message);
-        let versioned = solana_sdk::transaction::VersionedTransaction::from(transaction);
+        let versioned = TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+            &fee_payer.pubkey(),
+            &[instruction],
+        ));
 
         VersionedTransactionResolved::from_kora_built_transaction(&versioned).unwrap()
     }
@@ -90,9 +90,10 @@ mod tests {
     ) -> VersionedTransactionResolved {
         let attacker_fee_payer = Keypair::new();
         let instruction = transfer(&attacker_fee_payer.pubkey(), signer_like_fee_payer, 1000);
-        let message = Message::new(&[instruction], Some(&attacker_fee_payer.pubkey()));
-        let transaction = Transaction::new_unsigned(message);
-        let versioned = solana_sdk::transaction::VersionedTransaction::from(transaction);
+        let versioned = TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+            &attacker_fee_payer.pubkey(),
+            &[instruction],
+        ));
 
         VersionedTransactionResolved::from_kora_built_transaction(&versioned).unwrap()
     }

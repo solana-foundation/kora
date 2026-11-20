@@ -21,6 +21,7 @@ import {
     type KeyPairSigner,
     partiallySignTransaction,
     pipe,
+    setTransactionMessageConfig,
     setTransactionMessageFeePayerSigner,
     setTransactionMessageLifetimeUsingBlockhash,
     type Transaction,
@@ -87,8 +88,13 @@ async function buildTokenTransferTransaction(params: {
     } as TransactionSigner;
 
     const transactionMessage = pipe(
-        createTransactionMessage({ version: 0 }),
+        createTransactionMessage({ version: 1 }),
         tx => setTransactionMessageFeePayerSigner(feePayerSigner, tx),
+        tx =>
+            setTransactionMessageConfig(
+                { computeUnitLimit: 200_000, loadedAccountsDataSizeLimit: 64 * 1024 * 1024 },
+                tx,
+            ),
         tx =>
             setTransactionMessageLifetimeUsingBlockhash(
                 { blockhash: blockhash as Blockhash, lastValidBlockHeight: BigInt(Number.MAX_SAFE_INTEGER) },

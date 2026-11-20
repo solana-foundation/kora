@@ -30,9 +30,9 @@ import {
   KeyPairSigner,
   pipe,
   createTransactionMessage,
+  setTransactionMessageConfig,
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
-  MicroLamports,
   appendTransactionMessageInstructions,
   createSolanaRpc,
   createSolanaRpcSubscriptions,
@@ -41,7 +41,6 @@ import { getTransferInstruction, findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS }
 import { getTransferSolInstruction } from "@solana-program/system";
 import { getAddMemoInstruction } from "@solana-program/memo";
 import { createRecentSignatureConfirmationPromiseFactory } from "@solana/transaction-confirmation";
-import { updateOrAppendSetComputeUnitLimitInstruction, updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
 ```
 
 ### Step-by-Step Implementation
@@ -110,14 +109,15 @@ const { blockhash } = await client.getBlockhash();
 
 // Build estimate transaction
 const estimateTx = pipe(
-  createTransactionMessage({ version: 0 }),
+  createTransactionMessage({ version: 1 }),
   tx => setTransactionMessageFeePayerSigner(noopSigner, tx),
   tx => setTransactionMessageLifetimeUsingBlockhash({
     blockhash: blockhash as Blockhash, lastValidBlockHeight: 0n,
   }, tx),
   tx => appendTransactionMessageInstructions(instructions, tx),
-  tx => updateOrAppendSetComputeUnitPriceInstruction(1_000_000n as MicroLamports, tx),
-  tx => updateOrAppendSetComputeUnitLimitInstruction(200_000, tx),
+  tx => setTransactionMessageConfig({
+    computeUnitLimit: 200_000, loadedAccountsDataSizeLimit: 64 * 1024 * 1024, priorityFeeLamports: 1_000n,
+  }, tx),
 );
 
 const signedEstimate = await partiallySignTransactionMessageWithSigners(estimateTx);
@@ -135,14 +135,15 @@ const { payment_instruction } = await client.getPaymentInstruction({
 ```ts
 const newBlockhash = await client.getBlockhash();
 const finalTx = pipe(
-  createTransactionMessage({ version: 0 }),
+  createTransactionMessage({ version: 1 }),
   tx => setTransactionMessageFeePayerSigner(noopSigner, tx),
   tx => setTransactionMessageLifetimeUsingBlockhash({
     blockhash: newBlockhash.blockhash as Blockhash, lastValidBlockHeight: 0n,
   }, tx),
   tx => appendTransactionMessageInstructions([...instructions, payment_instruction], tx),
-  tx => updateOrAppendSetComputeUnitPriceInstruction(1_000_000n as MicroLamports, tx),
-  tx => updateOrAppendSetComputeUnitLimitInstruction(200_000, tx),
+  tx => setTransactionMessageConfig({
+    computeUnitLimit: 200_000, loadedAccountsDataSizeLimit: 64 * 1024 * 1024, priorityFeeLamports: 1_000n,
+  }, tx),
 );
 
 const partiallySigned = await partiallySignTransactionMessageWithSigners(finalTx);

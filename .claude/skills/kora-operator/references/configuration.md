@@ -176,11 +176,10 @@ When enabled, the returned transaction message may be modified (balance assertio
 [validation]
 max_allowed_lamports = 1000000     # Max transaction value in lamports
 # max_priority_fee_lamports = 100000 # Max priority fee in lamports (unset = unlimited, 0 = none).
-                                     # Covers ComputeBudget instructions and the v1 transaction config.
+                                     # Read from the transaction config; ComputeBudget instructions are ignored.
 max_signatures = 10                # Max signatures per transaction
 price_source = "Mock"              # "Mock" or "Jupiter" (requires JUPITER_API_KEY)
 allow_durable_transactions = false # Allow durable nonce transactions (security risk!)
-# allowed_transaction_versions = ["legacy", 0, 1] # Accepted transaction versions (default: all)
 
 # Program allowlist (by public key)
 allowed_programs = [
@@ -209,7 +208,7 @@ disallowed_accounts = []
 
 **`allow_durable_transactions`**: Allows nonce-based transactions. Security risk: transactions can be replayed after nonce advance.
 
-**`allowed_transaction_versions`**: Transaction message versions the node accepts, `"legacy"` (a string), `0` and `1` (integers). Defaults to all three. Transactions of any other version fail transaction validation on the signing, sending and bundle methods. Bundle transactions left out of `sign_only_indices` are not validated, so their version is not checked either. An empty list, or a number other than 0 or 1, fails config validation.
+**Transaction versions**: The node accepts V1 transactions only; legacy and V0 transactions are rejected when decoded, on every method. Bundle transactions left out of `sign_only_indices` are passed through undecoded, so their version is not checked. A config that still sets the removed `allowed_transaction_versions` key fails to parse.
 
 ---
 

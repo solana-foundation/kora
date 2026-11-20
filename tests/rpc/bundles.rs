@@ -18,9 +18,9 @@ use std::str::FromStr;
 // signBundle tests
 // **************************************************************************************
 
-/// Test signing a single legacy transaction bundle
+/// Test signing a single transaction bundle
 #[tokio::test]
-async fn test_sign_bundle_single_legacy_transaction() {
+async fn test_sign_bundle_single_transaction() {
     let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
@@ -62,9 +62,9 @@ async fn test_sign_bundle_single_legacy_transaction() {
     assert!(response["signer_pubkey"].as_str().is_some(), "Expected signer_pubkey in response");
 }
 
-/// Test signing multiple legacy transactions in a bundle
+/// Test signing multiple transactions in a bundle
 #[tokio::test]
-async fn test_sign_bundle_multiple_legacy_transactions() {
+async fn test_sign_bundle_multiple_transactions() {
     let ctx = crate::ctx().await;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
@@ -140,49 +140,6 @@ async fn test_sign_bundle_max_size() {
 
     let signed_txs = response["signed_transactions"].as_array().unwrap();
     assert_eq!(signed_txs.len(), 5, "Expected 5 signed transactions");
-}
-
-/// Test signing V0 transactions in bundle
-#[tokio::test]
-async fn test_sign_bundle_v0_transactions() {
-    let ctx = crate::ctx().await;
-
-    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
-    let sender = SenderTestHelper::get_test_sender_keypair();
-    let recipient = RecipientTestHelper::get_recipient_pubkey();
-    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-
-    // Create V0 transaction
-    let tx = ctx
-        .v0_transaction_builder()
-        .with_fee_payer(fee_payer)
-        .with_signer(&sender)
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &fee_payer,
-            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
-            TEST_USDC_MINT_DECIMALS,
-        )
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &recipient,
-            10,
-            TEST_USDC_MINT_DECIMALS,
-        )
-        .build()
-        .await
-        .expect("Failed to create V0 transaction");
-
-    let transactions = vec![tx];
-    let response: serde_json::Value = ctx
-        .rpc_call("signBundle", rpc_params![transactions])
-        .await
-        .expect("Failed to sign V0 bundle");
-
-    response.assert_success();
-    assert_eq!(response["signed_transactions"].as_array().unwrap().len(), 1);
 }
 
 /// Test empty bundle returns error

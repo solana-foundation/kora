@@ -2,6 +2,10 @@
 
 This sample code will help you get started with Jito Bundles with Kora.
 
+## SDK
+
+The client uses the TypeScript SDK in `sdks/ts` through a `link:` dependency, so build it before installing the client: run `pnpm install` in `sdks/`.
+
 ## Full Demo
 
 A full demo of Kora is available [here](https://launch.solana.com/docs/kora/guides/jito-demo).

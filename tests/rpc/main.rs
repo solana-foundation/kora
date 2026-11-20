@@ -1,9 +1,9 @@
 // RPC Integration Tests
 //
 // CONFIG: Uses tests/src/common/fixtures/kora-test.toml (no auth enabled)
-// TESTS: Core JSON-RPC functionality with all transaction variants
+// TESTS: Core JSON-RPC functionality
 //        - Basic endpoints (getConfig, getBlockhash, etc.)
-//        - Fee estimation with legacy, V0, V0+lookup, compute budget scenarios
+//        - Fee estimation, including priority fee and compute budget scenarios
 //        - Transaction signing with all formats and conditions
 //        - Bundle signing operations (signBundle, signAndSendBundle)
 //        - Durable transaction blocking (nonce-based transactions)

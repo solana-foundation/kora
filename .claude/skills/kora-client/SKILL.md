@@ -8,7 +8,9 @@ description: "Kora TypeScript SDK and JSON-RPC API integration for Solana gasles
 Kora is a Solana paymaster: users pay fees in SPL tokens (e.g. USDC) instead of SOL.
 
 **Docs**: https://launch.solana.com/docs/kora/ · **SDK**: `@solana/kora` (npm)
-**Peer deps**: `@solana/kit` v6+, `@solana-program/token` v0.10+
+**Peer deps**: `@solana/kit` v8.5+, `@solana-program/token` v0.17+
+**Transactions**: V1 only (`createTransactionMessage({ version: 1 })`); legacy and V0 are rejected. Set
+`computeUnitLimit` and `loadedAccountsDataSizeLimit` in the message config, since an unset limit is zero.
 
 ## Where things are
 
@@ -59,7 +61,9 @@ The parts that trip people up:
 
 If the operator enables Lighthouse, `signTransaction` and `signBundle` may return a transaction
 with an extra balance-assertion instruction. That changes the message, so any signature already
-applied is void: re-sign the returned transaction client-side and submit it yourself.
+applied is void: re-sign the returned transaction client-side and submit it yourself. Kora also
+raises the message's compute unit and loaded accounts data size limits to cover the assertion, so
+limits sized from your own simulation still fit.
 
 Lighthouse never applies to `signAndSendTransaction` / `signAndSendBundle` — Kora broadcasts those
 itself, so there is no opportunity to re-sign and the assertion is skipped.

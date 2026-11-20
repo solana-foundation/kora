@@ -162,11 +162,14 @@ mod tests {
     use super::{super::TransactionPluginRunner, *};
     use crate::{
         config::TransactionPluginType,
-        tests::{common::RpcMockBuilder, config_mock::ConfigMockBuilder},
+        tests::{
+            common::RpcMockBuilder, config_mock::ConfigMockBuilder,
+            transaction_mock::create_test_message,
+        },
         transaction::TransactionUtil,
     };
     use solana_compute_budget_interface::ComputeBudgetInstruction;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
     use solana_system_interface::instruction::{assign, transfer};
     use std::sync::Arc;
@@ -203,8 +206,9 @@ mod tests {
         .unwrap();
         let sol_ix = transfer(&fee_payer, &destination_wallet, 20_000);
 
-        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
-            Message::new(&[token_ix, sol_ix], Some(&fee_payer)),
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+            &fee_payer,
+            &[token_ix, sol_ix],
         ));
         let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -245,8 +249,9 @@ mod tests {
             Instruction { program_id: Pubkey::new_unique(), accounts: vec![], data: vec![1, 2, 3] };
         let sol_ix = transfer(&fee_payer, &destination_wallet, 20_000);
 
-        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
-            Message::new(&[token_ix, custom_ix, sol_ix], Some(&fee_payer)),
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+            &fee_payer,
+            &[token_ix, custom_ix, sol_ix],
         ));
         let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -284,8 +289,9 @@ mod tests {
         .unwrap();
         let assign_ix = assign(&fee_payer, &Pubkey::new_unique());
 
-        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
-            Message::new(&[token_ix, assign_ix], Some(&fee_payer)),
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+            &fee_payer,
+            &[token_ix, assign_ix],
         ));
         let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -326,8 +332,9 @@ mod tests {
         .unwrap();
         let sol_ix = transfer(&wrong_sender, &destination_wallet, 20_000);
 
-        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
-            Message::new(&[token_ix, sol_ix], Some(&fee_payer)),
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+            &fee_payer,
+            &[token_ix, sol_ix],
         ));
         let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -354,8 +361,9 @@ mod tests {
         let destination_wallet = Pubkey::new_unique();
         let sol_ix = transfer(&fee_payer, &destination_wallet, 20_000);
 
-        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
-            Message::new(&[sol_ix], Some(&fee_payer)),
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+            &fee_payer,
+            &[sol_ix],
         ));
         let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -397,8 +405,9 @@ mod tests {
         let compute_price_ix = ComputeBudgetInstruction::set_compute_unit_price(1_000);
         let sol_ix = transfer(&fee_payer, &destination_wallet, 20_000);
 
-        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
-            Message::new(&[compute_limit_ix, compute_price_ix, token_ix, sol_ix], Some(&fee_payer)),
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+            &fee_payer,
+            &[compute_limit_ix, compute_price_ix, token_ix, sol_ix],
         ));
         let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -439,8 +448,9 @@ mod tests {
             Instruction { program_id: Pubkey::new_unique(), accounts: vec![], data: vec![1, 2, 3] };
         let sol_ix = transfer(&fee_payer, &destination_wallet, 20_000);
 
-        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
-            Message::new(&[token_ix, extra_ix, sol_ix], Some(&fee_payer)),
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+            &fee_payer,
+            &[token_ix, extra_ix, sol_ix],
         ));
         let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 

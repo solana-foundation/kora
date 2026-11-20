@@ -36,7 +36,6 @@ solana-loader-v4-interface = { workspace = true }
 solana-client = { workspace = true }
 bs58 = { workspace = true }
 bincode = { workspace = true }
-borsh = { workspace = true }
 base64 = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

@@ -55,12 +55,13 @@ Every flag defaults to `false` and the structs carry `#[serde(default)]`. That c
 deliberate: adding a newly gated instruction must not break an existing operator's config, and it
 must land as a denial rather than an accidental allowance. Preserve both when adding a flag.
 
-### V0 transactions need lookup tables resolved before validation
+### Only V1 transactions get past decoding
 
-`VersionedTransaction::get_all_account_keys()` returns only the static keys. Validating or pricing a
-V0 transaction without resolving first silently skips the lookup-table accounts and under-charges.
-Call `VersionedTransactionResolved::resolve_addresses(rpc_client).await` first; it caches. Resolution
-costs an RPC call, which is why it is explicit at the call site instead of happening implicitly.
+`TransactionUtil::decode_b64_transaction` rejects legacy and V0 messages, and every RPC method decodes
+through it, so code downstream may assume V1 (no lookup tables, priority fee and resource limits in
+the message config). `VersionedTransactionResolved::from_kora_built_transaction` skips that check, so
+build unit-test fixtures as V1 (`tests::transaction_mock::create_test_message`) to match what
+production sees.
 
 ### Middleware order is load-bearing
 

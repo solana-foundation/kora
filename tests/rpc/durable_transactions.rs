@@ -43,7 +43,7 @@ async fn test_durable_transaction_rejected() {
 
     // Build durable nonce transaction
     let durable_tx = ctx
-        .v0_transaction_builder()
+        .transaction_builder()
         .with_fee_payer(fee_payer)
         .with_signer(&sender)
         .build_with_nonce(&nonce_account.pubkey())

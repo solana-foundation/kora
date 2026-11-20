@@ -75,6 +75,7 @@ async function main() {
     const facilitator = registerExactSvmScheme(new x402Facilitator(), {
         signer: await createKoraSigner(),
         networks: NETWORK,
+        transactionVersions: [1],
     });
 
     const app = express();

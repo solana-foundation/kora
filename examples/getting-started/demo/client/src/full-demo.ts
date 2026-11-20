@@ -20,20 +20,29 @@ import {
   createTransactionMessage,
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
-  MicroLamports,
+  setTransactionMessageConfig,
   appendTransactionMessageInstructions,
 } from "@solana/kit";
-import { getAddMemoInstruction } from "@solana-program/memo";
+import { getAddMemoInstruction, LEGACY_MEMO_PROGRAM_ADDRESS_V3 } from "@solana-program/memo";
+import { getTransferSolInstruction } from "@solana-program/system";
+import {
+  findAssociatedTokenPda,
+  getCreateAssociatedTokenIdempotentInstructionAsync,
+  getTransferInstruction,
+  TOKEN_PROGRAM_ADDRESS,
+} from "@solana-program/token";
 import { createRecentSignatureConfirmationPromiseFactory } from "@solana/transaction-confirmation";
-import { updateOrAppendSetComputeUnitLimitInstruction, updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
 import dotenv from "dotenv";
 import path from "path";
 
 dotenv.config({ path: path.join(process.cwd(), "..", ".env") });
 
 const CONFIG = {
-  computeUnitLimit: 200_000,
-  computeUnitPrice: 1_000_000n as MicroLamports,
+  transactionConfig: {
+    computeUnitLimit: 200_000,
+    loadedAccountsDataSizeLimit: 64 * 1024 * 1024,
+    priorityFeeLamports: 200n,
+  },
   solanaRpcUrl: "http://127.0.0.1:8899",
   solanaWsUrl: "ws://127.0.0.1:8900",
   koraRpcUrl: "http://localhost:8080/",
@@ -96,34 +105,52 @@ async function createInstructions(
     .then((config) => config.validation_config.allowed_spl_paid_tokens[0]);
   console.log("  → Payment token:", paymentToken);
 
-  // Create token transfer (will initialize ATA if needed)
+  // Create token transfer to a fresh wallet, creating its ATA (sender pays the rent)
+  const mint = address(paymentToken);
   const tokenDestination = await generateKeyPairSigner();
-  const transferTokens = await client.transferTransaction({
-    amount: 10_000_000, // 10 USDC (6 decimals)
-    token: paymentToken,
-    source: testSenderKeypair.address,
-    destination: tokenDestination.address,
+  const [sourceAta] = await findAssociatedTokenPda({
+    mint,
+    owner: testSenderKeypair.address,
+    tokenProgram: TOKEN_PROGRAM_ADDRESS,
   });
-  console.log("  ✓ Token transfer instruction created");
+  const [destinationAta] = await findAssociatedTokenPda({
+    mint,
+    owner: tokenDestination.address,
+    tokenProgram: TOKEN_PROGRAM_ADDRESS,
+  });
+  const transferTokens = [
+    await getCreateAssociatedTokenIdempotentInstructionAsync({
+      mint,
+      payer: testSenderKeypair,
+      owner: tokenDestination.address,
+    }),
+    getTransferInstruction({
+      source: sourceAta,
+      destination: destinationAta,
+      authority: testSenderKeypair,
+      amount: 10_000_000n, // 10 USDC (6 decimals)
+    }),
+  ];
+  console.log("  ✓ Token transfer instructions created");
 
   // Create SOL transfer
-  const transferSol = await client.transferTransaction({
-    amount: 10_000_000, // 0.01 SOL (9 decimals)
-    token: "11111111111111111111111111111111", // SOL mint address
-    source: testSenderKeypair.address,
+  const transferSol = getTransferSolInstruction({
+    source: testSenderKeypair,
     destination: destinationKeypair.address,
+    amount: 10_000_000n, // 0.01 SOL (9 decimals)
   });
   console.log("  ✓ SOL transfer instruction created");
 
   // Add memo instruction
-  const memoInstruction = getAddMemoInstruction({
-    memo: "Hello, Kora!",
-  });
+  const memoInstruction = getAddMemoInstruction(
+    { memo: "Hello, Kora!" },
+    { programAddress: LEGACY_MEMO_PROGRAM_ADDRESS_V3 },
+  );
   console.log("  ✓ Memo instruction created");
 
   const instructions = [
-    ...transferTokens.instructions,
-    ...transferSol.instructions,
+    ...transferTokens,
+    transferSol,
     memoInstruction,
   ];
 
@@ -149,14 +176,13 @@ async function getPaymentInstruction(
   // Create estimate transaction to get payment instruction
 
   const estimateTransaction = pipe(
-    createTransactionMessage({ version: 0 }),
+    createTransactionMessage({ version: 1 }),
     (tx) => setTransactionMessageFeePayerSigner(noopSigner, tx),
     (tx) => setTransactionMessageLifetimeUsingBlockhash({
       blockhash: latestBlockhash.blockhash as Blockhash,
       lastValidBlockHeight: 0n,
     }, tx),
-    (tx) => updateOrAppendSetComputeUnitPriceInstruction(CONFIG.computeUnitPrice, tx),
-    (tx) => updateOrAppendSetComputeUnitLimitInstruction(CONFIG.computeUnitLimit, tx),
+    (tx) => setTransactionMessageConfig(CONFIG.transactionConfig, tx),
     (tx) => appendTransactionMessageInstructions(instructions, tx),
   )
 
@@ -192,14 +218,13 @@ async function getFinalTransaction(
   const newBlockhash = await client.getBlockhash();
 
   const fullTransaction = pipe(
-    createTransactionMessage({ version: 0 }),
+    createTransactionMessage({ version: 1 }),
     (tx) => setTransactionMessageFeePayerSigner(noopSigner, tx),
     (tx) => setTransactionMessageLifetimeUsingBlockhash({
       blockhash: newBlockhash.blockhash as Blockhash,
       lastValidBlockHeight: 0n,
     }, tx),
-    (tx) => updateOrAppendSetComputeUnitPriceInstruction(CONFIG.computeUnitPrice, tx),
-    (tx) => updateOrAppendSetComputeUnitLimitInstruction(CONFIG.computeUnitLimit, tx),
+    (tx) => setTransactionMessageConfig(CONFIG.transactionConfig, tx),
     (tx) => appendTransactionMessageInstructions([...instructions, paymentInstruction], tx),
   );
 

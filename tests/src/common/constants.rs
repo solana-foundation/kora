@@ -1,7 +1,7 @@
 /// Default recipient public key for tests
 pub const RECIPIENT_PUBKEY: &str = "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM";
 
-/// Test disallowed address for lookup table tests
+/// Listed in `disallowed_accounts` by the test fixtures
 pub const TEST_DISALLOWED_ADDRESS: &str = "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek";
 
 /// Test payment address for paymaster tests
@@ -74,12 +74,3 @@ pub const TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR_ENV: &str =
 
 /// Payment address keypair environment variable
 pub const PAYMENT_ADDRESS_KEYPAIR_ENV: &str = "PAYMENT_ADDRESS_KEYPAIR";
-
-/// Test allowed lookup table address environment variable
-pub const TEST_ALLOWED_LOOKUP_TABLE_ADDRESS_ENV: &str = "TEST_ALLOWED_LOOKUP_TABLE_ADDRESS";
-
-/// Test disallowed lookup table address environment variable
-pub const TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS_ENV: &str = "TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS";
-
-/// Test transaction lookup table address environment variable
-pub const TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS_ENV: &str = "TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS";
