@@ -1,0 +1,70 @@
+name: Audit Fix
+
+on:
+  schedule:
+    - cron: '30 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: audit-fix
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  audit-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: nightly-2026-07-13
+      - uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2.82.0
+        with:
+          tool: cargo-audit
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 'lts/*'
+      - uses: pnpm/action-setup@739bfe42ca9233c5e6aca07c1a25a9d34aca49b0 # v6.0.7
+        with:
+          version: 11.28.2
+          run_install: false
+
+      - name: Override vulnerable pnpm packages
+        working-directory: sdks
+        run: |
+          pnpm audit --fix=override || true
+          pnpm install --lockfile-only
+
+      - name: Update vulnerable crates
+        run: |
+          for dir in . fuzz; do
+            cargo audit --file "$dir/Cargo.lock" --json \
+              | jq -r '.vulnerabilities.list[].package | "--package=\(.name)@\(.version)"' \
+              | sort -u \
+              | xargs -r cargo update --manifest-path "$dir/Cargo.toml"
+          done
+
+      - name: Verify audits pass
+        run: |
+          cargo audit
+          cargo audit -f fuzz/Cargo.lock
+          (cd sdks && pnpm audit)
+
+      - uses: peter-evans/create-pull-request@15733dbdfeedb4f7fdb73d13c6f5ac83b710fab8 # v8.1.2
+        with:
+          branch: fix/audit-advisories
+          delete-branch: true
+          sign-commits: true
+          commit-message: 'fix(deps): resolve pnpm and cargo audit advisories'
+          title: 'fix(deps): resolve pnpm and cargo audit advisories'
+          body: |
+            Automated by the `Audit Fix` workflow: `pnpm audit --fix=override` in `sdks/` and `cargo update -p` for vulnerable crates in `Cargo.lock` and `fuzz/Cargo.lock`, then the audits re-run clean.
+
+            Approve the pending workflow runs to start CI, and review forced overrides for major-version jumps before merging.
