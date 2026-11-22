@@ -22,6 +22,7 @@ pub struct DeployState {
     pub program_hash: String,
     #[serde(default = "legacy_chunk_size")]
     pub chunk_size: usize,
+    /// None indicates legacy state without wallet tracking; Some(None) indicates immutable deployment.
     #[serde(
         default,
         deserialize_with = "deserialize_wallet_pubkey",
@@ -101,6 +102,7 @@ fn save_state_file<T: Serialize>(state: &T, path: &Path, type_name: &str) -> Res
         file.write_all(data.as_bytes()).with_context(|| {
             format!("failed to write temp {type_name} to {}", temp_path.display())
         })?;
+        // Flush content before atomic rename so an abrupt power loss cannot corrupt the destination file.
         file.sync_data().with_context(|| format!("failed to sync temp {type_name} to disk"))?;
         drop(file);
 
@@ -136,6 +138,9 @@ pub struct UpgradeState {
     pub written_chunks: usize,
     pub kora_pubkey: String,
     pub program_hash: String,
+    /// Binary length recorded at creation; allows landed upgrades to be verified if the local file is rebuilt before resume.
+    #[serde(default)]
+    pub binary_len: usize,
     #[serde(default = "legacy_chunk_size")]
     pub chunk_size: usize,
     /// ProgramData slot before upgrade; verifies advancement on resume if buffer was closed after timeout.
@@ -362,6 +367,7 @@ mod tests {
             written_chunks: 15,
             kora_pubkey: "Base58KoraPubkey111111111111111111111111111".to_string(),
             program_hash: "dummy_program_hash_987".to_string(),
+            binary_len: 200,
             chunk_size: 3800,
             program_data_slot_at_start: 123_456_789,
         };
@@ -415,6 +421,7 @@ mod tests {
             written_chunks: 5,
             kora_pubkey: "Base58KoraPubkey111111111111111111111111111".to_string(),
             program_hash: "hash".to_string(),
+            binary_len: 200,
             chunk_size: 900,
             program_data_slot_at_start: 100,
         };
@@ -445,6 +452,7 @@ mod tests {
             written_chunks: 10,
             kora_pubkey: "Base58KoraPubkey111111111111111111111111111".to_string(),
             program_hash: "hash".to_string(),
+            binary_len: 200,
             chunk_size: 900,
             program_data_slot_at_start: 100,
         };
@@ -553,6 +561,7 @@ mod tests {
             }"#,
         )?;
         assert_eq!(state.chunk_size, 900);
+        assert_eq!(state.binary_len, 0);
         Ok(())
     }
 

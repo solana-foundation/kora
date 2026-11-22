@@ -1,6 +1,5 @@
 #![allow(deprecated)]
 
-pub mod sanitize;
 pub mod state;
 #[cfg(test)]
 pub mod tests;
@@ -16,7 +15,10 @@ use std::{
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde_json::{json, Value};
-use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_client::{
+    client_error::{ClientError, ClientErrorKind},
+    nonblocking::rpc_client::RpcClient,
+};
 use solana_commitment_config::CommitmentConfig;
 use solana_compute_budget::compute_budget_limits::{
     DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT, MAX_COMPUTE_UNIT_LIMIT,
@@ -37,10 +39,11 @@ use solana_transaction::versioned::VersionedTransaction;
 
 use crate::state::{ChunkWriterState, DeployState, StateLockGuard, UpgradeState};
 
-// Write instruction data is a u32 enum tag, a u32 offset and a u64 length prefix before the bytes.
+// Loader v3 write instruction wire encoding overhead (enum tag, offset, bytes prefix) before chunk payload.
 const WRITE_INSTRUCTION_HEADER_LEN: usize = 16;
 /// The loader rejects instruction data over PACKET_DATA_SIZE regardless of transaction version.
 pub const WRITE_CHUNK_SIZE: usize = PACKET_DATA_SIZE - WRITE_INSTRUCTION_HEADER_LEN;
+// Groups up to 3 writes per tx to maximize throughput while staying under the ~4KB v1 message limit.
 pub const WRITES_PER_TX: usize = 3;
 const BPF_LOADER_UPGRADEABLE: Pubkey =
     solana_sdk::pubkey!("BPFLoaderUpgradeab1e11111111111111111111111");
@@ -94,7 +97,6 @@ pub enum UpgradeOutcome {
 }
 
 impl UpgradeOutcome {
-    /// Returns the upgrade transaction signature if one was submitted.
     pub fn signature(&self) -> Option<Signature> {
         match self {
             Self::Submitted(sig) => Some(*sig),
@@ -114,20 +116,32 @@ struct DeployCtx<'a> {
 }
 
 impl<'a> DeployCtx<'a> {
+    fn new(
+        http: &'a reqwest::Client,
+        rpc: &'a Arc<RpcClient>,
+        kora_url: &'a str,
+        user_id: &'a str,
+        state_path: &'a Path,
+        cleanup_on_failure: bool,
+        resume: bool,
+    ) -> Self {
+        Self { http, rpc, kora_url, user_id, state_path, cleanup_on_failure, resume }
+    }
+
     fn from_config(
         cfg: &'a DeployConfig<'_>,
         http: &'a reqwest::Client,
         rpc: &'a Arc<RpcClient>,
     ) -> Self {
-        Self {
+        Self::new(
             http,
             rpc,
-            kora_url: cfg.kora_url,
-            user_id: &cfg.user_id,
-            state_path: cfg.state_path.as_path(),
-            cleanup_on_failure: cfg.cleanup_on_failure,
-            resume: cfg.resume,
-        }
+            cfg.kora_url,
+            &cfg.user_id,
+            cfg.state_path.as_path(),
+            cfg.cleanup_on_failure,
+            cfg.resume,
+        )
     }
 
     fn from_upgrade_config(
@@ -135,21 +149,21 @@ impl<'a> DeployCtx<'a> {
         http: &'a reqwest::Client,
         rpc: &'a Arc<RpcClient>,
     ) -> Self {
-        Self {
+        Self::new(
             http,
             rpc,
-            kora_url: cfg.kora_url,
-            user_id: &cfg.user_id,
-            state_path: cfg.state_path.as_path(),
-            cleanup_on_failure: cfg.cleanup_on_failure,
-            resume: cfg.resume,
-        }
+            cfg.kora_url,
+            &cfg.user_id,
+            cfg.state_path.as_path(),
+            cfg.cleanup_on_failure,
+            cfg.resume,
+        )
     }
 }
 
 macro_rules! cleanup_buffer {
-    ($force:expr, $msg:expr, $err_log:expr, $ctx:expr, $buffer:expr, $kora_pubkey:expr) => {
-        if $force || $ctx.cleanup_on_failure {
+    ($msg:expr, $err_log:expr, $ctx:expr, $buffer:expr, $kora_pubkey:expr) => {
+        if $ctx.cleanup_on_failure {
             log::warn!("{}, attempting to close buffer for cleanup...", $msg);
             let mut close_ix = loader_v3::close_any(
                 &$buffer.pubkey(),
@@ -198,7 +212,6 @@ fn read_program_binary(path: &Path) -> Result<(Vec<u8>, String)> {
     Ok((bytes, current_program_hash))
 }
 
-/// Deploys a program via the paymaster, writing chunks to an intermediate buffer.
 pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
     let _guard = StateLockGuard::acquire(cfg.state_path.as_path())?;
 
@@ -221,9 +234,8 @@ async fn deploy_inner(ctx: &DeployCtx<'_>, cfg: &DeployConfig<'_>) -> Result<Dep
         .with_context(|| format!("deploy state at {}", cfg.state_path.display()))?;
     let chunk_count = bytes.len().div_ceil(chunk_size);
 
-    validate_deploy_state(ctx, &buffer, &kora_pubkey, &state, &current_program_hash, chunk_count)
-        .await?;
-
+    // Verify on-chain liveness before hash validation so a rebuild after a timed-out,
+    // landed deployment does not falsely trigger a hash mismatch error.
     if ctx.resume {
         let is_already_live = ctx
             .rpc
@@ -255,6 +267,16 @@ async fn deploy_inner(ctx: &DeployCtx<'_>, cfg: &DeployConfig<'_>) -> Result<Dep
             );
         }
     }
+
+    validate_state_invariants(
+        ctx,
+        &buffer,
+        &kora_pubkey,
+        &state,
+        &current_program_hash,
+        chunk_count,
+    )
+    .await?;
 
     write_chunks(ctx, &bytes, &buffer, &kora_pubkey, &mut state, chunk_size, chunk_count).await?;
 
@@ -375,11 +397,11 @@ async fn load_or_init_deploy_state(
             chunk_size: WRITE_CHUNK_SIZE,
             wallet_pubkey: Some(wallet.map(|w| w.pubkey().to_string())),
         };
+        // Save state before buffer creation so an interrupted RPC call does not orphan the funded keypair.
         new_state.save(state_path).context("failed to save initial deploy state")?;
 
         if let Err(e) = create_buffer_account(ctx, &kora_pubkey, &buffer, bytes.len()).await {
             cleanup_buffer!(
-                false,
                 "failed to create buffer account",
                 |err| log::warn!(
                     "failed to close buffer: {}; keeping state file for manual recovery",
@@ -449,7 +471,6 @@ async fn handle_state_invariant_violation(
         }
         StateInvariantViolation::ChunkOverflow { written, total } => {
             cleanup_buffer!(
-                false,
                 "written_chunks exceeds chunk_count (corrupted state or smaller .so file)",
                 |e| log::warn!(
                     "failed to close buffer: {}; keeping state file for manual recovery",
@@ -487,16 +508,15 @@ async fn validate_state_invariants<S: ChunkWriterState>(
     Ok(())
 }
 
-async fn validate_deploy_state(
-    ctx: &DeployCtx<'_>,
-    buffer: &Keypair,
-    kora_pubkey: &Pubkey,
-    state: &DeployState,
-    current_program_hash: &str,
-    chunk_count: usize,
-) -> Result<()> {
-    validate_state_invariants(ctx, buffer, kora_pubkey, state, current_program_hash, chunk_count)
-        .await
+fn validate_upgrade_state_program(state: &UpgradeState, program: &Pubkey) -> Result<()> {
+    if state.program != program.to_string() {
+        anyhow::bail!(
+            "State file is for program {}, but current target is {}. Cannot resume.",
+            state.program,
+            program
+        );
+    }
+    Ok(())
 }
 
 async fn validate_upgrade_state(
@@ -508,15 +528,29 @@ async fn validate_upgrade_state(
     current_program_hash: &str,
     chunk_count: usize,
 ) -> Result<()> {
-    if state.program != program.to_string() {
-        anyhow::bail!(
-            "State file is for program {}, but current target is {}. Cannot resume.",
-            state.program,
-            program
-        );
-    }
+    validate_upgrade_state_program(state, program)?;
     validate_state_invariants(ctx, buffer, kora_pubkey, state, current_program_hash, chunk_count)
         .await
+}
+
+// Verifies both hash match and all-zero trailing padding to prevent a truncated local binary
+// from reporting a false positive match against a longer deployed program.
+fn program_data_matches_binary(
+    pdata_bytes: &[u8],
+    meta_len: usize,
+    expected_len: usize,
+    expected_hash: &str,
+) -> bool {
+    if pdata_bytes.len() < meta_len + expected_len {
+        return false;
+    }
+    let binary_slice = &pdata_bytes[meta_len..meta_len + expected_len];
+    let onchain_hash = hash(binary_slice).to_string();
+    if onchain_hash != expected_hash {
+        return false;
+    }
+    let trailing_bytes = &pdata_bytes[meta_len + expected_len..];
+    trailing_bytes.iter().all(|&b| b == 0)
 }
 
 async fn load_or_init_upgrade_state(
@@ -528,7 +562,10 @@ async fn load_or_init_upgrade_state(
     let state_path = ctx.state_path;
     let state = load_or_preflight_state(state_path, ctx.resume, "upgrade", UpgradeState::load)?;
 
-    if let Some(st) = state {
+    if let Some(mut st) = state {
+        if st.binary_len == 0 {
+            st.binary_len = bytes.len();
+        }
         let _ = Pubkey::from_str(&st.program).context("invalid program pubkey in state")?;
         let buffer = Keypair::try_from(st.buffer_keypair.as_slice())
             .context("invalid buffer keypair in state")?;
@@ -539,8 +576,7 @@ async fn load_or_init_upgrade_state(
     } else {
         let kora_pubkey = fetch_kora_pubkey(ctx.http, ctx.kora_url).await?;
         let program_data = derive_program_data_address(program);
-        // Snapshot slot before upgrade to verify advancement on resume after timeout.
-        let pdata_account = ctx
+        let mut pdata_account = ctx
             .rpc
             .get_account(&program_data)
             .await
@@ -549,6 +585,67 @@ async fn load_or_init_upgrade_state(
         if pdata_account.data.len() < meta_len {
             bail!("ProgramData account {program_data} data is too short");
         }
+
+        // Skip redundant buffer allocation if target binary is already active on-chain.
+        if program_data_matches_binary(
+            &pdata_account.data,
+            meta_len,
+            bytes.len(),
+            current_program_hash,
+        ) {
+            log::info!(
+                "Program {program} is already up to date with this binary, skipping upgrade."
+            );
+            remove_state_file_on_success(state_path, "Upgrade");
+            return Ok(None);
+        }
+
+        let max_allowed_len = pdata_account.data.len().saturating_sub(meta_len);
+        if bytes.len() > max_allowed_len {
+            // Expand ProgramData account capacity before buffer creation so upgrades to larger binaries succeed.
+            let additional_bytes = u32::try_from(bytes.len() - max_allowed_len)
+                .context("program binary size growth exceeds u32::MAX")?;
+            log::info!(
+                "ProgramData account {program_data} capacity ({max_allowed_len} bytes) is smaller \
+                 than target binary ({} bytes); extending by {additional_bytes} bytes...",
+                bytes.len()
+            );
+            let extend_ix = loader_v3::extend_program_checked(
+                program,
+                &kora_pubkey,
+                Some(&kora_pubkey),
+                additional_bytes,
+            );
+            submit(
+                ctx.http,
+                ctx.kora_url,
+                ctx.user_id,
+                ctx.rpc,
+                &kora_pubkey,
+                &[extend_ix],
+                &[],
+            )
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to extend ProgramData account {program_data} by {additional_bytes} bytes"
+                )
+            })?;
+
+            pdata_account =
+                ctx.rpc.get_account(&program_data).await.with_context(|| {
+                    format!("fetching extended ProgramData account {program_data}")
+                })?;
+            let updated_capacity = pdata_account.data.len().saturating_sub(meta_len);
+            if bytes.len() > updated_capacity {
+                bail!(
+                    "ProgramData account {program_data} capacity ({updated_capacity} bytes) \
+                     remains smaller than target binary ({} bytes) after extension",
+                    bytes.len()
+                );
+            }
+        }
+
         let loader_state: UpgradeableLoaderState =
             bincode::deserialize(&pdata_account.data[..meta_len])
                 .context("deserializing ProgramData header")?;
@@ -557,29 +654,6 @@ async fn load_or_init_upgrade_state(
             other => bail!("expected ProgramData, got {other:?}"),
         };
 
-        // Skip redundant buffer allocation if target binary is already active on-chain.
-        if pdata_account.data.len() >= meta_len + bytes.len() {
-            let onchain_hash =
-                hash(&pdata_account.data[meta_len..meta_len + bytes.len()]).to_string();
-            if onchain_hash == current_program_hash {
-                log::info!(
-                    "Program {program} is already up to date with this binary, skipping upgrade."
-                );
-                remove_state_file_on_success(state_path, "Upgrade");
-                return Ok(None);
-            }
-        }
-
-        let max_allowed_len = pdata_account.data.len().saturating_sub(meta_len);
-        if bytes.len() > max_allowed_len {
-            bail!(
-                "Binary size ({} bytes) exceeds on-chain ProgramData capacity ({} bytes). \
-                 Solana UpgradeableLoader does not support expanding ProgramData accounts during upgrade.",
-                bytes.len(),
-                max_allowed_len
-            );
-        }
-
         let buffer = Keypair::new();
         let new_state = UpgradeState {
             program: program.to_string(),
@@ -587,6 +661,7 @@ async fn load_or_init_upgrade_state(
             written_chunks: 0,
             kora_pubkey: kora_pubkey.to_string(),
             program_hash: current_program_hash.to_string(),
+            binary_len: bytes.len(),
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start,
         };
@@ -594,7 +669,6 @@ async fn load_or_init_upgrade_state(
 
         if let Err(e) = create_buffer_account(ctx, &kora_pubkey, &buffer, bytes.len()).await {
             cleanup_buffer!(
-                false,
                 "failed to create buffer account",
                 |err| log::warn!(
                     "failed to close buffer: {}; keeping state file for manual recovery",
@@ -633,7 +707,6 @@ async fn write_chunks<S: ChunkWriterState>(
                 state.set_written_chunks(written_chunks);
                 if let Err(e) = state.save(state_path) {
                     cleanup_buffer!(
-                        false,
                         "failed to save chunk state",
                         |err| {
                             log::warn!("failed to close buffer: {}; keeping state file for manual recovery", err)
@@ -650,7 +723,6 @@ async fn write_chunks<S: ChunkWriterState>(
             }
             Err(e) => {
                 cleanup_buffer!(
-                    false,
                     "chunk write failed",
                     |err| log::warn!(
                         "failed to close buffer: {}; keeping state file for manual recovery",
@@ -704,6 +776,7 @@ async fn finalize_deploy(
     }
     let mut deploy_signers: Vec<&Keypair> = vec![program, buffer];
     if let Some(wallet) = wallet {
+        // Registering atomically with deployment prevents frontrunning registration before the deployer.
         deploy_ixs.push(register_ix(
             &DEFAULT_REGISTRY_PROGRAM,
             kora_pubkey,
@@ -713,64 +786,45 @@ async fn finalize_deploy(
         deploy_signers.push(wallet);
     }
 
-    // Program stub survives reaping; ProgramData presence confirms a timed-out deploy landed.
-    let program_data = derive_program_data_address(&program.pubkey());
-    let is_already_live = if ctx.resume {
-        ctx.rpc
-            .get_account_with_commitment(&program_data, CommitmentConfig::confirmed())
-            .await?
-            .value
-            .is_some()
-    } else {
-        false
-    };
-
-    if is_already_live {
-        log::info!("Program {} is already live, skipping deployment.", program.pubkey());
-        remove_state_file_on_success(state_path, "Deploy");
-    } else {
-        match submit(
-            ctx.http,
-            ctx.kora_url,
-            ctx.user_id,
-            ctx.rpc,
-            kora_pubkey,
-            &deploy_ixs,
-            &deploy_signers,
-        )
-        .await
-        {
-            Ok(_) => {
-                remove_state_file_on_success(state_path, "Deploy");
-            }
-            Err(e) => {
-                cleanup_buffer!(
-                    false,
-                    "deploy transaction failed",
-                    |err| log::warn!(
-                        "failed to close buffer: {}; keeping state file for manual recovery",
-                        err
-                    ),
-                    ctx,
-                    buffer,
-                    kora_pubkey
-                );
-                return Err(anyhow::anyhow!(
-                    "Failed to submit deploy transaction for {}: {}. \n\
-                    Verify status: `solana program show {}`",
-                    program.pubkey(),
-                    e,
-                    program.pubkey()
-                ));
-            }
+    match submit(
+        ctx.http,
+        ctx.kora_url,
+        ctx.user_id,
+        ctx.rpc,
+        kora_pubkey,
+        &deploy_ixs,
+        &deploy_signers,
+    )
+    .await
+    {
+        Ok(_) => {
+            remove_state_file_on_success(state_path, "Deploy");
+            Ok(())
+        }
+        Err(e) => {
+            cleanup_buffer!(
+                "deploy transaction failed",
+                |err| log::warn!(
+                    "failed to close buffer: {}; keeping state file for manual recovery",
+                    err
+                ),
+                ctx,
+                buffer,
+                kora_pubkey
+            );
+            Err(anyhow::anyhow!(
+                "Failed to submit deploy transaction for {}: {}. \n\
+                Verify status: `solana program show {}`",
+                program.pubkey(),
+                e,
+                program.pubkey()
+            ))
         }
     }
-    Ok(())
 }
 
 async fn check_upgrade_already_landed(
     ctx: &DeployCtx<'_>,
-    bytes: &[u8],
     program: &Pubkey,
     buffer: &Keypair,
     state: &UpgradeState,
@@ -785,8 +839,8 @@ async fn check_upgrade_already_landed(
         return Ok(false);
     }
 
-    // A landed upgrade drains and closes the buffer; if it is gone, verify ProgramData
-    // to detect success after a client timeout.
+    // A landed upgrade drains and closes the buffer; if gone, verify ProgramData against
+    // state's recorded length and hash so a rebuild after client timeout does not cause false failures.
     let program_data = derive_program_data_address(program);
     let pdata_opt = ctx
         .rpc
@@ -796,7 +850,12 @@ async fn check_upgrade_already_landed(
 
     let meta_len = UpgradeableLoaderState::size_of_programdata_metadata();
     let is_landed = pdata_opt.as_ref().is_some_and(|pdata| {
-        if pdata.data.len() < meta_len + bytes.len() {
+        let expected_len = if state.binary_len > 0 {
+            state.binary_len
+        } else {
+            pdata.data.len().saturating_sub(meta_len)
+        };
+        if pdata.data.len() < meta_len + expected_len {
             return false;
         }
         let Ok(UpgradeableLoaderState::ProgramData { slot, .. }) =
@@ -804,9 +863,15 @@ async fn check_upgrade_already_landed(
         else {
             return false;
         };
-        // Upgrades to smaller binaries leave trailing bytes, so hash only the active slice.
-        let onchain_hash = hash(&pdata.data[meta_len..meta_len + bytes.len()]).to_string();
-        slot > state.program_data_slot_at_start && onchain_hash == state.program_hash
+        // ProgramData slot must strictly advance past the start slot to prove this upgrade landed.
+        if slot <= state.program_data_slot_at_start {
+            return false;
+        }
+        // Trailing-zero check is intentionally omitted here: programs previously upgraded to larger binaries
+        // retain non-zero leftover bytes past the active length when shrunk, but slot advancement + matching hash
+        // proves this specific upgrade landed.
+        let binary_slice = &pdata.data[meta_len..meta_len + expected_len];
+        hash(binary_slice).to_string() == state.program_hash
     });
 
     if is_landed {
@@ -840,8 +905,8 @@ async fn finalize_upgrade(
 
     let mut upgrade_ix = loader_v3::upgrade(program, &buffer.pubkey(), kora_pubkey, kora_pubkey);
     mark_signer(&mut upgrade_ix, &buffer.pubkey());
+    // Appends owner wallet as a required signer so Kora's paymaster validator can verify registry ownership.
     upgrade_ix.accounts.push(AccountMeta::new_readonly(wallet.pubkey(), true));
-
     match submit_returning_signature(
         ctx.http,
         ctx.kora_url,
@@ -859,7 +924,6 @@ async fn finalize_upgrade(
         }
         Err(e) => {
             cleanup_buffer!(
-                false,
                 "upgrade transaction failed",
                 |err| log::warn!(
                     "failed to close buffer: {}; keeping state file for manual recovery",
@@ -877,7 +941,6 @@ async fn finalize_upgrade(
     }
 }
 
-/// Upgrades a program via the paymaster.
 pub async fn upgrade(cfg: &UpgradeConfig<'_>) -> Result<UpgradeOutcome> {
     let _guard = StateLockGuard::acquire(cfg.state_path.as_path())?;
 
@@ -901,9 +964,16 @@ async fn upgrade_inner(ctx: &DeployCtx<'_>, cfg: &UpgradeConfig<'_>) -> Result<U
     else {
         return Ok(UpgradeOutcome::AlreadyUpToDate);
     };
+    validate_upgrade_state_program(&state, &cfg.program)?;
     let chunk_size = resume_chunk_size(&state)
         .with_context(|| format!("upgrade state at {}", cfg.state_path.display()))?;
     let chunk_count = bytes.len().div_ceil(chunk_size);
+
+    // Verify whether the upgrade already landed on-chain before validating local binary hash,
+    // so a rebuild after a timed-out finalize transaction does not fail with hash mismatch.
+    if ctx.resume && check_upgrade_already_landed(ctx, &cfg.program, &buffer, &state).await? {
+        return Ok(UpgradeOutcome::AlreadyLanded);
+    }
 
     validate_upgrade_state(
         ctx,
@@ -915,12 +985,6 @@ async fn upgrade_inner(ctx: &DeployCtx<'_>, cfg: &UpgradeConfig<'_>) -> Result<U
         chunk_count,
     )
     .await?;
-
-    if ctx.resume
-        && check_upgrade_already_landed(ctx, &bytes, &cfg.program, &buffer, &state).await?
-    {
-        return Ok(UpgradeOutcome::AlreadyLanded);
-    }
 
     write_chunks(ctx, &bytes, &buffer, &kora_pubkey, &mut state, chunk_size, chunk_count).await?;
 
@@ -1094,6 +1158,7 @@ pub async fn close(
         rpc_url.to_string(),
         CommitmentConfig::confirmed(),
     ));
+    // Loader v3 rejects closing a program in the same slot it was modified; wait for slot advancement.
     wait_for_next_slot(&rpc).await?;
     let mut close_ix =
         loader_v3::close_any(program_data, kora_pubkey, Some(kora_pubkey), Some(program));
@@ -1233,16 +1298,38 @@ async fn submit_returning_signature(
     Ok(sig)
 }
 
+// Retries connection drops, rate limits, and 5xx/Cloudflare gateway errors; fatal client errors fail fast.
+fn is_transient_rpc_error(err: &ClientError) -> bool {
+    match err.kind() {
+        ClientErrorKind::Io(_) => true,
+        ClientErrorKind::Reqwest(req_err) => {
+            if req_err.is_timeout() || req_err.is_connect() {
+                return true;
+            }
+            if let Some(status) = req_err.status() {
+                matches!(status.as_u16(), 408 | 429 | 500 | 502 | 503 | 504 | 520..=524)
+            } else {
+                // Decode/body errors without an HTTP status are treated as fatal: malformed or empty
+                // responses indicate a dead or misconfigured endpoint rather than a drop.
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
 async fn await_tx(rpc: &RpcClient, sig: &Signature) -> Result<()> {
     for _ in 0..120 {
         match rpc.confirm_transaction_with_commitment(sig, CommitmentConfig::confirmed()).await {
             Ok(resp) if resp.value => return Ok(()),
             Ok(_) => {}
             Err(err) => {
-                log::debug!(
-                    "transient error confirming {sig}: {}; retrying...",
-                    sanitize_error!(err)
-                );
+                // Abort immediately on permanent errors (e.g. bad API key) instead of masking them behind a 60s timeout.
+                if !is_transient_rpc_error(&err) {
+                    return Err(anyhow::Error::from(err)
+                        .context(format!("RPC error while awaiting confirmation for {sig}")));
+                }
+                log::debug!("transient error confirming {sig}: {err}; retrying...");
             }
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -1260,7 +1347,12 @@ async fn wait_for_next_slot(rpc: &RpcClient) -> Result<()> {
                 _ => {}
             },
             Err(err) => {
-                log::debug!("transient error fetching slot: {}; retrying...", sanitize_error!(err));
+                if !is_transient_rpc_error(&err) {
+                    return Err(
+                        anyhow::Error::from(err).context("RPC error while waiting for next slot")
+                    );
+                }
+                log::debug!("transient error fetching slot: {err}; retrying...");
             }
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -1960,15 +2052,29 @@ mod inline_tests {
     }
 
     #[tokio::test]
-    async fn test_finalize_deploy_already_live_skips_deploy_and_removes_state() {
+    async fn test_deploy_resume_already_live_skips_deploy_and_removes_state() {
         let program = Keypair::new();
         let buffer = Keypair::new();
         let kora_pubkey = Pubkey::new_unique();
         let bytes = vec![1u8, 2, 3];
+        let program_so = std::env::temp_dir()
+            .join(format!("kora-deploy-already-live-{}.so", Pubkey::new_unique()));
+        std::fs::write(&program_so, &bytes).unwrap();
 
         let state_path = std::env::temp_dir()
             .join(format!("kora-deploy-test-state-{}.json", Pubkey::new_unique()));
-        std::fs::write(&state_path, b"dummy").unwrap();
+        let program_data = derive_program_data_address(&program.pubkey());
+        let state = DeployState {
+            program_keypair: program.to_bytes().to_vec(),
+            buffer_keypair: buffer.to_bytes().to_vec(),
+            program_data: program_data.to_string(),
+            written_chunks: 1,
+            kora_pubkey: kora_pubkey.to_string(),
+            program_hash: "rebuilt-so-hash-differs".to_string(),
+            chunk_size: WRITE_CHUNK_SIZE,
+            wallet_pubkey: None,
+        };
+        state.save(&state_path).unwrap();
 
         let mock_rpc = DeployRpcMockBuilder::new()
             .with_minimum_balance_for_rent_exemption(1_000_000)
@@ -1984,7 +2090,7 @@ mod inline_tests {
         let cfg = DeployConfig {
             kora_url: "http://127.0.0.1:1",
             rpc_url: "unused",
-            program_so: Path::new("unused.so"),
+            program_so: &program_so,
             user_id: "test-user".to_string(),
             wallet: None,
             resume: true,
@@ -1994,11 +2100,14 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
-        let res = finalize_deploy(&ctx, &bytes, &program, &buffer, &kora_pubkey, cfg.wallet).await;
+        let res = deploy_inner(&ctx, &cfg).await;
         assert!(res.is_ok());
+        let result = res.unwrap();
+        assert_eq!(result.program, program.pubkey());
         assert!(!state_path.exists());
 
         let _ = std::fs::remove_file(&state_path);
+        let _ = std::fs::remove_file(&program_so);
     }
 
     #[tokio::test]
@@ -2129,7 +2238,8 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
-        let res = validate_deploy_state(&ctx, &buffer, &kora_pubkey, &state, "new-hash", 5).await;
+        let res =
+            validate_state_invariants(&ctx, &buffer, &kora_pubkey, &state, "new-hash", 5).await;
         assert!(res.is_err());
         let err_msg = res.unwrap_err().to_string();
         assert!(err_msg.contains("The .so file has changed (hash mismatch). Cannot resume."));
@@ -2174,7 +2284,8 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
-        let res = validate_deploy_state(&ctx, &buffer, &kora_pubkey, &state, "same-hash", 10).await;
+        let res =
+            validate_state_invariants(&ctx, &buffer, &kora_pubkey, &state, "same-hash", 10).await;
         assert!(res.is_err());
         let err_msg = res.unwrap_err().to_string();
         assert!(err_msg.contains("written_chunks"));
@@ -2214,7 +2325,8 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
 
-        let res = validate_deploy_state(&ctx, &buffer, &kora_pubkey, &state, "same-hash", 10).await;
+        let res =
+            validate_state_invariants(&ctx, &buffer, &kora_pubkey, &state, "same-hash", 10).await;
         assert!(res.is_err());
         let err_msg = res.unwrap_err().to_string();
         assert!(err_msg.contains("written_chunks"));
@@ -2234,6 +2346,7 @@ mod inline_tests {
             written_chunks,
             kora_pubkey: "11111111111111111111111111111111".to_string(),
             program_hash: program_hash.to_string(),
+            binary_len: 200,
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start: 42,
         }
@@ -2354,7 +2467,63 @@ mod inline_tests {
     }
 
     #[tokio::test]
-    async fn test_load_or_init_upgrade_state_binary_exceeds_program_data_capacity_fails_fast() {
+    async fn test_load_or_init_upgrade_state_binary_grows_invokes_extend_program_and_succeeds() {
+        let program = Pubkey::new_unique();
+        let upgrade_authority = Pubkey::new_unique();
+        let old_bytes = vec![0xBA; 100];
+        let new_bytes = vec![0xCA; 200];
+        let new_hash = hash(&new_bytes).to_string();
+
+        let extended_bytes = vec![0u8; 200];
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_program_data_account(42, Some(&upgrade_authority), &old_bytes)
+            .with_program_data_account(42, Some(&upgrade_authority), &extended_bytes)
+            .with_minimum_balance_for_rent_exemption(1_000_000)
+            .with_blockhash()
+            .with_signature_status(10)
+            .build();
+
+        let mut server = mockito::Server::new_async().await;
+        let payer_mock =
+            mock_get_payer_signer(&mut server, &upgrade_authority.to_string()).await.expect(1);
+        let sign_mock =
+            mock_sign_and_send_success(&mut server, &Signature::new_unique().to_string())
+                .await
+                .expect(2);
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-upgrade-grow-{}.json", Keypair::new().pubkey()));
+
+        let cfg = UpgradeConfig {
+            kora_url: &server.url(),
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            program,
+            wallet: &Keypair::new(),
+            resume: false,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
+
+        let res = load_or_init_upgrade_state(&ctx, &new_bytes, &new_hash, &program).await;
+        assert!(res.is_ok());
+        let (_buffer, kora_pubkey, new_state) = res.unwrap().expect("should return upgrade state");
+        assert_eq!(kora_pubkey, upgrade_authority);
+        assert_eq!(new_state.binary_len, 200);
+        assert_eq!(new_state.program, program.to_string());
+        assert!(state_path.exists(), "State file should be created");
+
+        payer_mock.assert_async().await;
+        sign_mock.assert_async().await;
+
+        let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[tokio::test]
+    async fn test_load_or_init_upgrade_state_binary_grows_capacity_remains_smaller_bails() {
         let program = Pubkey::new_unique();
         let upgrade_authority = Pubkey::new_unique();
         let old_bytes = vec![0xBA; 100];
@@ -2363,18 +2532,21 @@ mod inline_tests {
 
         let mock_rpc = DeployRpcMockBuilder::new()
             .with_program_data_account(42, Some(&upgrade_authority), &old_bytes)
+            .with_program_data_account(42, Some(&upgrade_authority), &old_bytes)
+            .with_blockhash()
+            .with_signature_status(10)
             .build();
 
         let mut server = mockito::Server::new_async().await;
-        let _payer_mock =
+        let payer_mock =
             mock_get_payer_signer(&mut server, &upgrade_authority.to_string()).await.expect(1);
-        let no_sign_mock =
+        let sign_mock =
             mock_sign_and_send_success(&mut server, &Signature::new_unique().to_string())
                 .await
-                .expect(0);
+                .expect(1);
 
         let state_path = std::env::temp_dir()
-            .join(format!("kora-upgrade-oversize-{}.json", Keypair::new().pubkey()));
+            .join(format!("kora-upgrade-grow-fail-{}.json", Keypair::new().pubkey()));
 
         let cfg = UpgradeConfig {
             kora_url: &server.url(),
@@ -2393,10 +2565,11 @@ mod inline_tests {
         let res = load_or_init_upgrade_state(&ctx, &new_bytes, &new_hash, &program).await;
         assert!(res.is_err());
         let err = res.err().unwrap().to_string();
-        assert!(err.contains("exceeds on-chain ProgramData capacity"));
+        assert!(err.contains("remains smaller than target binary"));
         assert!(!state_path.exists(), "State file must not be created");
 
-        no_sign_mock.assert_async().await;
+        payer_mock.assert_async().await;
+        sign_mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -2603,6 +2776,7 @@ mod inline_tests {
             written_chunks: 5,
             kora_pubkey: kora_pubkey.to_string(),
             program_hash: "dummy-hash".to_string(),
+            binary_len: 100,
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start: 99,
         };
@@ -3012,6 +3186,7 @@ mod inline_tests {
             written_chunks: 1,
             kora_pubkey: kora_pubkey.to_string(),
             program_hash: current_program_hash,
+            binary_len: elf_bytes.len(),
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start: 42,
         };
@@ -3086,6 +3261,7 @@ mod inline_tests {
             written_chunks: 1,
             kora_pubkey: kora_pubkey.to_string(),
             program_hash: current_program_hash,
+            binary_len: elf_bytes.len(),
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start: 42,
         };
@@ -3153,6 +3329,7 @@ mod inline_tests {
             written_chunks: 1,
             kora_pubkey: kora_pubkey.to_string(),
             program_hash: current_program_hash,
+            binary_len: elf_bytes.len(),
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start: 42,
         };
@@ -3224,6 +3401,7 @@ mod inline_tests {
             written_chunks: 0,
             kora_pubkey: kora_pubkey.to_string(),
             program_hash: current_program_hash,
+            binary_len: elf_bytes.len(),
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start: 42,
         };
@@ -3294,6 +3472,7 @@ mod inline_tests {
             written_chunks: 1,
             kora_pubkey: kora_pubkey.to_string(),
             program_hash: current_program_hash,
+            binary_len: elf_bytes.len(),
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start: 42,
         };
@@ -3364,6 +3543,7 @@ mod inline_tests {
             written_chunks: 1,
             kora_pubkey: kora_pubkey.to_string(),
             program_hash: current_program_hash,
+            binary_len: elf_bytes.len(),
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start: 42,
         };
@@ -3445,6 +3625,7 @@ mod inline_tests {
             written_chunks: 1,
             kora_pubkey: kora_pubkey.to_string(),
             program_hash: current_program_hash,
+            binary_len: elf_bytes.len(),
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start: 42,
         };
@@ -3521,6 +3702,7 @@ mod inline_tests {
             written_chunks: 1,
             kora_pubkey: kora_pubkey.to_string(),
             program_hash: current_program_hash,
+            binary_len: elf_bytes.len(),
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start: 42,
         };
@@ -3766,6 +3948,7 @@ mod inline_tests {
             written_chunks: 1,
             kora_pubkey: kora_pubkey.to_string(),
             program_hash: hash(&elf_bytes).to_string(),
+            binary_len: elf_bytes.len(),
             chunk_size: WRITE_CHUNK_SIZE,
             program_data_slot_at_start: 100,
         };
@@ -3800,5 +3983,421 @@ mod inline_tests {
 
         let _ = std::fs::remove_file(&program_so);
         let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[test]
+    fn test_program_data_matches_binary_various_cases() {
+        let meta_len = UpgradeableLoaderState::size_of_programdata_metadata();
+        let binary = vec![1, 2, 3, 4, 5];
+        let binary_hash = hash(&binary).to_string();
+
+        let mut pdata = vec![0u8; meta_len];
+        pdata.extend_from_slice(&binary);
+        assert!(program_data_matches_binary(&pdata, meta_len, binary.len(), &binary_hash));
+
+        let mut pdata_padded = pdata.clone();
+        pdata_padded.extend_from_slice(&[0u8; 32]);
+        assert!(program_data_matches_binary(&pdata_padded, meta_len, binary.len(), &binary_hash));
+
+        let mut pdata_dirty = pdata.clone();
+        pdata_dirty.extend_from_slice(&[0, 0, 1, 0]);
+        assert!(!program_data_matches_binary(&pdata_dirty, meta_len, binary.len(), &binary_hash));
+
+        let wrong_hash = hash(&[9, 9, 9]).to_string();
+        assert!(!program_data_matches_binary(&pdata, meta_len, binary.len(), &wrong_hash));
+
+        assert!(!program_data_matches_binary(
+            &pdata[..meta_len + 2],
+            meta_len,
+            binary.len(),
+            &binary_hash
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_upgrade_already_up_to_date_rejects_truncated_binary_with_dirty_tail() {
+        let program = Pubkey::new_unique();
+        let upgrade_authority = Pubkey::new_unique();
+        let wallet = Keypair::new();
+
+        let mut onchain_elf = vec![0xAB; 100];
+        onchain_elf.extend_from_slice(&[0xCD; 100]);
+
+        let local_bytes = vec![0xAB; 100];
+        let local_hash = hash(&local_bytes).to_string();
+
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_registry_account(&DEFAULT_REGISTRY_PROGRAM, &wallet.pubkey())
+            .with_program_data_account(42, Some(&upgrade_authority), &onchain_elf)
+            .build();
+
+        let mut server = mockito::Server::new_async().await;
+        let _payer_mock =
+            mock_get_payer_signer(&mut server, &upgrade_authority.to_string()).await.expect(1);
+        let _no_sign =
+            mock_sign_and_send_success(&mut server, &Signature::new_unique().to_string())
+                .await
+                .expect(0);
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-upgrade-truncated-{}.json", Keypair::new().pubkey()));
+
+        let cfg = UpgradeConfig {
+            kora_url: &server.url(),
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            program,
+            wallet: &Keypair::new(),
+            resume: false,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
+
+        let res = load_or_init_upgrade_state(&ctx, &local_bytes, &local_hash, &program).await;
+        assert!(res.is_err() || res.unwrap().is_some());
+
+        let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[tokio::test]
+    async fn test_upgrade_resume_already_landed_survives_rebuilt_so() {
+        let program = Pubkey::new_unique();
+        let wallet = Keypair::new();
+        let buffer = Keypair::new();
+        let kora_keypair = Keypair::new();
+        let kora_pubkey = kora_keypair.pubkey();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-upgrade-rebuild-state-{}.json", Pubkey::new_unique()));
+
+        let original_bytes = vec![0xCA; 100];
+        let original_hash = hash(&original_bytes).to_string();
+
+        let initial_state = UpgradeState {
+            program: program.to_string(),
+            buffer_keypair: buffer.to_bytes().to_vec(),
+            written_chunks: 1,
+            kora_pubkey: kora_pubkey.to_string(),
+            program_hash: original_hash,
+            binary_len: 100,
+            chunk_size: WRITE_CHUNK_SIZE,
+            program_data_slot_at_start: 42,
+        };
+        initial_state.save(&state_path).unwrap();
+
+        let mut server = mockito::Server::new_async().await;
+        let no_call_mock =
+            mock_sign_and_send_success(&mut server, &Signature::new_unique().to_string())
+                .await
+                .expect(0);
+
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_registry_account(&DEFAULT_REGISTRY_PROGRAM, &wallet.pubkey())
+            .with_account_not_found()
+            .with_program_data_account(50, Some(&kora_pubkey), &original_bytes)
+            .build();
+
+        let rebuilt_bytes = vec![0xEE; 150];
+        let program_so = std::env::temp_dir()
+            .join(format!("kora-upgrade-rebuild-so-{}.so", Pubkey::new_unique()));
+        std::fs::write(&program_so, &rebuilt_bytes).unwrap();
+
+        let cfg = UpgradeConfig {
+            kora_url: &server.url(),
+            rpc_url: "unused",
+            program_so: &program_so,
+            user_id: "test-user".to_string(),
+            program,
+            wallet: &wallet,
+            resume: true,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
+
+        let res = upgrade_inner(&ctx, &cfg).await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), UpgradeOutcome::AlreadyLanded);
+        assert!(
+            !state_path.exists(),
+            "State file should be removed on already-landed upgrade despite rebuilt .so"
+        );
+
+        no_call_mock.assert_async().await;
+
+        let _ = std::fs::remove_file(&program_so);
+        let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[tokio::test]
+    async fn test_upgrade_resume_already_landed_smaller_binary_with_dirty_tail_succeeds() {
+        let program = Pubkey::new_unique();
+        let wallet = Keypair::new();
+        let buffer = Keypair::new();
+        let kora_pubkey = Pubkey::new_unique();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-upgrade-dirty-tail-state-{}.json", Pubkey::new_unique()));
+
+        let landed_bytes = vec![0xCA; 80];
+        let landed_hash = hash(&landed_bytes).to_string();
+
+        let initial_state = UpgradeState {
+            program: program.to_string(),
+            buffer_keypair: buffer.to_bytes().to_vec(),
+            written_chunks: 1,
+            kora_pubkey: kora_pubkey.to_string(),
+            program_hash: landed_hash,
+            binary_len: 80,
+            chunk_size: WRITE_CHUNK_SIZE,
+            program_data_slot_at_start: 42,
+        };
+        initial_state.save(&state_path).unwrap();
+
+        // On-chain account has 80 bytes of landed binary followed by 20 bytes of non-zero trailing bytes
+        let mut onchain_bytes = landed_bytes.clone();
+        onchain_bytes.extend_from_slice(&[0xFF; 20]);
+
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_registry_account(&DEFAULT_REGISTRY_PROGRAM, &wallet.pubkey())
+            .with_account_not_found()
+            .with_program_data_account(50, Some(&kora_pubkey), &onchain_bytes)
+            .build();
+
+        let program_so = std::env::temp_dir()
+            .join(format!("kora-upgrade-dirty-tail-so-{}.so", Pubkey::new_unique()));
+        std::fs::write(&program_so, &landed_bytes).unwrap();
+
+        let cfg = UpgradeConfig {
+            kora_url: "unused",
+            rpc_url: "unused",
+            program_so: &program_so,
+            user_id: "test-user".to_string(),
+            program,
+            wallet: &wallet,
+            resume: true,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
+
+        let res = upgrade_inner(&ctx, &cfg).await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), UpgradeOutcome::AlreadyLanded);
+        assert!(!state_path.exists());
+
+        let _ = std::fs::remove_file(&program_so);
+        let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[tokio::test]
+    async fn test_upgrade_resume_legacy_state_zero_binary_len_succeeds() {
+        let program = Pubkey::new_unique();
+        let wallet = Keypair::new();
+        let buffer = Keypair::new();
+        let kora_pubkey = Pubkey::new_unique();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-upgrade-legacy-state-{}.json", Pubkey::new_unique()));
+
+        let binary_bytes = vec![0xAB; 100];
+        let binary_hash = hash(&binary_bytes).to_string();
+
+        let legacy_state = UpgradeState {
+            program: program.to_string(),
+            buffer_keypair: buffer.to_bytes().to_vec(),
+            written_chunks: 1,
+            kora_pubkey: kora_pubkey.to_string(),
+            program_hash: binary_hash,
+            binary_len: 0,
+            chunk_size: WRITE_CHUNK_SIZE,
+            program_data_slot_at_start: 42,
+        };
+        legacy_state.save(&state_path).unwrap();
+
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_registry_account(&DEFAULT_REGISTRY_PROGRAM, &wallet.pubkey())
+            .with_account_not_found()
+            .with_program_data_account(50, Some(&kora_pubkey), &binary_bytes)
+            .build();
+
+        let program_so = std::env::temp_dir()
+            .join(format!("kora-upgrade-legacy-so-{}.so", Pubkey::new_unique()));
+        std::fs::write(&program_so, &binary_bytes).unwrap();
+
+        let cfg = UpgradeConfig {
+            kora_url: "unused",
+            rpc_url: "unused",
+            program_so: &program_so,
+            user_id: "test-user".to_string(),
+            program,
+            wallet: &wallet,
+            resume: true,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
+
+        let res = upgrade_inner(&ctx, &cfg).await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), UpgradeOutcome::AlreadyLanded);
+        assert!(!state_path.exists());
+
+        let _ = std::fs::remove_file(&program_so);
+        let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[tokio::test]
+    async fn test_upgrade_resume_program_mismatch_fails_before_already_landed_check() {
+        let program_a = Pubkey::new_unique();
+        let program_b = Pubkey::new_unique();
+        let wallet = Keypair::new();
+        let buffer = Keypair::new();
+        let kora_pubkey = Pubkey::new_unique();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-upgrade-mismatch-state-{}.json", Pubkey::new_unique()));
+
+        let binary_bytes = vec![0xCD; 100];
+        let binary_hash = hash(&binary_bytes).to_string();
+
+        let state = UpgradeState {
+            program: program_a.to_string(),
+            buffer_keypair: buffer.to_bytes().to_vec(),
+            written_chunks: 1,
+            kora_pubkey: kora_pubkey.to_string(),
+            program_hash: binary_hash,
+            binary_len: binary_bytes.len(),
+            chunk_size: WRITE_CHUNK_SIZE,
+            program_data_slot_at_start: 10,
+        };
+        state.save(&state_path).unwrap();
+
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_registry_account(&DEFAULT_REGISTRY_PROGRAM, &wallet.pubkey())
+            .with_account_not_found()
+            .with_program_data_account(20, Some(&kora_pubkey), &binary_bytes)
+            .build();
+
+        let program_so = std::env::temp_dir()
+            .join(format!("kora-upgrade-mismatch-so-{}.so", Pubkey::new_unique()));
+        std::fs::write(&program_so, &binary_bytes).unwrap();
+
+        let cfg = UpgradeConfig {
+            kora_url: "unused",
+            rpc_url: "unused",
+            program_so: &program_so,
+            user_id: "test-user".to_string(),
+            program: program_b,
+            wallet: &wallet,
+            resume: true,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
+
+        let res = upgrade_inner(&ctx, &cfg).await;
+        assert!(res.is_err());
+        let err_str = res.unwrap_err().to_string();
+        assert!(err_str.contains(&format!("State file is for program {program_a}")));
+        assert!(err_str.contains(&format!("current target is {program_b}")));
+        assert!(state_path.exists(), "State file must not be removed on program mismatch");
+
+        let _ = std::fs::remove_file(&program_so);
+        let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[test]
+    fn test_is_transient_rpc_error_classification() {
+        let io_err =
+            ClientError::from(std::io::Error::new(std::io::ErrorKind::ConnectionReset, "reset"));
+        assert!(is_transient_rpc_error(&io_err));
+
+        let custom_err = ClientError::from(ClientErrorKind::Custom("fatal error".to_string()));
+        assert!(!is_transient_rpc_error(&custom_err));
+    }
+
+    #[tokio::test]
+    async fn test_await_tx_fatal_error_propagates_immediately() {
+        let mut server = mockito::Server::new_async().await;
+        let rpc_mock = server
+            .mock("POST", "/")
+            .with_status(401)
+            .with_body("Unauthorized")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let rpc = RpcClient::new(server.url());
+        let sig = Signature::new_unique();
+
+        let start = std::time::Instant::now();
+        let res = await_tx(&rpc, &sig).await;
+        let elapsed = start.elapsed();
+
+        assert!(res.is_err());
+        let err_str = res.unwrap_err().to_string();
+        assert!(err_str.contains("RPC error while awaiting confirmation"));
+        assert!(elapsed < Duration::from_secs(5));
+        rpc_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_await_tx_retries_transient_error_and_succeeds() {
+        let mut server = mockito::Server::new_async().await;
+        let transient_mock = server
+            .mock("POST", "/")
+            .with_status(503)
+            .with_body("Service Unavailable")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let success_mock = server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {
+                        "context": { "slot": 1 },
+                        "value": [
+                            {
+                                "slot": 1,
+                                "confirmations": 10,
+                                "err": null,
+                                "status": { "Ok": null },
+                                "confirmation_status": "confirmed"
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        let rpc = RpcClient::new(server.url());
+        let sig = Signature::new_unique();
+
+        let res = await_tx(&rpc, &sig).await;
+        assert!(res.is_ok());
+
+        transient_mock.assert_async().await;
+        success_mock.assert_async().await;
     }
 }

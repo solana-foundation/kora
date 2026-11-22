@@ -179,17 +179,22 @@ async fn run_upgrade(
     Ok(())
 }
 
+fn resolve_default_wallet_path(
+    get_env: impl Fn(&str) -> Result<String, std::env::VarError>,
+) -> Result<PathBuf> {
+    let home = get_env("HOME")
+        .or_else(|_| get_env("USERPROFILE"))
+        .map_err(|_| anyhow!("neither HOME nor USERPROFILE is set; cannot locate default wallet (~/.config/solana/id.json)"))?;
+    Ok(Path::new(&home).join(".config/solana/id.json"))
+}
+
 fn load_wallet(path: Option<&Path>) -> Result<Option<Keypair>> {
     let read =
         |p: &Path| read_keypair_file(p).map_err(|e| anyhow!("reading wallet {}: {e}", p.display()));
     match path {
         Some(p) => read(p).map(Some),
         None => {
-            let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"));
-            let Ok(home) = home else {
-                return Ok(None);
-            };
-            let default = Path::new(&home).join(".config/solana/id.json");
+            let default = resolve_default_wallet_path(|k| std::env::var(k))?;
             if default.exists() {
                 read(&default).map(Some)
             } else {

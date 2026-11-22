@@ -34,7 +34,7 @@ Flags:
 | `--rpc-url` | `https://api.devnet.solana.com` | Solana RPC for reads |
 | `--program-so` | _required_ | Path to your `.so` |
 | `--user-id` | random per run | Tag the paymaster buckets by for usage limits |
-| `--wallet` | `~/.config/solana/id.json` | Owner wallet registered for upgrades; without one the program is immutable |
+| `--wallet` | `~/.config/solana/id.json` | Owner wallet registered for upgrades (resolved via `HOME` or `USERPROFILE`); without one the program is immutable |
 | `--program-id` | _(none)_ | Existing program to upgrade; omit to deploy fresh |
 | `--resume` | `false` | Resume a previous deployment or upgrade from the local state file |
 | `--no-cleanup-on-failure` | `false` | Do not close the buffer on failure, leaving it open so you can `--resume` later |
@@ -61,12 +61,16 @@ If you anticipate connection issues, pass `--no-cleanup-on-failure`
 on your initial run to leave the buffer open for `--resume`.
 
 **Hash Mismatch**:
-If you recompile your `.so` file before resuming, the hashes won't match.
-`kora-deploy` will refuse to resume to prevent corrupted data, but it
-preserves the buffer on-chain and keeps the state file intact (even with
-cleanup enabled) so your progress is not lost.
+If you recompile your `.so` file while chunk writes are still in flight,
+the binary hashes won't match. `kora-deploy` will refuse to resume to prevent
+corrupted data, but it preserves the buffer on-chain and keeps the state file intact
+(even with cleanup enabled) so your progress is not lost.
 
-To recover:
+Note: If a final deployment or upgrade transaction timed out on the client but
+actually landed on-chain, `--resume` checks on-chain status before validating the
+local hash and completes cleanly even if you rebuilt your `.so` file.
+
+To recover from an in-flight hash mismatch:
 - Either restore the original `.so` binary and run `--resume` again.
 - Or, if you want to abandon this deployment and start over, you must
   close the buffer account first (see Manual Recovery below) before
@@ -94,8 +98,10 @@ file to the CLI, then delete the state file to start over.
   signature.
 - Deploying without a wallet makes the program immutable — nobody can upgrade
   or close it through the paymaster; it just waits for the reaper.
-- Upgrades cannot exceed the initial deployment's binary capacity due to
-  Solana's `UpgradeableLoader` ProgramData sizing constraints.
+- Upgrades that grow the binary size automatically extend the on-chain ProgramData
+  account capacity via the paymaster before uploading chunks.
+  Note: this requires the paymaster to have `allow_extend_program_checked = true` set
+  in its fee-payer policy, which is a separate flag from `allow_extend_program`.
 - The program gets reaped after 7 days of on-chain idleness.
 
 Production deploys should go to a paid RPC. This is for devnet.
