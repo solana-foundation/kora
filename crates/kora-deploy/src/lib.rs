@@ -558,6 +558,7 @@ async fn load_or_init_upgrade_state(
     bytes: &[u8],
     current_program_hash: &str,
     program: &Pubkey,
+    wallet: &Keypair,
 ) -> Result<Option<(Keypair, Pubkey, UpgradeState)>> {
     let state_path = ctx.state_path;
     let state = load_or_preflight_state(state_path, ctx.resume, "upgrade", UpgradeState::load)?;
@@ -610,12 +611,14 @@ async fn load_or_init_upgrade_state(
                  than target binary ({} bytes); extending by {additional_bytes} bytes...",
                 bytes.len()
             );
-            let extend_ix = loader_v3::extend_program_checked(
+            let mut extend_ix = loader_v3::extend_program_checked(
                 program,
                 &kora_pubkey,
                 Some(&kora_pubkey),
                 additional_bytes,
             );
+            // Appends owner wallet as a required signer so Kora's paymaster validator can verify registry ownership.
+            extend_ix.accounts.push(AccountMeta::new_readonly(wallet.pubkey(), true));
             submit(
                 ctx.http,
                 ctx.kora_url,
@@ -623,7 +626,7 @@ async fn load_or_init_upgrade_state(
                 ctx.rpc,
                 &kora_pubkey,
                 &[extend_ix],
-                &[],
+                &[wallet],
             )
             .await
             .with_context(|| {
@@ -960,7 +963,8 @@ async fn upgrade_inner(ctx: &DeployCtx<'_>, cfg: &UpgradeConfig<'_>) -> Result<U
     let (bytes, current_program_hash) = read_program_binary(cfg.program_so)?;
 
     let Some((buffer, kora_pubkey, mut state)) =
-        load_or_init_upgrade_state(ctx, &bytes, &current_program_hash, &cfg.program).await?
+        load_or_init_upgrade_state(ctx, &bytes, &current_program_hash, &cfg.program, cfg.wallet)
+            .await?
     else {
         return Ok(UpgradeOutcome::AlreadyUpToDate);
     };
@@ -1475,6 +1479,37 @@ mod inline_tests {
             let index = keys.iter().position(|key| *key == signer.pubkey()).unwrap();
             assert!(decoded.signatures[index].verify(signer.pubkey().as_ref(), &message_bytes));
         }
+    }
+
+    #[test]
+    fn test_extend_program_checked_requires_and_signs_owner_wallet() {
+        let kora = Keypair::new();
+        let program = Pubkey::new_unique();
+        let wallet = Keypair::new();
+        let mut extend_ix =
+            loader_v3::extend_program_checked(&program, &kora.pubkey(), Some(&kora.pubkey()), 100);
+        extend_ix.accounts.push(AccountMeta::new_readonly(wallet.pubkey(), true));
+        let tx = build_tx(
+            &kora.pubkey(),
+            &[extend_ix],
+            &[&wallet],
+            Hash::new_unique(),
+            resource_config(1),
+        )
+        .unwrap();
+
+        let decoded: VersionedTransaction =
+            wincode::deserialize(&wincode::serialize(&tx).unwrap()).unwrap();
+        let VersionedMessage::V1(message) = &decoded.message else {
+            panic!("expected a v1 message");
+        };
+        let keys = decoded.message.static_account_keys();
+        let message_bytes = decoded.message.serialize();
+        assert_eq!(keys[0], kora.pubkey());
+        assert_eq!(decoded.signatures[0], Signature::default());
+        let wallet_idx = keys.iter().position(|key| *key == wallet.pubkey()).unwrap();
+        assert_eq!(usize::from(message.header.num_required_signatures), 2);
+        assert!(decoded.signatures[wallet_idx].verify(wallet.pubkey().as_ref(), &message_bytes));
     }
 
     #[test]
@@ -2457,7 +2492,8 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
 
-        let res = load_or_init_upgrade_state(&ctx, &elf_bytes, &elf_hash, &program).await;
+        let res =
+            load_or_init_upgrade_state(&ctx, &elf_bytes, &elf_hash, &program, cfg.wallet).await;
         assert!(res.is_ok());
         assert!(res.unwrap().is_none(), "should skip buffer creation and return None");
         assert!(!state_path.exists(), "State file should be cleaned up");
@@ -2494,13 +2530,14 @@ mod inline_tests {
         let state_path = std::env::temp_dir()
             .join(format!("kora-upgrade-grow-{}.json", Keypair::new().pubkey()));
 
+        let wallet = Keypair::new();
         let cfg = UpgradeConfig {
             kora_url: &server.url(),
             rpc_url: "unused",
             program_so: Path::new("unused.so"),
             user_id: "test-user".to_string(),
             program,
-            wallet: &Keypair::new(),
+            wallet: &wallet,
             resume: false,
             cleanup_on_failure: true,
             state_path: state_path.clone(),
@@ -2508,7 +2545,8 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
 
-        let res = load_or_init_upgrade_state(&ctx, &new_bytes, &new_hash, &program).await;
+        let res =
+            load_or_init_upgrade_state(&ctx, &new_bytes, &new_hash, &program, cfg.wallet).await;
         assert!(res.is_ok());
         let (_buffer, kora_pubkey, new_state) = res.unwrap().expect("should return upgrade state");
         assert_eq!(kora_pubkey, upgrade_authority);
@@ -2548,13 +2586,14 @@ mod inline_tests {
         let state_path = std::env::temp_dir()
             .join(format!("kora-upgrade-grow-fail-{}.json", Keypair::new().pubkey()));
 
+        let wallet = Keypair::new();
         let cfg = UpgradeConfig {
             kora_url: &server.url(),
             rpc_url: "unused",
             program_so: Path::new("unused.so"),
             user_id: "test-user".to_string(),
             program,
-            wallet: &Keypair::new(),
+            wallet: &wallet,
             resume: false,
             cleanup_on_failure: true,
             state_path: state_path.clone(),
@@ -2562,7 +2601,8 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
 
-        let res = load_or_init_upgrade_state(&ctx, &new_bytes, &new_hash, &program).await;
+        let res =
+            load_or_init_upgrade_state(&ctx, &new_bytes, &new_hash, &program, cfg.wallet).await;
         assert!(res.is_err());
         let err = res.err().unwrap().to_string();
         assert!(err.contains("remains smaller than target binary"));
@@ -2669,7 +2709,9 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
 
-        let res = load_or_init_upgrade_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", &program).await;
+        let res =
+            load_or_init_upgrade_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", &program, cfg.wallet)
+                .await;
         assert!(res.is_ok());
         let (buffer, _, state) = res.unwrap().expect("expected Some");
 
@@ -2717,7 +2759,8 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
 
-        let res = load_or_init_upgrade_state(&ctx, &[1, 2, 3], "dummy-hash", &program).await;
+        let res =
+            load_or_init_upgrade_state(&ctx, &[1, 2, 3], "dummy-hash", &program, cfg.wallet).await;
         let Err(err) = res else {
             panic!("expected an error");
         };
@@ -2754,7 +2797,8 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
 
-        let res = load_or_init_upgrade_state(&ctx, &[1, 2, 3], "dummy-hash", &program).await;
+        let res =
+            load_or_init_upgrade_state(&ctx, &[1, 2, 3], "dummy-hash", &program, cfg.wallet).await;
         let Err(err) = res else {
             panic!("expected an error");
         };
@@ -2798,7 +2842,8 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
 
-        let res = load_or_init_upgrade_state(&ctx, &[1, 2, 3], "dummy-hash", &program).await;
+        let res =
+            load_or_init_upgrade_state(&ctx, &[1, 2, 3], "dummy-hash", &program, cfg.wallet).await;
         assert!(res.is_ok());
         let (loaded_buffer, loaded_kora, state) = res.unwrap().expect("expected Some");
         assert_eq!(loaded_buffer.pubkey(), buffer.pubkey());
@@ -2844,7 +2889,9 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
 
-        let res = load_or_init_upgrade_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", &program).await;
+        let res =
+            load_or_init_upgrade_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", &program, cfg.wallet)
+                .await;
         match res {
             Err(e) => {
                 let err_msg = e.to_string();
@@ -2903,7 +2950,9 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
 
-        let res = load_or_init_upgrade_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", &program).await;
+        let res =
+            load_or_init_upgrade_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", &program, cfg.wallet)
+                .await;
         match res {
             Err(e) => {
                 let err_msg = e.to_string();
@@ -4056,7 +4105,8 @@ mod inline_tests {
         let http = reqwest::Client::new();
         let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
 
-        let res = load_or_init_upgrade_state(&ctx, &local_bytes, &local_hash, &program).await;
+        let res =
+            load_or_init_upgrade_state(&ctx, &local_bytes, &local_hash, &program, cfg.wallet).await;
         assert!(res.is_err() || res.unwrap().is_some());
 
         let _ = std::fs::remove_file(&state_path);
