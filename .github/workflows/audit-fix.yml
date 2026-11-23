@@ -48,7 +48,7 @@ jobs:
             cargo audit --file "$dir/Cargo.lock" --json \
               | jq -r '.vulnerabilities.list[].package | "--package=\(.name)@\(.version)"' \
               | sort -u \
-              | xargs -r cargo update --manifest-path "$dir/Cargo.toml"
+              | xargs -r cargo update --recursive --manifest-path "$dir/Cargo.toml"
           done
 
       - name: Verify audits pass
@@ -65,6 +65,6 @@ jobs:
           commit-message: 'fix(deps): resolve pnpm and cargo audit advisories'
           title: 'fix(deps): resolve pnpm and cargo audit advisories'
           body: |
-            Automated by the `Audit Fix` workflow: `pnpm audit --fix=override` in `sdks/` and `cargo update -p` for vulnerable crates in `Cargo.lock` and `fuzz/Cargo.lock`, then the audits re-run clean.
+            Automated by the `Audit Fix` workflow: `pnpm audit --fix=override` in `sdks/` and `cargo update -p --recursive` for vulnerable crates in `Cargo.lock` and `fuzz/Cargo.lock`, then the audits re-run clean.
 
             Approve the pending workflow runs to start CI, and review forced overrides for major-version jumps before merging.
