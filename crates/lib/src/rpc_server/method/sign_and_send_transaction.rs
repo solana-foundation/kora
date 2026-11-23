@@ -60,14 +60,9 @@ pub async fn sign_and_send_transaction(
     let fee_payer = signer.pubkey();
 
     let sig_verify = request.sig_verify || config.kora.force_sig_verify;
-    let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
-        &transaction,
-        config,
-        rpc_client,
-        sig_verify,
-        None,
-    )
-    .await?;
+    let mut resolved_transaction =
+        VersionedTransactionResolved::from_transaction(&transaction, rpc_client, sig_verify)
+            .await?;
 
     UsageTracker::check_transaction_usage_limit(
         config,
@@ -95,9 +90,10 @@ mod tests {
     use crate::tests::{
         common::{setup_or_get_test_signer, setup_or_get_test_usage_limiter, RpcMockBuilder},
         config_mock::ConfigMockBuilder,
-        transaction_mock::create_mock_encoded_transaction,
+        transaction_mock::{
+            create_mock_encoded_legacy_transaction, create_mock_encoded_transaction,
+        },
     };
-    use solana_transaction::versioned::TransactionVersion;
 
     #[tokio::test]
     async fn test_sign_and_send_transaction_decode_error() {
@@ -212,17 +208,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sign_and_send_transaction_rejects_disallowed_transaction_version() {
-        let _m = ConfigMockBuilder::new()
-            .with_allowed_transaction_versions(vec![TransactionVersion::Number(0)])
-            .build_and_setup();
+    async fn test_sign_and_send_transaction_rejects_legacy_transaction() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
         let _ = setup_or_get_test_signer();
         let _ = setup_or_get_test_usage_limiter().await;
 
         let rpc_client = Arc::new(RpcMockBuilder::new().with_simulation().build());
 
         let request = SignAndSendTransactionRequest {
-            transaction: create_mock_encoded_transaction(),
+            transaction: create_mock_encoded_legacy_transaction(),
             signer_key: None,
             sig_verify: false,
             user_id: None,
@@ -233,7 +227,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err(),
-            KoraError::InvalidTransaction("Transaction version is not allowed".to_string())
+            KoraError::InvalidTransaction("Only V1 transactions are supported".to_string())
         );
     }
 }

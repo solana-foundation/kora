@@ -4,7 +4,6 @@ use solana_sdk::pubkey::Pubkey;
 pub const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 pub const LAMPORTS_PER_SIGNATURE: u64 = 5000;
 pub const ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION: u64 = 50;
-pub const MAX_TRANSACTION_SIZE: usize = 1232;
 
 pub const X_RECAPTCHA_TOKEN: &str = "x-recaptcha-token";
 pub const X_API_KEY: &str = "x-api-key";

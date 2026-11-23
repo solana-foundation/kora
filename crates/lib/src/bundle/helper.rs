@@ -112,17 +112,13 @@ impl BundleProcessor {
         let mut all_bundle_instructions: Vec<Instruction> = Vec::new();
         let mut txs_missing_payment_count = 0u64;
 
-        let mut alt_cache: HashMap<Pubkey, Vec<Pubkey>> = HashMap::new();
-
         for encoded in encoded_txs {
             let transaction = TransactionUtil::decode_b64_transaction(encoded)?;
 
             let mut resolved_tx = VersionedTransactionResolved::from_transaction(
                 &transaction,
-                config,
                 rpc_client,
                 sig_verify,
-                Some(&mut alt_cache),
             )
             .await?;
 
@@ -212,7 +208,9 @@ impl BundleProcessor {
             .await?;
             bundle_payment_totals.checked_add_assign(payment_totals)?;
 
-            let fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, resolved).await?;
+            let fee =
+                TransactionFeeUtil::get_estimate_fee(rpc_client, &resolved.transaction.message)
+                    .await?;
             total_solana_estimated_fee =
                 total_solana_estimated_fee.checked_add(fee).ok_or_else(|| {
                     KoraError::ValidationError("Bundle Solana fee calculation overflow".to_string())

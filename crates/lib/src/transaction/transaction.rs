@@ -1,12 +1,7 @@
 use solana_message::{v1, VersionedMessage};
-use solana_sdk::{
-    signature::Signature,
-    transaction::{Transaction, VersionedTransaction},
-};
+use solana_sdk::{signature::Signature, transaction::VersionedTransaction};
 
-use crate::{
-    constant::MAX_TRANSACTION_SIZE, error::KoraError, transaction::VersionedTransactionResolved,
-};
+use crate::{error::KoraError, transaction::VersionedTransactionResolved};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 pub struct TransactionUtil {}
@@ -17,49 +12,44 @@ impl TransactionUtil {
             KoraError::InvalidTransaction(format!("Failed to decode base64 transaction: {e}"))
         })?;
 
-        // First try to deserialize as VersionedTransaction (wincode is the wire
-        // codec: byte-identical to bincode for legacy/v0, required for v1), then
-        // fall back to legacy Transaction
-        let transaction = match wincode::deserialize_exact::<VersionedTransaction>(&decoded) {
-            Ok(versioned_tx) => versioned_tx,
-            Err(_) => {
-                let legacy_tx: Transaction = bincode::deserialize(&decoded).map_err(|e| {
-                    KoraError::InvalidTransaction(format!("Failed to deserialize transaction: {e}"))
-                })?;
-                VersionedTransaction {
-                    signatures: legacy_tx.signatures,
-                    message: VersionedMessage::Legacy(legacy_tx.message),
-                }
-            }
-        };
+        if decoded.len() > v1::MAX_TRANSACTION_SIZE {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Transaction size {} exceeds maximum {}",
+                decoded.len(),
+                v1::MAX_TRANSACTION_SIZE
+            )));
+        }
+
+        let transaction =
+            wincode::deserialize_exact::<VersionedTransaction>(&decoded).map_err(|e| {
+                KoraError::InvalidTransaction(format!("Failed to deserialize transaction: {e}"))
+            })?;
+
+        let v1_message = Self::as_v1_message(&transaction.message)?;
 
         transaction.message.sanitize().map_err(|e| {
             KoraError::InvalidTransaction(format!("Invalid transaction message: {e}"))
         })?;
 
-        Self::validate_v1_resource_limits(&transaction.message)?;
-
-        let max_size = Self::max_transaction_size(&transaction.message);
-        if decoded.len() > max_size {
-            return Err(KoraError::InvalidTransaction(format!(
-                "Transaction size {} exceeds maximum {max_size}",
-                decoded.len()
-            )));
-        }
+        Self::validate_resource_limits(v1_message)?;
 
         Ok(transaction)
     }
 
-    /// A limit a V1 transaction config leaves unset is zero, not the runtime default legacy
-    /// and V0 transactions fall back to, and zero compute units or zero loadable account
-    /// bytes cannot run any instruction. Rejecting that here means the caller gets an
-    /// actionable error before Kora simulates, signs, or pays for a transaction that cannot
-    /// execute.
-    fn validate_v1_resource_limits(message: &VersionedMessage) -> Result<(), KoraError> {
-        let VersionedMessage::V1(v1_message) = message else {
-            return Ok(());
-        };
+    pub fn as_v1_message(message: &VersionedMessage) -> Result<&v1::Message, KoraError> {
+        match message {
+            VersionedMessage::V1(message) => Ok(message),
+            _ => {
+                Err(KoraError::InvalidTransaction("Only V1 transactions are supported".to_string()))
+            }
+        }
+    }
 
+    /// A limit a V1 transaction config leaves unset is zero, and zero compute units or zero
+    /// loadable account bytes cannot run any instruction. Rejecting that here means the
+    /// caller gets an actionable error before Kora simulates, signs, or pays for a
+    /// transaction that cannot execute.
+    fn validate_resource_limits(v1_message: &v1::Message) -> Result<(), KoraError> {
         let mut unset_limits = Vec::new();
         if v1_message.config.compute_unit_limit.unwrap_or(0) == 0 {
             unset_limits.push("compute_unit_limit");
@@ -107,20 +97,16 @@ impl TransactionUtil {
             KoraError::SerializationError("Failed to serialize transaction.".to_string())
         })
     }
-
-    pub fn max_transaction_size(message: &VersionedMessage) -> usize {
-        match message {
-            VersionedMessage::V1(_) => v1::MAX_TRANSACTION_SIZE,
-            _ => MAX_TRANSACTION_SIZE,
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{error::KoraError, tests::transaction_mock::create_mock_encoded_v1_transaction};
-    use solana_message::{compiled_instruction::CompiledInstruction, v0, v1, Message};
+    use crate::{
+        error::KoraError,
+        tests::transaction_mock::{create_mock_encoded_v1_transaction, create_test_message},
+    };
+    use solana_message::{v0, v1, Message};
     use solana_sdk::{
         hash::Hash,
         instruction::{AccountMeta, Instruction},
@@ -169,8 +155,7 @@ mod tests {
             &[1, 2, 3],
             vec![AccountMeta::new(keypair.pubkey(), true)],
         );
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let message = create_test_message(&keypair.pubkey(), &[instruction]);
 
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message.clone());
 
@@ -182,63 +167,26 @@ mod tests {
     }
 
     #[test]
-    fn test_new_unsigned_versioned_transaction_v0() {
+    fn test_decode_b64_transaction_rejects_legacy_and_v0() {
         let keypair = Keypair::new();
         let instruction = Instruction::new_with_bytes(
             Pubkey::new_unique(),
             &[1, 2, 3],
             vec![AccountMeta::new(keypair.pubkey(), true)],
         );
+        let legacy_message = Message::new(&[instruction.clone()], Some(&keypair.pubkey()));
+        let v0_message =
+            v0::Message::try_compile(&keypair.pubkey(), &[instruction], &[], Hash::default())
+                .unwrap();
 
-        let v0_message = v0::Message {
-            header: solana_message::MessageHeader {
-                num_required_signatures: 1,
-                num_readonly_signed_accounts: 0,
-                num_readonly_unsigned_accounts: 0,
-            },
-            account_keys: vec![keypair.pubkey(), instruction.program_id],
-            recent_blockhash: Hash::default(),
-            instructions: vec![CompiledInstruction {
-                program_id_index: 1,
-                accounts: vec![0],
-                data: instruction.data,
-            }],
-            address_table_lookups: vec![],
-        };
-        let message = VersionedMessage::V0(v0_message);
-
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message.clone());
-
-        assert_eq!(transaction.signatures.len(), 1);
-        assert_eq!(transaction.signatures[0], Signature::default());
-        assert_eq!(transaction.message, message);
-    }
-
-    #[test]
-    fn test_decode_b64_transaction_legacy_fallback() {
-        let keypair = Keypair::new();
-        let instruction = Instruction::new_with_bytes(
-            Pubkey::new_unique(),
-            &[1, 2, 3],
-            vec![AccountMeta::new(keypair.pubkey(), true)],
-        );
-
-        let legacy_message = Message::new(&[instruction], Some(&keypair.pubkey()));
-        let legacy_tx = Transaction::new(&[&keypair], legacy_message, Hash::default());
-
-        let serialized = bincode::serialize(&legacy_tx).unwrap();
-        let encoded = base64::engine::general_purpose::STANDARD.encode(serialized);
-
-        let decoded = TransactionUtil::decode_b64_transaction(&encoded).unwrap();
-
-        match decoded.message {
-            VersionedMessage::Legacy(msg) => {
-                assert_eq!(msg.instructions.len(), 1);
-                assert_eq!(msg.account_keys.len(), 2); // keypair + program_id
-            }
-            VersionedMessage::V0(_) | VersionedMessage::V1(_) => {
-                panic!("Expected legacy message after conversion")
-            }
+        for message in [VersionedMessage::Legacy(legacy_message), VersionedMessage::V0(v0_message)]
+        {
+            let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+            let encoded = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
+            assert_eq!(
+                TransactionUtil::decode_b64_transaction(&encoded).unwrap_err(),
+                KoraError::InvalidTransaction("Only V1 transactions are supported".to_string())
+            );
         }
     }
 
@@ -299,16 +247,5 @@ mod tests {
             error.to_string().contains("loaded_accounts_data_size_limit"),
             "unexpected error: {error}"
         );
-    }
-
-    #[test]
-    fn test_max_transaction_size_per_version() {
-        let keypair = Keypair::new();
-
-        let legacy = VersionedMessage::Legacy(Message::new(&[], Some(&keypair.pubkey())));
-        assert_eq!(TransactionUtil::max_transaction_size(&legacy), MAX_TRANSACTION_SIZE);
-
-        let v1 = VersionedMessage::V1(create_v1_message(&keypair, vec![1]));
-        assert_eq!(TransactionUtil::max_transaction_size(&v1), v1::MAX_TRANSACTION_SIZE);
     }
 }

@@ -71,21 +71,6 @@ impl TestContext {
     }
 
     pub fn transaction_builder(&self) -> TransactionBuilder {
-        TransactionBuilder::legacy().with_rpc_client(self.rpc_client().clone())
-    }
-
-    pub fn v0_transaction_builder(&self) -> TransactionBuilder {
-        TransactionBuilder::v0().with_rpc_client(self.rpc_client().clone())
-    }
-
-    pub fn v0_transaction_builder_with_lookup(
-        &self,
-        lookup_tables: Vec<solana_sdk::pubkey::Pubkey>,
-    ) -> TransactionBuilder {
-        TransactionBuilder::v0_with_lookup(lookup_tables).with_rpc_client(self.rpc_client().clone())
-    }
-
-    pub fn v1_transaction_builder(&self) -> TransactionBuilder {
-        TransactionBuilder::v1().with_rpc_client(self.rpc_client().clone())
+        TransactionBuilder::default().with_rpc_client(self.rpc_client().clone())
     }
 }

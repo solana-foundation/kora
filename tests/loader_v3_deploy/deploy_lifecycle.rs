@@ -2,7 +2,6 @@
 
 use crate::common::*;
 use anyhow::Result;
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use futures::TryStreamExt;
 use jsonrpsee::rpc_params;
 use kora_lib::constant::BPF_LOADER_UPGRADEABLE_PROGRAM_ID;
@@ -11,11 +10,9 @@ use solana_commitment_config::CommitmentConfig;
 use solana_loader_v3_interface::{instruction as loader_v3, state::UpgradeableLoaderState};
 use solana_sdk::{
     instruction::Instruction,
-    message::Message,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
-    transaction::Transaction,
 };
 use std::str::FromStr;
 
@@ -136,13 +133,14 @@ async fn build_b64_tx(
     ixs: &[Instruction],
     extra_signers: &[&Keypair],
 ) -> Result<String> {
-    let blockhash = ctx.rpc_client().get_latest_blockhash().await?;
-    let msg = Message::new_with_blockhash(ixs, Some(fee_payer), &blockhash);
-    let mut tx = Transaction::new_unsigned(msg);
-    if !extra_signers.is_empty() {
-        tx.partial_sign(extra_signers, blockhash);
+    let mut builder = ctx.transaction_builder().with_fee_payer(*fee_payer);
+    for ix in ixs {
+        builder = builder.with_instruction(ix.clone());
     }
-    Ok(B64.encode(bincode::serialize(&tx)?))
+    for signer in extra_signers {
+        builder = builder.with_signer(signer);
+    }
+    builder.build().await
 }
 
 async fn submit_and_confirm(

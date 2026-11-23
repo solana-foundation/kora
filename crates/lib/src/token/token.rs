@@ -142,11 +142,12 @@ mod tests_token {
             common::{MintAccountMockBuilder, RpcMockBuilder, TokenAccountMockBuilder},
             config_mock::ConfigMockBuilder,
             oracle_mock::TEST_ORACLE,
+            transaction_mock::create_test_message,
         },
         transaction::{ParsedSPLInstructionData, TransactionUtil},
     };
     use rust_decimal::Decimal;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::instruction::Instruction;
     use spl_associated_token_account_interface::program::id as ata_program_id;
     use spl_token_2022_interface::{
@@ -878,10 +879,7 @@ mod tests_token {
             6,
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(
-            &[instruction],
-            Some(&expected_destination_owner),
-        ));
+        let message = create_test_message(&expected_destination_owner, &[instruction]);
         let mut transaction_resolved =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1294,10 +1292,8 @@ mod tests_token {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(
-            &[instruction1, instruction2],
-            Some(&expected_destination_owner),
-        ));
+        let message =
+            create_test_message(&expected_destination_owner, &[instruction1, instruction2]);
         let mut transaction_resolved =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 

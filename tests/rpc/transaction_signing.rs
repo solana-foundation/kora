@@ -2,100 +2,12 @@ use crate::common::*;
 use jsonrpsee::rpc_params;
 use kora_lib::transaction::TransactionUtil;
 use solana_message::VersionedMessage;
-use solana_sdk::signature::Signer;
+use solana_sdk::{pubkey::Pubkey, signature::Signer};
 use std::str::FromStr;
 
 // **************************************************************************************
 // Sign transaction tests (with payment validation - moved to free_signing suite)
 // **************************************************************************************
-
-/// Test sign V0 transaction with valid lookup table
-#[tokio::test]
-async fn test_sign_transaction_v0_with_valid_lookup_table() {
-    let ctx = crate::ctx().await;
-
-    let rpc_client = ctx.rpc_client();
-
-    let allowed_lookup_table_address =
-        LookupTableHelper::get_allowed_lookup_table_address().unwrap();
-
-    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
-    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-    let sender = SenderTestHelper::get_test_sender_keypair();
-
-    // Create a V0 transaction using the allowed lookup table (index 0)
-    let v0_transaction = ctx
-        .v0_transaction_builder_with_lookup(vec![allowed_lookup_table_address])
-        .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-        .with_spl_transfer(
-            &token_mint,
-            &sender.pubkey(),
-            &fee_payer,
-            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
-        )
-        .with_transfer(
-            &SenderTestHelper::get_test_sender_keypair().pubkey(),
-            &RecipientTestHelper::get_recipient_pubkey(),
-            10,
-        )
-        .build()
-        .await
-        .expect("Failed to create V0 transaction with allowed lookup table");
-
-    // Test signing the V0 transaction through Kora RPC - this should succeed
-    let response: serde_json::Value = ctx
-        .rpc_call("signTransaction", rpc_params![v0_transaction])
-        .await
-        .expect("Failed to sign V0 transaction with valid lookup table");
-
-    response.assert_success();
-
-    assert!(
-        response["signed_transaction"].as_str().is_some(),
-        "Expected signed_transaction in response"
-    );
-
-    let transaction_string = response["signed_transaction"].as_str().unwrap();
-    let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
-        .expect("Failed to decode transaction from base64");
-
-    // Simulate the transaction to ensure it's valid
-    let simulated_tx = rpc_client
-        .simulate_transaction(&transaction)
-        .await
-        .expect("Failed to simulate V0 transaction");
-
-    assert!(simulated_tx.value.err.is_none(), "V0 transaction simulation failed");
-}
-
-/// Test sign V0 transaction with invalid lookup table
-#[tokio::test]
-async fn test_sign_transaction_v0_with_invalid_lookup_table() {
-    let ctx = crate::ctx().await;
-
-    // Create a V0 transaction using the disallowed lookup table (index 1)
-    let disallowed_lookup_table_address =
-        LookupTableHelper::get_disallowed_lookup_table_address().unwrap();
-
-    let v0_transaction = ctx
-        .v0_transaction_builder_with_lookup(vec![disallowed_lookup_table_address])
-        .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-        .with_transfer(
-            &SenderTestHelper::get_test_sender_keypair().pubkey(),
-            &LookupTableHelper::get_test_disallowed_address()
-                .expect("Failed to get test disallowed address"),
-            10,
-        )
-        .build()
-        .await
-        .expect("Failed to create V0 transaction with disallowed lookup table");
-
-    // Test signing the V0 transaction through Kora RPC - this should fail due to disallowed addresses
-    let result =
-        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![v0_transaction]).await;
-
-    assert!(result.is_err(), "Expected error for invalid transaction");
-}
 
 #[tokio::test]
 async fn test_sign_transaction_invalid_transaction() {
@@ -118,7 +30,7 @@ async fn test_sign_transaction_v1() {
     let sender = SenderTestHelper::get_test_sender_keypair();
 
     let v1_transaction = ctx
-        .v1_transaction_builder()
+        .transaction_builder()
         .with_fee_payer(fee_payer)
         .with_spl_transfer(
             &token_mint,
@@ -183,9 +95,9 @@ async fn test_sign_transaction_v1_rejects_priority_fee_above_max_allowed_lamport
 
     // max_allowed_lamports is 1_000_000 in kora-test.toml
     let v1_transaction = ctx
-        .v1_transaction_builder()
+        .transaction_builder()
         .with_fee_payer(fee_payer)
-        .with_v1_priority_fee(2_000_000)
+        .with_priority_fee(2_000_000)
         .with_spl_transfer(&token_mint, &sender.pubkey(), &fee_payer, 3_000_000)
         .with_transfer(&sender.pubkey(), &RecipientTestHelper::get_recipient_pubkey(), 10)
         .build()
@@ -215,9 +127,9 @@ async fn test_sign_transaction_v1_rejects_unset_resource_limits() {
     let sender = SenderTestHelper::get_test_sender_keypair();
 
     let v1_transaction = ctx
-        .v1_transaction_builder()
+        .transaction_builder()
         .with_fee_payer(fee_payer)
-        .with_v1_unset_resource_limits()
+        .with_unset_resource_limits()
         .with_spl_transfer(&token_mint, &sender.pubkey(), &fee_payer, 3_000_000)
         .with_transfer(&sender.pubkey(), &RecipientTestHelper::get_recipient_pubkey(), 10)
         .build()
@@ -236,6 +148,53 @@ async fn test_sign_transaction_v1_rejects_unset_resource_limits() {
     );
 }
 
+#[tokio::test]
+async fn test_sign_transaction_rejects_legacy_transaction() {
+    let ctx = crate::ctx().await;
+
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let legacy_transaction =
+        solana_sdk::transaction::Transaction::new_unsigned(solana_sdk::message::Message::new(
+            &[solana_system_interface::instruction::transfer(
+                &sender.pubkey(),
+                &RecipientTestHelper::get_recipient_pubkey(),
+                10,
+            )],
+            Some(&FeePayerTestHelper::get_fee_payer_pubkey()),
+        ));
+    let encoded =
+        TransactionUtil::encode_versioned_transaction(&legacy_transaction.into()).unwrap();
+
+    let result: Result<serde_json::Value, _> =
+        ctx.rpc_call("signTransaction", rpc_params![encoded]).await;
+
+    let message = result.expect_err("Expected rejection for legacy transaction").to_string();
+    assert!(message.contains("Only V1 transactions are supported"), "got: {message}");
+}
+
+#[tokio::test]
+async fn test_sign_transaction_rejects_disallowed_account() {
+    let ctx = crate::ctx().await;
+
+    let transaction = ctx
+        .transaction_builder()
+        .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
+        .with_transfer(
+            &SenderTestHelper::get_test_sender_keypair().pubkey(),
+            &Pubkey::from_str(TEST_DISALLOWED_ADDRESS).unwrap(),
+            1_000_000,
+        )
+        .build()
+        .await
+        .expect("Failed to create transaction to a disallowed account");
+
+    let result: Result<serde_json::Value, _> =
+        ctx.rpc_call("signTransaction", rpc_params![transaction]).await;
+
+    let message = result.expect_err("Expected rejection for disallowed account").to_string();
+    assert!(message.contains(TEST_DISALLOWED_ADDRESS), "got: {message}");
+}
+
 // **************************************************************************************
 // Sign and send transaction tests
 // **************************************************************************************
@@ -251,7 +210,7 @@ async fn test_sign_and_send_transaction_v1() {
     let ctx = crate::ctx().await;
 
     let test_tx = ctx
-        .v1_transaction_builder()
+        .transaction_builder()
         .with_fee_payer(fee_payer)
         .with_signer(&sender)
         .with_spl_transfer(
@@ -276,41 +235,6 @@ async fn test_sign_and_send_transaction_v1() {
         "Expected signed_transaction in response"
     );
     assert!(response["signature"].as_str().is_some(), "Expected signature in response");
-}
-
-#[tokio::test]
-async fn test_sign_and_send_transaction_legacy() {
-    let sender = SenderTestHelper::get_test_sender_keypair();
-    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
-    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-
-    let ctx = crate::ctx().await;
-
-    let test_tx = ctx
-        .transaction_builder()
-        .with_fee_payer(fee_payer)
-        .with_signer(&sender)
-        .with_spl_transfer(
-            &token_mint,
-            &sender.pubkey(),
-            &fee_payer,
-            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
-        )
-        .with_unique_transfer(&sender.pubkey())
-        .build()
-        .await
-        .expect("Failed to create signed test transaction");
-
-    let result: Result<serde_json::Value, _> =
-        ctx.rpc_call("signAndSendTransaction", rpc_params![test_tx]).await;
-
-    assert!(result.is_ok(), "Expected signAndSendTransaction to succeed");
-    let response = result.unwrap();
-
-    assert!(
-        response["signed_transaction"].as_str().is_some(),
-        "Expected signed_transaction in response"
-    );
 }
 
 #[tokio::test]
@@ -463,101 +387,12 @@ async fn test_sign_and_send_transaction_respond_after_signed() {
     assert!(landed, "Background broadcast should have submitted the transaction to the network");
 }
 
-#[tokio::test]
-async fn test_sign_and_send_transaction_v0() {
-    let sender = SenderTestHelper::get_test_sender_keypair();
-    let recipient = RecipientTestHelper::get_recipient_pubkey();
-    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
-    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-
-    let ctx = crate::ctx().await;
-
-    let test_tx = ctx
-        .v0_transaction_builder()
-        .with_fee_payer(fee_payer)
-        .with_signer(&sender)
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &fee_payer,
-            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
-            TEST_USDC_MINT_DECIMALS,
-        )
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &recipient,
-            10,
-            TEST_USDC_MINT_DECIMALS,
-        )
-        .build()
-        .await
-        .expect("Failed to create V0 test transaction");
-
-    let result: Result<serde_json::Value, _> =
-        ctx.rpc_call("signAndSendTransaction", rpc_params![test_tx]).await;
-
-    assert!(result.is_ok(), "Expected signAndSendTransaction to succeed");
-    let response = result.unwrap();
-
-    assert!(
-        response["signed_transaction"].as_str().is_some(),
-        "Expected signed_transaction in response"
-    );
-}
-
-#[tokio::test]
-async fn test_sign_and_send_transaction_v0_with_lookup() {
-    let sender = SenderTestHelper::get_test_sender_keypair();
-    let recipient = RecipientTestHelper::get_recipient_pubkey();
-    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
-    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-
-    let ctx = crate::ctx().await;
-
-    let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
-        .expect("Failed to get transaction lookup table from fixtures");
-
-    let test_tx = ctx
-        .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
-        .with_fee_payer(fee_payer)
-        .with_signer(&sender)
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &fee_payer,
-            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
-            TEST_USDC_MINT_DECIMALS,
-        )
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &recipient,
-            10,
-            TEST_USDC_MINT_DECIMALS,
-        )
-        .build()
-        .await
-        .expect("Failed to create V0 test transaction with lookup table");
-
-    let result: Result<serde_json::Value, _> =
-        ctx.rpc_call("signAndSendTransaction", rpc_params![test_tx]).await;
-
-    assert!(result.is_ok(), "Expected signAndSendTransaction to succeed");
-    let response = result.unwrap();
-
-    assert!(
-        response["signed_transaction"].as_str().is_some(),
-        "Expected signed_transaction in response"
-    );
-}
-
 // **************************************************************************************
 // Sign transaction with payment validation tests
 // **************************************************************************************
 
 #[tokio::test]
-async fn test_sign_transaction_with_payment_legacy() {
+async fn test_sign_transaction_with_payment() {
     let ctx = crate::ctx().await;
     let rpc_client = ctx.rpc_client();
 
@@ -608,129 +443,4 @@ async fn test_sign_transaction_with_payment_legacy() {
         .expect("Failed to simulate transaction");
 
     assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
-}
-
-#[tokio::test]
-async fn test_sign_transaction_with_payment_v0() {
-    let ctx = crate::ctx().await;
-    let rpc_client = ctx.rpc_client();
-
-    let response: serde_json::Value =
-        ctx.rpc_call("getConfig", rpc_params![]).await.expect("Failed to get config");
-
-    response.assert_success();
-    let fee_payers = response["fee_payers"].as_array().unwrap();
-    let fee_payer = solana_sdk::pubkey::Pubkey::from_str(fee_payers[0].as_str().unwrap()).unwrap();
-
-    let sender = SenderTestHelper::get_test_sender_keypair();
-    let recipient = RecipientTestHelper::get_recipient_pubkey();
-    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-
-    let base64_transaction = ctx
-        .v0_transaction_builder()
-        .with_fee_payer(fee_payer)
-        .with_signer(&sender)
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &fee_payer,
-            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
-            TEST_USDC_MINT_DECIMALS,
-        )
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &recipient,
-            1,
-            TEST_USDC_MINT_DECIMALS,
-        )
-        .build()
-        .await
-        .expect("Failed to create V0 signed transaction");
-
-    let response: serde_json::Value = ctx
-        .rpc_call("signTransaction", rpc_params![base64_transaction])
-        .await
-        .expect("Failed to sign V0 transaction");
-
-    response.assert_success();
-    assert!(
-        response["signed_transaction"].as_str().is_some(),
-        "Expected signed_transaction in response"
-    );
-
-    let transaction_string = response["signed_transaction"].as_str().unwrap();
-    let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
-        .expect("Failed to decode transaction from base64");
-
-    let simulated_tx = rpc_client
-        .simulate_transaction(&transaction)
-        .await
-        .expect("Failed to simulate V0 transaction");
-
-    assert!(simulated_tx.value.err.is_none(), "V0 transaction simulation failed");
-}
-
-#[tokio::test]
-async fn test_sign_transaction_with_payment_v0_with_lookup() {
-    let ctx = crate::ctx().await;
-    let rpc_client = ctx.rpc_client();
-
-    let response: serde_json::Value =
-        ctx.rpc_call("getConfig", rpc_params![]).await.expect("Failed to get config");
-
-    response.assert_success();
-    let fee_payers = response["fee_payers"].as_array().unwrap();
-    let fee_payer = solana_sdk::pubkey::Pubkey::from_str(fee_payers[0].as_str().unwrap()).unwrap();
-
-    let sender = SenderTestHelper::get_test_sender_keypair();
-    let recipient = RecipientTestHelper::get_recipient_pubkey();
-    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-
-    let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
-        .expect("Failed to get transaction lookup table from fixtures");
-
-    let base64_transaction = ctx
-        .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
-        .with_fee_payer(fee_payer)
-        .with_signer(&sender)
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &fee_payer,
-            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
-            TEST_USDC_MINT_DECIMALS,
-        )
-        .with_spl_transfer_checked(
-            &token_mint,
-            &sender.pubkey(),
-            &recipient,
-            1,
-            TEST_USDC_MINT_DECIMALS,
-        )
-        .build()
-        .await
-        .expect("Failed to create V0 signed transaction with lookup table");
-
-    let response: serde_json::Value = ctx
-        .rpc_call("signTransaction", rpc_params![base64_transaction])
-        .await
-        .expect("Failed to sign V0 transaction with lookup table");
-
-    response.assert_success();
-    assert!(
-        response["signed_transaction"].as_str().is_some(),
-        "Expected signed_transaction in response"
-    );
-
-    let transaction_string = response["signed_transaction"].as_str().unwrap();
-    let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
-        .expect("Failed to decode transaction from base64");
-
-    let simulated_tx = rpc_client
-        .simulate_transaction(&transaction)
-        .await
-        .expect("Failed to simulate V0 transaction with lookup table");
-
-    assert!(simulated_tx.value.err.is_none(), "V0 transaction with lookup table simulation failed");
 }

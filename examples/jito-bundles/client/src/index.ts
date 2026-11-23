@@ -10,10 +10,11 @@ import {
   createTransactionMessage,
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
+  setTransactionMessageConfig,
   appendTransactionMessageInstruction,
   generateKeyPairSigner,
 } from "@solana/kit";
-import { getAddMemoInstruction } from "@solana-program/memo";
+import { getAddMemoInstruction, LEGACY_MEMO_PROGRAM_ADDRESS_V3 } from "@solana-program/memo";
 import { getTransferSolInstruction } from "@solana-program/system";
 
 const MINIMUM_JITO_TIP = 1_000n; // lamports
@@ -97,9 +98,14 @@ async function createBundleTransactions(
     // Build transaction with memo
     let transactionMessage = pipe(
       createTransactionMessage({
-        version: 0,
+        version: 1,
       }),
       (tx) => setTransactionMessageFeePayerSigner(noopSigner, tx),
+      (tx) =>
+        setTransactionMessageConfig(
+          { computeUnitLimit: 200_000, loadedAccountsDataSizeLimit: 64 * 1024 * 1024 },
+          tx
+        ),
       (tx) =>
         setTransactionMessageLifetimeUsingBlockhash(
           {
@@ -110,10 +116,13 @@ async function createBundleTransactions(
         ),
       (tx) =>
         appendTransactionMessageInstruction(
-          getAddMemoInstruction({
-            memo: `Kora Bundle tx #${i + 1} of ${CONFIG.bundleSize}`,
-            signers: [senderKeypair],
-          }),
+          getAddMemoInstruction(
+            {
+              memo: `Kora Bundle tx #${i + 1} of ${CONFIG.bundleSize}`,
+              signers: [senderKeypair],
+            },
+            { programAddress: LEGACY_MEMO_PROGRAM_ADDRESS_V3 }
+          ),
           tx
         ),
       // Add Jito tip to the LAST transaction only

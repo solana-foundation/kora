@@ -5,7 +5,7 @@ use spl_associated_token_account_interface::address::get_associated_token_addres
 use std::str::FromStr;
 
 #[tokio::test]
-async fn test_sign_transaction_if_paid_with_multiple_payments_legacy() {
+async fn test_sign_transaction_if_paid_with_multiple_payments() {
     let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let payment_address = Pubkey::from_str(TEST_PAYMENT_ADDRESS).unwrap();
@@ -48,7 +48,7 @@ async fn test_sign_transaction_if_paid_with_multiple_payments_legacy() {
         .with_instruction(payment_instruction_2)
         .build()
         .await
-        .expect("Failed to create signed legacy transaction");
+        .expect("Failed to create signed transaction");
 
     let response: serde_json::Value = ctx
         .rpc_call("signTransaction", rpc_params![encoded_tx])
@@ -60,7 +60,7 @@ async fn test_sign_transaction_if_paid_with_multiple_payments_legacy() {
 }
 
 #[tokio::test]
-async fn test_sign_transaction_if_paid_with_multiple_payments_insufficient_legacy() {
+async fn test_sign_transaction_if_paid_with_multiple_payments_insufficient() {
     let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let payment_address = Pubkey::from_str(TEST_PAYMENT_ADDRESS).unwrap();
@@ -103,7 +103,7 @@ async fn test_sign_transaction_if_paid_with_multiple_payments_insufficient_legac
         .with_instruction(payment_instruction_2)
         .build()
         .await
-        .expect("Failed to create signed legacy transaction");
+        .expect("Failed to create signed transaction");
 
     let response: Result<serde_json::Value, _> =
         ctx.rpc_call("signTransaction", rpc_params![encoded_tx]).await;
@@ -112,7 +112,7 @@ async fn test_sign_transaction_if_paid_with_multiple_payments_insufficient_legac
 }
 
 #[tokio::test]
-async fn test_sign_transaction_if_paid_with_multiple_sources_legacy() {
+async fn test_sign_transaction_if_paid_with_multiple_sources() {
     let ctx = crate::ctx().await;
     let sender = SenderTestHelper::get_test_sender_keypair();
     let payment_address = Pubkey::from_str(TEST_PAYMENT_ADDRESS).unwrap();
@@ -146,7 +146,7 @@ async fn test_sign_transaction_if_paid_with_multiple_sources_legacy() {
         )
         .build()
         .await
-        .expect("Failed to create signed legacy transaction");
+        .expect("Failed to create signed transaction");
 
     let response: serde_json::Value = ctx
         .rpc_call("signTransaction", rpc_params![encoded_tx])

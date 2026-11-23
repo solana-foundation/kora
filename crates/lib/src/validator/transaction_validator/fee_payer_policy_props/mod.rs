@@ -7,11 +7,12 @@ mod token_2022;
 
 use super::*;
 use crate::{
-    config::FeePayerPolicy, oracle::PriceSource, tests::config_mock::ConfigMockBuilder,
+    config::FeePayerPolicy,
+    oracle::PriceSource,
+    tests::{config_mock::ConfigMockBuilder, transaction_mock::create_test_message},
     transaction::TransactionUtil,
 };
 use proptest::{prelude::*, test_runner::TestCaseError};
-use solana_message::{Message, VersionedMessage};
 use solana_sdk::instruction::Instruction;
 
 // One gated fee-payer role: an instruction the fee payer can appear in, and the policy flag
@@ -44,7 +45,7 @@ fn validate<R: DrainRole>(
         .with_fee_payer_policy(policy)
         .build();
     let validator = TransactionValidator::new(&config, fee_payer).unwrap();
-    let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+    let message = create_test_message(&fee_payer, &[ix]);
     let mut resolved =
         TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
     validator.validate_fee_payer_usage(&config, &mut resolved)

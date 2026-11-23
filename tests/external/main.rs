@@ -4,7 +4,6 @@
 // TESTS: External system integrations and dependencies
 //        - Oracle price feed integration
 //        - Jito bundle API integration
-//        - Address lookup table resolution
 //        - External API interactions
 
 mod jito_integration;

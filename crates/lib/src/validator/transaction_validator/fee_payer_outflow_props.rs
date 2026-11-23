@@ -3,14 +3,13 @@ use crate::{
     oracle::utils::WSOL_DEVNET_MINT,
     tests::{
         account_mock::MintAccountMockBuilder, config_mock::ConfigMockBuilder,
-        rpc_mock::RpcMockBuilder,
+        rpc_mock::RpcMockBuilder, transaction_mock::create_test_message,
     },
     transaction::TransactionUtil,
 };
 use proptest::prelude::*;
 use solana_address_lookup_table_interface::instruction::close_lookup_table;
 use solana_client::rpc_request::RpcRequest;
-use solana_message::Message;
 use solana_sdk::instruction::Instruction;
 use solana_system_interface::{
     instruction::{create_account, transfer, withdraw_nonce_account},
@@ -241,7 +240,7 @@ fn harness(scenario: &Scenario) -> Harness {
     let fee_payer = Pubkey::new_unique();
     let ata_owners: Vec<Pubkey> = (0..ATA_OWNER_POOL).map(|_| Pubkey::new_unique()).collect();
     let ixs = instructions(&scenario.ops, &fee_payer, &ata_owners);
-    let message = VersionedMessage::Legacy(Message::new(&ixs, Some(&fee_payer)));
+    let message = create_test_message(&fee_payer, &ixs);
     let resolved = TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
     let mint_and_closed_account = MintAccountMockBuilder::new()

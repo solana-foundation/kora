@@ -127,16 +127,18 @@ mod tests {
             cache_mock::MockCacheUtil,
             common::{setup_or_get_test_signer, setup_or_get_test_usage_limiter, RpcMockBuilder},
             config_mock::{mock_state::setup_config_mock, ConfigMockBuilder},
-            transaction_mock::create_mock_encoded_transaction,
+            transaction_mock::{
+                create_mock_encoded_legacy_transaction, create_mock_encoded_transaction,
+                create_test_message,
+            },
         },
         transaction::TransactionUtil,
     };
     use mockito::{Matcher, Server};
     use serde_json::json;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{account::Account, pubkey::Pubkey, signature::Signer};
     use solana_system_interface::instruction::transfer;
-    use solana_transaction::versioned::TransactionVersion;
     use spl_associated_token_account_interface::{
         address::get_associated_token_address_with_program_id,
         instruction::create_associated_token_account_idempotent,
@@ -389,7 +391,7 @@ mod tests {
         );
 
         let ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1_000_000_000);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&signer_pubkey)));
+        let message = create_test_message(&signer_pubkey, &[ix]);
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let encoded_tx = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
 
@@ -478,7 +480,7 @@ mod tests {
             &mint,
             &token2022_id,
         );
-        let msg1 = VersionedMessage::Legacy(Message::new(&[ata_create_ix], Some(&sender.pubkey())));
+        let msg1 = create_test_message(&sender.pubkey(), &[ata_create_ix]);
         let tx1 = TransactionUtil::new_unsigned_versioned_transaction(msg1);
         let encoded_tx1 = TransactionUtil::encode_versioned_transaction(&tx1).unwrap();
 
@@ -495,7 +497,7 @@ mod tests {
             0,
         ).unwrap();
 
-        let msg2 = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&sender.pubkey())));
+        let msg2 = create_test_message(&sender.pubkey(), &[transfer_ix]);
         let tx2 = TransactionUtil::new_unsigned_versioned_transaction(msg2);
         let encoded_tx2 = TransactionUtil::encode_versioned_transaction(&tx2).unwrap();
 
@@ -514,17 +516,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_estimate_bundle_fee_rejects_disallowed_transaction_version() {
-        let _m = ConfigMockBuilder::new()
-            .with_bundle_enabled(true)
-            .with_allowed_transaction_versions(vec![TransactionVersion::Number(0)])
-            .build_and_setup();
+    async fn test_estimate_bundle_fee_rejects_legacy_transaction() {
+        let _m = ConfigMockBuilder::new().with_bundle_enabled(true).build_and_setup();
         let _ = setup_or_get_test_signer();
 
         let rpc_client = Arc::new(RpcMockBuilder::new().with_simulation().build());
 
         let request = EstimateBundleFeeRequest {
-            transactions: vec![create_mock_encoded_transaction()],
+            transactions: vec![create_mock_encoded_legacy_transaction()],
             fee_token: None,
             signer_key: None,
             sig_verify: false,
@@ -535,7 +534,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err(),
-            KoraError::InvalidTransaction("Transaction version is not allowed".to_string())
+            KoraError::InvalidTransaction("Only V1 transactions are supported".to_string())
         );
     }
 }

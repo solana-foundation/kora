@@ -4,11 +4,12 @@ use crate::{
         instruction_indexes,
         instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR,
     },
+    tests::transaction_mock::create_test_message,
     transaction::versioned_transaction::VersionedTransactionResolved,
 };
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
-    message::{AccountKeys, Message, VersionedMessage},
+    message::{AccountKeys, Message},
     signature::{Keypair, Signer},
     transaction::VersionedTransaction,
 };
@@ -761,7 +762,7 @@ fn test_get_field_as_u64() {
 #[test]
 fn test_parse_system_instructions_transfer() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -774,7 +775,7 @@ fn test_parse_system_instructions_transfer() {
 
     let instruction = transfer(&sender.pubkey(), &receiver, lamports);
 
-    let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&sender.pubkey())));
+    let message = create_test_message(&sender.pubkey(), &[instruction]);
     let tx = VersionedTransaction::try_new(message, &[&sender]).unwrap();
 
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
@@ -806,7 +807,7 @@ fn test_parse_system_instructions_transfer() {
 #[test]
 fn test_parse_system_instructions_create_account() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -822,7 +823,7 @@ fn test_parse_system_instructions_create_account() {
     let instruction =
         create_account(&payer.pubkey(), &new_account.pubkey(), lamports, space, &owner);
 
-    let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[instruction]);
     let tx = VersionedTransaction::try_new(message, &[&payer, &new_account]).unwrap();
 
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
@@ -858,7 +859,7 @@ fn test_parse_system_instructions_create_account() {
 #[test]
 fn test_parse_system_instructions_create_account_with_seed() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -882,7 +883,7 @@ fn test_parse_system_instructions_create_account_with_seed() {
         &owner,
     );
 
-    let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[instruction]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
 
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
@@ -956,7 +957,7 @@ fn test_parse_system_instructions_create_account_allow_prefund() {
         &owner,
     );
 
-    let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&funder.pubkey())));
+    let message = create_test_message(&funder.pubkey(), &[instruction]);
     let tx = VersionedTransaction::try_new(message, &[&funder, &new_account]).unwrap();
 
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
@@ -1002,8 +1003,7 @@ fn test_parse_system_instructions_create_account_allow_prefund_no_funding() {
         &owner,
     );
 
-    let message =
-        VersionedMessage::Legacy(Message::new(&[instruction], Some(&new_account.pubkey())));
+    let message = create_test_message(&new_account.pubkey(), &[instruction]);
     let tx = VersionedTransaction::try_new(message, &[&new_account]).unwrap();
 
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
@@ -1036,7 +1036,7 @@ fn test_parse_system_instructions_create_account_allow_prefund_no_funding() {
 fn test_parse_alt_instructions_freeze_lookup_table() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
     use solana_address_lookup_table_interface::instruction::freeze_lookup_table;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -1047,7 +1047,7 @@ fn test_parse_alt_instructions_freeze_lookup_table() {
     let authority = payer.pubkey();
 
     let instruction = freeze_lookup_table(lookup_table_account, authority);
-    let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[instruction]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
 
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
@@ -1077,7 +1077,7 @@ fn test_parse_alt_instructions_freeze_lookup_table() {
 fn test_parse_alt_instructions_extend_lookup_table_optional_payer() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
     use solana_address_lookup_table_interface::instruction::extend_lookup_table;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -1094,7 +1094,7 @@ fn test_parse_alt_instructions_extend_lookup_table_optional_payer() {
         Some(payer),
         vec![Pubkey::new_unique()],
     );
-    let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&signer.pubkey())));
+    let message = create_test_message(&signer.pubkey(), &[instruction]);
     let tx = VersionedTransaction::try_new(message, &[&signer]).unwrap();
 
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
@@ -1125,7 +1125,7 @@ fn test_parse_alt_instructions_extend_lookup_table_optional_payer() {
 #[test]
 fn test_parse_token_instructions_transfer() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -1147,7 +1147,7 @@ fn test_parse_token_instructions_transfer() {
     )
     .expect("Failed to create transfer instruction");
 
-    let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&owner.pubkey())));
+    let message = create_test_message(&owner.pubkey(), &[instruction]);
     let tx = VersionedTransaction::try_new(message, &[&owner]).unwrap();
 
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
@@ -1187,7 +1187,7 @@ fn test_parse_token_instructions_transfer() {
 #[test]
 fn test_parse_token_2022_instructions_transfer_checked() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -1213,7 +1213,7 @@ fn test_parse_token_2022_instructions_transfer_checked() {
     )
     .expect("Failed to create transfer_checked instruction");
 
-    let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&owner.pubkey())));
+    let message = create_test_message(&owner.pubkey(), &[instruction]);
     let tx = VersionedTransaction::try_new(message, &[&owner]).unwrap();
 
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
@@ -1253,7 +1253,7 @@ fn test_parse_token_2022_instructions_transfer_checked() {
 #[test]
 fn test_parse_token_2022_instructions_transfer_checked_with_fee() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -1280,7 +1280,7 @@ fn test_parse_token_2022_instructions_transfer_checked_with_fee() {
     )
     .expect("Failed to create transfer_checked_with_fee instruction");
 
-    let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&owner.pubkey())));
+    let message = create_test_message(&owner.pubkey(), &[instruction]);
     let tx = VersionedTransaction::try_new(message, &[&owner]).unwrap();
 
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
@@ -1320,7 +1320,7 @@ fn test_parse_token_2022_instructions_transfer_checked_with_fee() {
 #[test]
 fn test_parse_token_instructions_burn_checked_requires_three_accounts() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         instruction::{AccountMeta, Instruction},
         signature::{Keypair, Signer},
@@ -1343,8 +1343,7 @@ fn test_parse_token_instructions_burn_checked_requires_three_accounts() {
         data: burn_checked_data,
     };
 
-    let message =
-        VersionedMessage::Legacy(Message::new(&[malformed_burn_checked], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[malformed_burn_checked]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
         .expect("Failed to create resolved transaction");
@@ -1356,7 +1355,7 @@ fn test_parse_token_instructions_burn_checked_requires_three_accounts() {
 #[test]
 fn test_parse_token_2022_instructions_burn_checked_requires_three_accounts() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         instruction::{AccountMeta, Instruction},
         signature::{Keypair, Signer},
@@ -1381,8 +1380,7 @@ fn test_parse_token_2022_instructions_burn_checked_requires_three_accounts() {
         data: burn_checked_data,
     };
 
-    let message =
-        VersionedMessage::Legacy(Message::new(&[malformed_burn_checked], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[malformed_burn_checked]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
         .expect("Failed to create resolved transaction");
@@ -1394,7 +1392,7 @@ fn test_parse_token_2022_instructions_burn_checked_requires_three_accounts() {
 #[test]
 fn test_parse_token_2022_pausable_pause_records_authority() {
     use crate::transaction::TransactionUtil;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::signature::{Keypair, Signer};
 
     let payer = Keypair::new();
@@ -1409,7 +1407,7 @@ fn test_parse_token_2022_pausable_pause_records_authority() {
     )
     .unwrap();
 
-    let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[ix]);
     let resolved_tx = TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
         .expect("Failed to create resolved transaction");
 
@@ -1434,7 +1432,7 @@ fn test_parse_token_2022_pausable_pause_records_authority() {
 #[test]
 fn test_parse_token_2022_transfer_hook_update_records_authority_and_program_id() {
     use crate::transaction::TransactionUtil;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::signature::{Keypair, Signer};
 
     let payer = Keypair::new();
@@ -1451,7 +1449,7 @@ fn test_parse_token_2022_transfer_hook_update_records_authority_and_program_id()
     )
     .unwrap();
 
-    let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[ix]);
     let resolved_tx = TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
         .expect("Failed to create resolved transaction");
 
@@ -1478,7 +1476,7 @@ fn test_parse_token_2022_transfer_hook_update_records_authority_and_program_id()
 #[test]
 fn test_parse_token_2022_unknown_extension_accounts_captured() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         instruction::{AccountMeta, Instruction},
         signature::{Keypair, Signer},
@@ -1493,7 +1491,7 @@ fn test_parse_token_2022_unknown_extension_accounts_captured() {
         data: spl_token_2022_interface::instruction::TokenInstruction::MemoTransferExtension.pack(),
     };
 
-    let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[ix]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
         .expect("Failed to create resolved transaction");
@@ -1519,7 +1517,7 @@ fn test_parse_token_2022_unknown_extension_accounts_captured() {
 #[test]
 fn test_parse_spl_token_batch_extracts_inner_transfer() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -1542,7 +1540,7 @@ fn test_parse_spl_token_batch_extracts_inner_transfer() {
         spl_token_interface::instruction::batch(&spl_token_interface::id(), &[transfer_ix])
             .unwrap();
 
-    let message = VersionedMessage::Legacy(Message::new(&[batch_ix], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[batch_ix]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -1564,7 +1562,7 @@ fn test_parse_spl_token_batch_extracts_inner_transfer() {
 #[test]
 fn test_parse_spl_token_batch_rejects_nested_batch() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -1590,7 +1588,7 @@ fn test_parse_spl_token_batch_rejects_nested_batch() {
         spl_token_interface::instruction::batch(&spl_token_interface::id(), &[inner_batch])
             .unwrap();
 
-    let message = VersionedMessage::Legacy(Message::new(&[outer_batch], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[outer_batch]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -1600,7 +1598,7 @@ fn test_parse_spl_token_batch_rejects_nested_batch() {
 #[test]
 fn test_parse_spl_token_batch_rejects_trailing_accounts() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         instruction::AccountMeta,
         signature::{Keypair, Signer},
@@ -1625,7 +1623,7 @@ fn test_parse_spl_token_batch_rejects_trailing_accounts() {
             .unwrap();
     batch_ix.accounts.push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
 
-    let message = VersionedMessage::Legacy(Message::new(&[batch_ix], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[batch_ix]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -1635,7 +1633,7 @@ fn test_parse_spl_token_batch_rejects_trailing_accounts() {
 #[test]
 fn test_parse_spl_token_batch_rejects_unrecognized_sub_instruction() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         instruction::Instruction,
         signature::{Keypair, Signer},
@@ -1648,7 +1646,7 @@ fn test_parse_spl_token_batch_rejects_unrecognized_sub_instruction() {
     let batch_ix =
         spl_token_interface::instruction::batch(&spl_token_interface::id(), &[junk_ix]).unwrap();
 
-    let message = VersionedMessage::Legacy(Message::new(&[batch_ix], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[batch_ix]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -1658,7 +1656,7 @@ fn test_parse_spl_token_batch_rejects_unrecognized_sub_instruction() {
 #[test]
 fn test_parse_rejects_token_2022_batch() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         instruction::Instruction,
         signature::{Keypair, Signer},
@@ -1672,7 +1670,7 @@ fn test_parse_rejects_token_2022_batch() {
         data: vec![BATCH_DISCRIMINATOR],
     };
 
-    let message = VersionedMessage::Legacy(Message::new(&[fake_t22_batch], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[fake_t22_batch]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -1682,7 +1680,7 @@ fn test_parse_rejects_token_2022_batch() {
 #[test]
 fn test_parse_spl_token_withdraw_excess_lamports() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -1701,7 +1699,7 @@ fn test_parse_spl_token_withdraw_excess_lamports() {
     )
     .unwrap();
 
-    let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[ix]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -1723,7 +1721,7 @@ fn test_parse_spl_token_withdraw_excess_lamports() {
 #[test]
 fn test_parse_spl_token_unwrap_lamports() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -1743,7 +1741,7 @@ fn test_parse_spl_token_unwrap_lamports() {
     )
     .unwrap();
 
-    let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[ix]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -1763,7 +1761,7 @@ fn test_parse_spl_token_unwrap_lamports() {
 #[test]
 fn test_parse_token_2022_unwrap_lamports() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         signature::{Keypair, Signer},
         transaction::VersionedTransaction,
@@ -1783,7 +1781,7 @@ fn test_parse_token_2022_unwrap_lamports() {
     )
     .unwrap();
 
-    let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[ix]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
@@ -1803,7 +1801,7 @@ fn test_parse_token_2022_unwrap_lamports() {
 #[test]
 fn test_parse_token_2022_malformed_instruction_rejected() {
     use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-    use solana_message::{Message, VersionedMessage};
+
     use solana_sdk::{
         instruction::{AccountMeta, Instruction},
         signature::{Keypair, Signer},
@@ -1818,7 +1816,7 @@ fn test_parse_token_2022_malformed_instruction_rejected() {
         data: vec![0xFF, 0xFF, 0xFF],
     };
 
-    let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer.pubkey())));
+    let message = create_test_message(&payer.pubkey(), &[ix]);
     let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
     let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
         .expect("Failed to create resolved transaction");
@@ -3577,7 +3575,6 @@ fn test_reconstruct_spl_token_multisig_authority_matches_original() {
 #[test]
 fn test_reconstruct_token2022_transfer_hook_transfer_checked_keeps_extra_accounts() {
     use crate::transaction::TransactionUtil;
-    use solana_message::VersionedMessage;
 
     let source = Pubkey::new_unique();
     let mint = Pubkey::new_unique();
@@ -3608,7 +3605,7 @@ fn test_reconstruct_token2022_transfer_hook_transfer_checked_keeps_extra_account
 
     let payer = Pubkey::new_unique();
     let resolved_tx = TransactionUtil::new_unsigned_versioned_transaction_resolved(
-        VersionedMessage::Legacy(Message::new(&[reconstructed], Some(&payer))),
+        create_test_message(&payer, &[reconstructed]),
     )
     .unwrap();
 

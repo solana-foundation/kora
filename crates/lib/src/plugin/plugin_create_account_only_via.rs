@@ -125,12 +125,15 @@ mod tests {
         config::{FeePayerPolicy, TransactionPluginType},
         constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR,
         oracle::PriceSource,
-        tests::{common::RpcMockBuilder, config_mock::ConfigMockBuilder},
+        tests::{
+            common::RpcMockBuilder, config_mock::ConfigMockBuilder,
+            transaction_mock::create_test_message,
+        },
         transaction::TransactionUtil,
         validator::transaction_validator::TransactionValidator,
     };
     use proptest::prelude::*;
-    use solana_message::{Message, VersionedMessage};
+    use solana_message::Message;
     use solana_sdk::{instruction::AccountMeta, transaction::VersionedTransaction};
     use solana_system_interface::instruction::{create_account, create_account_with_seed};
     use spl_associated_token_account_interface::instruction::{
@@ -220,7 +223,7 @@ mod tests {
             top_level: &[Instruction],
             inner: &[(usize, Option<usize>, Instruction)],
         ) -> Result<(), KoraError> {
-            let message = VersionedMessage::Legacy(Message::new(top_level, Some(&self.fee_payer)));
+            let message = create_test_message(&self.fee_payer, top_level);
             let mut transaction =
                 TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
             for (parent_index, caller_index, instruction) in inner {
@@ -347,10 +350,10 @@ mod tests {
         let mut unlisted_call = fixture.call(fixture.unlisted_program);
         unlisted_call.accounts = ata_instruction.accounts.clone();
         unlisted_call.accounts.push(AccountMeta::new_readonly(ata_instruction.program_id, false));
-        let message = VersionedMessage::Legacy(Message::new(
+        let message = create_test_message(
+            &fixture.fee_payer,
             &[fixture.call(fixture.listed_program), unlisted_call],
-            Some(&fixture.fee_payer),
-        ));
+        );
         let transaction = VersionedTransaction {
             signatures: vec![Default::default(); message.header().num_required_signatures as usize],
             message,
@@ -380,15 +383,10 @@ mod tests {
                 }),
             )
             .build();
-        let mut resolved = VersionedTransactionResolved::from_transaction(
-            &transaction,
-            &fixture.config,
-            &simulation_rpc,
-            false,
-            None,
-        )
-        .await
-        .unwrap();
+        let mut resolved =
+            VersionedTransactionResolved::from_transaction(&transaction, &simulation_rpc, false)
+                .await
+                .unwrap();
 
         assert_only_via_rejection(
             fixture.validate(&mut resolved).await,
@@ -641,7 +639,7 @@ mod tests {
                 Placement::InnerUnderListed => Some(0),
                 Placement::InnerUnderUnlisted => Some(1),
             };
-            let message = VersionedMessage::Legacy(Message::new(&top_level, Some(&fee_payer)));
+            let message = create_test_message(&fee_payer, &top_level);
             let mut resolved =
                 TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
             if let Some(parent_index) = parent_index {

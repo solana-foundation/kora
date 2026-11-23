@@ -103,15 +103,13 @@ impl ConfigValidator {
 
 #[cfg(test)]
 mod tests {
-    use solana_transaction::versioned::TransactionVersion;
 
     use crate::{
         config::{
-            default_allowed_transaction_versions, AuthConfig, BundleConfig, CacheConfig, Config,
-            EnabledMethods, FeePayerPolicy, KoraConfig, LighthouseConfig, MetricsConfig,
-            NonceInstructionPolicy, PluginsConfig, ProgramsConfig, SplTokenConfig,
-            SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
-            Token2022InstructionPolicy, TransactionPluginType, TransferHookPolicy,
+            AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy,
+            KoraConfig, LighthouseConfig, MetricsConfig, NonceInstructionPolicy, PluginsConfig,
+            ProgramsConfig, SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
+            Token2022Config, Token2022InstructionPolicy, TransactionPluginType, TransferHookPolicy,
             UsageLimitConfig, ValidationConfig, CORS_WILDCARD,
         },
         constant::{
@@ -162,7 +160,6 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -206,7 +203,6 @@ mod tests {
             price: PriceConfig::default(),
             token_2022: Token2022Config::default(),
             allow_durable_transactions: false,
-            allowed_transaction_versions: default_allowed_transaction_versions(),
             max_price_staleness_slots: 0,
             require_one_of_programs: vec![],
             cross_cluster_check: false,
@@ -301,7 +297,6 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -353,7 +348,6 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -407,7 +401,6 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -458,7 +451,6 @@ mod tests {
                     token_2022
                 },
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -541,7 +533,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -741,48 +732,6 @@ mod tests {
             .any(|e| e.contains("GasSwap plugin cannot be used with Free pricing")));
     }
 
-    #[test]
-    fn test_check_transaction_settings_empty_allowed_transaction_versions_errors() {
-        let mut config = ConfigMockBuilder::new().build();
-        config.validation.allowed_transaction_versions = vec![];
-        let mut errors = Vec::new();
-        let mut warnings = Vec::new();
-
-        ConfigValidator::check_transaction_settings(&config, &mut errors, &mut warnings);
-
-        assert!(errors.iter().any(|e| e.contains("allowed_transaction_versions is empty")));
-    }
-
-    #[test]
-    fn test_check_transaction_settings_unsupported_transaction_version_errors() {
-        let mut config = ConfigMockBuilder::new().build();
-        config.validation.allowed_transaction_versions =
-            vec![TransactionVersion::LEGACY, TransactionVersion::Number(2)];
-        let mut errors = Vec::new();
-        let mut warnings = Vec::new();
-
-        ConfigValidator::check_transaction_settings(&config, &mut errors, &mut warnings);
-
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("allowed_transaction_versions contains unsupported version 2")));
-    }
-
-    #[test]
-    fn test_check_transaction_settings_single_allowed_transaction_version_ok() {
-        let mut config = ConfigMockBuilder::new().build();
-        config.validation.allowed_transaction_versions = vec![TransactionVersion::Number(1)];
-        let mut errors = Vec::new();
-        let mut warnings = Vec::new();
-
-        ConfigValidator::check_transaction_settings(&config, &mut errors, &mut warnings);
-
-        assert!(
-            !errors.iter().any(|e| e.contains("allowed_transaction_versions")),
-            "a single allowed version is a valid policy: {errors:?}"
-        );
-    }
-
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_empty_allowed_tokens_ok_when_free() {
@@ -803,7 +752,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -846,7 +794,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Margin { margin: 0.1 } },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -888,7 +835,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1046,7 +992,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Margin { margin: -0.1 } },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1097,7 +1042,6 @@ mod tests {
                 },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1145,7 +1089,6 @@ mod tests {
                 },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1202,7 +1145,6 @@ mod tests {
                 },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1244,7 +1186,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Margin { margin: 0.1 } },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1291,7 +1232,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Margin { margin: 0.1 } },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1335,7 +1275,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1372,7 +1311,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1398,7 +1336,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1460,7 +1397,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1497,7 +1433,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1535,7 +1470,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1578,7 +1512,6 @@ mod tests {
                     config
                 },
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1619,7 +1552,6 @@ mod tests {
                     config
                 },
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1664,7 +1596,6 @@ mod tests {
                     config
                 },
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -1859,7 +1790,6 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -2174,7 +2104,6 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: true,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -2218,7 +2147,6 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -2262,7 +2190,6 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -2305,7 +2232,6 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -2357,7 +2283,6 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -2409,7 +2334,6 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,
@@ -2621,7 +2545,6 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
-                allowed_transaction_versions: default_allowed_transaction_versions(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,

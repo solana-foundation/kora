@@ -1,5 +1,5 @@
 use solana_message::{
-    compiled_instruction::CompiledInstruction, v0, v1, Message, MessageHeader, VersionedMessage,
+    compiled_instruction::CompiledInstruction, v1, Message, MessageHeader, VersionedMessage,
 };
 use solana_sdk::{
     hash::Hash,
@@ -7,13 +7,40 @@ use solana_sdk::{
     pubkey::Pubkey,
     signature::Keypair,
     signer::Signer,
-    transaction::{Transaction, VersionedTransaction},
+    transaction::VersionedTransaction,
 };
 use solana_system_interface::instruction::transfer;
 
 use crate::transaction::{TransactionUtil, VersionedTransactionResolved};
 
+/// Resource limits a V1 test transaction needs to pass decoding: an unset limit is zero.
+pub fn test_v1_config() -> v1::TransactionConfig {
+    v1::TransactionConfig::empty()
+        .with_compute_unit_limit(1_400_000)
+        .with_loaded_accounts_data_size_limit(64 * 1024 * 1024)
+}
+
+pub fn create_test_message(fee_payer: &Pubkey, instructions: &[Instruction]) -> VersionedMessage {
+    VersionedMessage::V1(
+        v1::Message::try_compile_with_config(
+            fee_payer,
+            instructions,
+            Hash::default(),
+            test_v1_config(),
+        )
+        .unwrap(),
+    )
+}
+
 pub fn create_mock_encoded_transaction() -> String {
+    let ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1000000000);
+    let message = create_test_message(&Pubkey::new_unique(), &[ix]);
+    let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+
+    TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
+}
+
+pub fn create_mock_encoded_legacy_transaction() -> String {
     let ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1000000000);
     let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&Pubkey::new_unique())));
     let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
@@ -24,9 +51,10 @@ pub fn create_mock_encoded_transaction() -> String {
 pub fn create_mock_transaction() -> VersionedTransaction {
     let keypair = Keypair::new();
     let instruction = transfer(&keypair.pubkey(), &Pubkey::new_unique(), 1000);
-    let message = Message::new(&[instruction], Some(&keypair.pubkey()));
-    let transaction = Transaction::new_unsigned(message);
-    VersionedTransaction::from(transaction)
+    TransactionUtil::new_unsigned_versioned_transaction(create_test_message(
+        &keypair.pubkey(),
+        &[instruction],
+    ))
 }
 
 pub fn create_mock_resolved_transaction() -> VersionedTransactionResolved {
@@ -85,10 +113,6 @@ pub fn create_mock_v1_transaction_with_max_addresses(fee_payer: &Keypair) -> Ver
     VersionedTransaction::try_new(message, &[fee_payer]).unwrap()
 }
 
-pub fn create_legacy_message(fee_payer: &Pubkey, instructions: &[Instruction]) -> VersionedMessage {
-    VersionedMessage::Legacy(Message::new(instructions, Some(fee_payer)))
-}
-
 /// V1 message carrying a transfer instruction and the given transaction config.
 pub fn create_v1_message(fee_payer: &Pubkey, config: v1::TransactionConfig) -> VersionedMessage {
     create_v1_message_with_instructions(
@@ -108,46 +132,4 @@ pub fn create_v1_message_with_instructions(
         v1::Message::try_compile(fee_payer, instructions, Hash::new_unique()).unwrap();
     message.config = config;
     VersionedMessage::V1(message)
-}
-
-/// V0 message whose instructions all invoke a program loaded from a lookup table:
-/// `program_id_index` 1 resolves past the single static key, so callers must supply
-/// the resolved key list themselves (see [`create_resolved_with_loaded_keys`]).
-pub fn create_v0_message_with_alt_loaded_program(
-    fee_payer: &Pubkey,
-    instruction_data: Vec<Vec<u8>>,
-) -> VersionedMessage {
-    VersionedMessage::V0(v0::Message {
-        header: MessageHeader {
-            num_required_signatures: 1,
-            num_readonly_signed_accounts: 0,
-            num_readonly_unsigned_accounts: 0,
-        },
-        account_keys: vec![*fee_payer],
-        recent_blockhash: Hash::new_unique(),
-        instructions: instruction_data
-            .into_iter()
-            .map(|data| CompiledInstruction { program_id_index: 1, accounts: vec![], data })
-            .collect(),
-        address_table_lookups: vec![v0::MessageAddressTableLookup {
-            account_key: Pubkey::new_unique(),
-            writable_indexes: vec![],
-            readonly_indexes: vec![0],
-        }],
-    })
-}
-
-/// Resolved transaction with an explicit resolved key list, for messages whose
-/// program ids live in a lookup table: `from_kora_built_transaction` cannot resolve
-/// those without RPC. `all_instructions` is left empty, so this only suits
-/// validations that read the message and resolved keys.
-pub fn create_resolved_with_loaded_keys(
-    message: VersionedMessage,
-    all_account_keys: Vec<Pubkey>,
-) -> VersionedTransactionResolved {
-    VersionedTransactionResolved::new(
-        TransactionUtil::new_unsigned_versioned_transaction(message),
-        all_account_keys,
-        Vec::new(),
-    )
 }

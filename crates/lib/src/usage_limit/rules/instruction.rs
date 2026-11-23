@@ -357,7 +357,7 @@ impl InstructionIdentifier {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::transaction_mock::create_mock_resolved_transaction;
+    use crate::tests::transaction_mock::{create_mock_resolved_transaction, create_test_message};
 
     #[test]
     fn test_instruction_rule_lifetime_key() {
@@ -536,7 +536,7 @@ mod tests {
         // the user's loader-v4 deploy count.
         use crate::transaction::VersionedTransactionResolved;
         use solana_loader_v4_interface::instruction as loader_v4;
-        use solana_message::{Message, VersionedMessage};
+
         use solana_sdk::{signature::Keypair, signer::Signer, transaction::VersionedTransaction};
 
         let kora = Keypair::new();
@@ -545,7 +545,7 @@ mod tests {
 
         let build_tx = |authority: &Pubkey| -> VersionedTransactionResolved {
             let ix = loader_v4::write(&program, authority, 0, vec![1, 2, 3]);
-            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&kora.pubkey())));
+            let message = create_test_message(&kora.pubkey(), &[ix]);
             let tx = VersionedTransaction { signatures: vec![], message };
             VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap()
         };
@@ -578,7 +578,7 @@ mod tests {
         // index 2 (accepting authority). Both are subsidized operations — count both.
         use crate::transaction::VersionedTransactionResolved;
         use solana_loader_v4_interface::instruction as loader_v4;
-        use solana_message::{Message, VersionedMessage};
+
         use solana_sdk::{signature::Keypair, signer::Signer, transaction::VersionedTransaction};
 
         let kora = Keypair::new();
@@ -586,7 +586,7 @@ mod tests {
         let program = Pubkey::new_unique();
 
         let ix = loader_v4::transfer_authority(&program, &attacker.pubkey(), &kora.pubkey());
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&kora.pubkey())));
+        let message = create_test_message(&kora.pubkey(), &[ix]);
         let tx = VersionedTransaction { signatures: vec![], message };
         let mut tx_resolved =
             VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
@@ -612,7 +612,7 @@ mod tests {
         // would burn the user's quota for someone else's deploy progress.
         use crate::transaction::VersionedTransactionResolved;
         use solana_loader_v3_interface::instruction as loader_v3;
-        use solana_message::{Message, VersionedMessage};
+
         use solana_sdk::{signature::Keypair, signer::Signer, transaction::VersionedTransaction};
 
         let kora = Keypair::new();
@@ -621,7 +621,7 @@ mod tests {
 
         let build_tx = |authority: &Pubkey| -> VersionedTransactionResolved {
             let ix = loader_v3::write(&buffer, authority, 0, vec![1, 2, 3]);
-            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&kora.pubkey())));
+            let message = create_test_message(&kora.pubkey(), &[ix]);
             let tx = VersionedTransaction { signatures: vec![], message };
             VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap()
         };
@@ -658,7 +658,7 @@ mod tests {
         // extension and the op should be counted against the user's quota.
         use crate::transaction::VersionedTransactionResolved;
         use solana_loader_v3_interface::instruction as loader_v3;
-        use solana_message::{Message, VersionedMessage};
+
         use solana_sdk::{signature::Keypair, signer::Signer, transaction::VersionedTransaction};
 
         let kora = Keypair::new();
@@ -671,7 +671,7 @@ mod tests {
             Some(&kora.pubkey()),
             64,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&kora.pubkey())));
+        let message = create_test_message(&kora.pubkey(), &[ix]);
         let tx = VersionedTransaction { signatures: vec![], message };
         let mut tx_resolved =
             VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
@@ -698,7 +698,7 @@ mod tests {
         // quota — Kora isn't subsidizing the extension lamports.
         use crate::transaction::VersionedTransactionResolved;
         use solana_loader_v3_interface::instruction as loader_v3;
-        use solana_message::{Message, VersionedMessage};
+
         use solana_sdk::{signature::Keypair, signer::Signer, transaction::VersionedTransaction};
 
         let kora = Keypair::new();
@@ -712,7 +712,7 @@ mod tests {
             Some(&payer.pubkey()),
             64,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&kora.pubkey())));
+        let message = create_test_message(&kora.pubkey(), &[ix]);
         let tx = VersionedTransaction { signatures: vec![], message };
         let mut tx_resolved =
             VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();

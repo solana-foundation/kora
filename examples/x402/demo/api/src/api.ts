@@ -3,7 +3,7 @@ import { Network, paymentMiddleware } from "@x402/express";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { SOLANA_DEVNET_CAIP2 } from "@x402/svm";
-import { Address } from "@solana/addresses";
+import { Address } from "@solana/kit";
 import { config } from "dotenv";
 import path from "path";
 

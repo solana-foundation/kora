@@ -70,7 +70,7 @@ allowed_spl_paid_tokens = [
 ]
 
 disallowed_accounts = [
-    "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek", # Test disallowed account for lookup table
+    "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek", # Test disallowed account
 ]
 
 [validation.fee_payer_policy]

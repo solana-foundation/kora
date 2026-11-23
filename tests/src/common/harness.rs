@@ -26,14 +26,13 @@ use crate::common::{
     constants::{
         DISABLE_SBPF_V0_V1_V2_DEPLOYMENT_FEATURE, KORA_PRIVATE_KEY_ENV, LIGHTHOUSE_PROGRAM_ID,
         LIGHTHOUSE_PROGRAM_PATH, PAYMENT_ADDRESS_KEYPAIR_ENV, RPC_URL_ENV,
-        SECOND_FORWARDER_PROGRAM_ID, SIGNER_2_KEYPAIR_ENV, TEST_ALLOWED_LOOKUP_TABLE_ADDRESS_ENV,
-        TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS_ENV, TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR_ENV,
-        TEST_FEE_PAYER_POLICY_MINT_KEYPAIR_ENV, TEST_INTEREST_BEARING_MINT_KEYPAIR_ENV,
-        TEST_SENDER_KEYPAIR_ENV, TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS_ENV,
+        SECOND_FORWARDER_PROGRAM_ID, SIGNER_2_KEYPAIR_ENV,
+        TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR_ENV, TEST_FEE_PAYER_POLICY_MINT_KEYPAIR_ENV,
+        TEST_INTEREST_BEARING_MINT_KEYPAIR_ENV, TEST_SENDER_KEYPAIR_ENV,
         TEST_TRANSFER_HOOK_MINT_KEYPAIR_ENV, TEST_USDC_MINT_2022_KEYPAIR_ENV,
         TEST_USDC_MINT_KEYPAIR_ENV, TRANSFER_HOOK_PROGRAM_ID, TRANSFER_HOOK_PROGRAM_PATH,
     },
-    seed::{seed_accounts, SeededLookupTables},
+    seed::seed_accounts,
 };
 
 /// Kora reads each signing key from the environment, so the fixtures under
@@ -78,19 +77,11 @@ pub struct KoraHarness {
 
 impl KoraHarness {
     pub async fn start(spec: KoraSpec) -> Result<Self> {
-        let (surfnet, lookup_tables) = start_surfnet_with_retry().await?;
+        let surfnet = start_surfnet_with_retry().await?;
 
         let rpc_url = surfnet.rpc_url().to_string();
         let ws_url = surfnet.ws_url().to_string();
         std::env::set_var(RPC_URL_ENV, &rpc_url);
-
-        for (env_var, address) in [
-            (TEST_ALLOWED_LOOKUP_TABLE_ADDRESS_ENV, lookup_tables.allowed),
-            (TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS_ENV, lookup_tables.disallowed),
-            (TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS_ENV, lookup_tables.transaction),
-        ] {
-            std::env::set_var(env_var, address.to_string());
-        }
 
         let config_path = render_config(&workspace_path(spec.config), &rpc_url)?;
         let signers_path = workspace_path(spec.signers);
@@ -156,7 +147,7 @@ fn set_local_key_env_vars() {
 /// before the servers bind for real, so a port can be taken in between, either
 /// by the SDK's own second probe or by another test binary starting at the same
 /// time. The allocation is fresh per attempt, so retrying clears it.
-async fn start_surfnet_with_retry() -> Result<(Surfnet, SeededLookupTables)> {
+async fn start_surfnet_with_retry() -> Result<Surfnet> {
     let mut last_error = None;
     for _ in 0..SURFNET_START_ATTEMPTS {
         let attempt = tokio::task::spawn_blocking(|| std::thread::spawn(start_surfnet).join())
@@ -175,7 +166,7 @@ async fn start_surfnet_with_retry() -> Result<(Surfnet, SeededLookupTables)> {
 
 /// The surfpool SDK and its cheatcodes drive the blocking Solana RPC client,
 /// which cannot run under the current-thread runtime `#[tokio::test]` builds.
-fn start_surfnet() -> Result<(Surfnet, SeededLookupTables)> {
+fn start_surfnet() -> Result<Surfnet> {
     let runtime =
         tokio::runtime::Builder::new_multi_thread().worker_threads(1).enable_all().build()?;
     runtime.block_on(async {
@@ -187,8 +178,8 @@ fn start_surfnet() -> Result<(Surfnet, SeededLookupTables)> {
             .await
             .map_err(|e| anyhow!("failed to start surfnet: {e}"))?;
         deploy_test_programs(&surfnet)?;
-        let lookup_tables = seed_accounts(&surfnet)?;
-        Ok((surfnet, lookup_tables))
+        seed_accounts(&surfnet)?;
+        Ok(surfnet)
     })
 }
 

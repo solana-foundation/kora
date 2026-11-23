@@ -1,17 +1,16 @@
 use crate::{
     config::{Config, FeePayerPolicy, ProgramsConfig},
     error::KoraError,
-    fee::fee::{FeeConfigUtil, TotalFeeCalculation, TransactionFeeUtil},
+    fee::fee::{FeeConfigUtil, TotalFeeCalculation},
     token::token::TokenUtil,
     transaction::{
-        ParsedSPLInstructionData, ParsedSystemInstructionData, VersionedTransactionResolved,
+        ParsedSPLInstructionData, ParsedSystemInstructionData, TransactionUtil,
+        VersionedTransactionResolved,
     },
     validator::parse_pubkey_set,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_message::VersionedMessage;
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
-use solana_transaction::versioned::TransactionVersion;
 use std::collections::HashSet;
 
 use crate::fee::price::PriceModel;
@@ -34,7 +33,6 @@ pub struct TransactionValidator {
     disallowed_accounts: HashSet<Pubkey>,
     fee_payer_policy: FeePayerPolicy,
     allow_durable_transactions: bool,
-    allowed_transaction_versions: Vec<TransactionVersion>,
 }
 
 impl TransactionValidator {
@@ -57,7 +55,6 @@ impl TransactionValidator {
             disallowed_accounts: parse_pubkey_set(&config.disallowed_accounts)?,
             fee_payer_policy: config.fee_payer_policy.clone(),
             allow_durable_transactions: config.allow_durable_transactions,
-            allowed_transaction_versions: config.allowed_transaction_versions.clone(),
         })
     }
 
@@ -70,8 +67,6 @@ impl TransactionValidator {
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
     ) -> Result<(), KoraError> {
-        self.validate_transaction_version(&transaction_resolved.transaction)?;
-
         if transaction_resolved.all_instructions().is_empty() {
             return Err(KoraError::InvalidTransaction(
                 "Transaction contains no instructions".to_string(),
@@ -118,16 +113,12 @@ impl TransactionValidator {
         Ok(())
     }
 
-    /// ComputeBudget instructions are neither parsed nor rejected in a V1 transaction: they
+    /// ComputeBudget instructions are neither parsed nor rejected: they
     /// execute successfully while doing nothing, so a client that sets its resource limits
     /// there silently gets the transaction config's limits instead of the ones it asked for.
     fn warn_on_ignored_compute_budget_instructions(
         transaction_resolved: &VersionedTransactionResolved,
     ) {
-        if !matches!(transaction_resolved.transaction.message, VersionedMessage::V1(_)) {
-            return;
-        }
-
         let compute_budget_program_id = solana_compute_budget_interface::id();
         if transaction_resolved
             .all_instructions()
@@ -135,7 +126,7 @@ impl TransactionValidator {
             .any(|ix| ix.program_id == compute_budget_program_id)
         {
             log::warn!(
-                "V1 transaction contains ComputeBudget instructions, which the runtime ignores; \
+                "Transaction contains ComputeBudget instructions, which the runtime ignores; \
                  its resource limits come from the transaction config"
             );
         }
@@ -149,10 +140,11 @@ impl TransactionValidator {
             return Ok(());
         };
 
-        let priority_fee = TransactionFeeUtil::get_requested_priority_fee(
-            &transaction_resolved.transaction.message,
-            &transaction_resolved.all_account_keys,
-        );
+        let priority_fee =
+            TransactionUtil::as_v1_message(&transaction_resolved.transaction.message)?
+                .config
+                .priority_fee
+                .unwrap_or(0);
         if priority_fee > max_priority_fee_lamports {
             return Err(KoraError::InvalidTransaction(format!(
                 "Priority fee {priority_fee} exceeds maximum allowed {max_priority_fee_lamports}"
@@ -170,17 +162,6 @@ impl TransactionValidator {
             )));
         }
         Ok(())
-    }
-
-    pub fn validate_transaction_version(
-        &self,
-        transaction: &VersionedTransaction,
-    ) -> Result<(), KoraError> {
-        if self.allowed_transaction_versions.contains(&transaction.version()) {
-            return Ok(());
-        }
-
-        Err(KoraError::InvalidTransaction("Transaction version is not allowed".to_string()))
     }
 
     fn validate_signatures(&self, transaction: &VersionedTransaction) -> Result<(), KoraError> {
@@ -518,9 +499,7 @@ mod tests {
             config_mock::{mock_state::setup_config_mock, ConfigMockBuilder},
             rpc_mock::RpcMockBuilder,
             transaction_mock::{
-                create_legacy_message, create_resolved_with_loaded_keys,
-                create_v0_message_with_alt_loaded_program, create_v1_message,
-                create_v1_message_with_instructions,
+                create_test_message, create_v1_message, create_v1_message_with_instructions,
             },
         },
         token::token::TransferHookValidationFlow,
@@ -649,7 +628,7 @@ mod tests {
             &Pubkey::new_unique(),
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[outer], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[outer]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         transaction.push_inner_instruction(0, Some(0), reconstructed).unwrap();
@@ -695,7 +674,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
         let sender = Pubkey::new_unique();
         let instruction = transfer(&sender, &recipient, 100_000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -718,7 +697,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
 
         let instruction = transfer(&sender, &recipient, 2_000_000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -729,7 +708,7 @@ mod tests {
 
         let instructions =
             vec![transfer(&sender, &recipient, 500_000), transfer(&sender, &recipient, 500_000)];
-        let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &instructions);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -751,7 +730,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
 
         let instruction = transfer(&sender, &recipient, 1000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -761,7 +740,7 @@ mod tests {
 
         let fake_program = Pubkey::new_unique();
         let instruction = Instruction::new_with_bincode(fake_program, &[0u8], vec![]);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -784,7 +763,7 @@ mod tests {
 
         let arbitrary_program = Pubkey::new_unique();
         let instruction = Instruction::new_with_bincode(arbitrary_program, &[0u8], vec![]);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -811,7 +790,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
 
         let instruction = transfer(&sender, &recipient, 1000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -839,7 +818,7 @@ mod tests {
 
         let cu_ix =
             Instruction::new_with_bincode(solana_compute_budget_interface::id(), &[0u8], vec![]);
-        let message = VersionedMessage::Legacy(Message::new(&[cu_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[cu_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -870,8 +849,7 @@ mod tests {
         let cu_ix =
             Instruction::new_with_bincode(solana_compute_budget_interface::id(), &[0u8], vec![]);
         let transfer_ix = transfer(&sender, &recipient, 1000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[cu_ix, transfer_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[cu_ix, transfer_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -900,7 +878,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
 
         let instruction = transfer(&sender, &recipient, 1000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -929,7 +907,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
 
         let instruction = transfer(&sender, &recipient, 1000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -975,40 +953,6 @@ mod tests {
         let error = validator.validate_priority_fee(&over_cap).unwrap_err();
         assert!(
             error.to_string().contains("Priority fee 10001 exceeds maximum allowed 10000"),
-            "Unexpected error: {error}"
-        );
-    }
-
-    #[test]
-    fn test_validate_priority_fee_enforces_cap_for_compute_budget_instructions() {
-        let fee_payer = Pubkey::new_unique();
-        let recipient = Pubkey::new_unique();
-        let config = ConfigMockBuilder::new().with_max_priority_fee_lamports(10_000).build();
-        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
-
-        // 300_000 CU * 25_000 micro-lamports = 7_500 lamports, under the cap
-        let under_cap = resolved_from_message(create_legacy_message(
-            &fee_payer,
-            &[
-                ComputeBudgetInstruction::set_compute_unit_limit(300_000),
-                ComputeBudgetInstruction::set_compute_unit_price(25_000),
-                transfer(&fee_payer, &recipient, 1_000),
-            ],
-        ));
-        assert!(validator.validate_priority_fee(&under_cap).is_ok());
-
-        // 300_000 CU * 50_000 micro-lamports = 15_000 lamports, over the cap
-        let over_cap = resolved_from_message(create_legacy_message(
-            &fee_payer,
-            &[
-                ComputeBudgetInstruction::set_compute_unit_limit(300_000),
-                ComputeBudgetInstruction::set_compute_unit_price(50_000),
-                transfer(&fee_payer, &recipient, 1_000),
-            ],
-        ));
-        let error = validator.validate_priority_fee(&over_cap).unwrap_err();
-        assert!(
-            error.to_string().contains("Priority fee 15000 exceeds maximum allowed 10000"),
             "Unexpected error: {error}"
         );
     }
@@ -1073,7 +1017,7 @@ mod tests {
         let config = ConfigMockBuilder::new().with_max_priority_fee_lamports(0).build();
         let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
-        let no_priority_fee = resolved_from_message(create_legacy_message(
+        let no_priority_fee = resolved_from_message(create_test_message(
             &fee_payer,
             &[transfer(&fee_payer, &recipient, 1_000)],
         ));
@@ -1088,33 +1032,6 @@ mod tests {
             v1::TransactionConfig::empty().with_priority_fee(1),
         ));
         assert!(validator.validate_priority_fee(&v1_with_priority_fee).is_err());
-    }
-
-    #[test]
-    fn test_validate_priority_fee_counts_alt_loaded_compute_budget() {
-        let fee_payer = Pubkey::new_unique();
-        let config = ConfigMockBuilder::new().with_max_priority_fee_lamports(10_000).build();
-        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
-
-        let message = create_v0_message_with_alt_loaded_program(
-            &fee_payer,
-            vec![
-                ComputeBudgetInstruction::set_compute_unit_limit(300_000).data,
-                ComputeBudgetInstruction::set_compute_unit_price(50_000).data,
-            ],
-        );
-        let resolved = create_resolved_with_loaded_keys(
-            message,
-            vec![fee_payer, solana_compute_budget_interface::id()],
-        );
-
-        // 300_000 CU * 50_000 micro-lamports = 15_000 lamports, over the cap;
-        // the validator must see it through the resolved keys, not the static ones.
-        let error = validator.validate_priority_fee(&resolved).unwrap_err();
-        assert!(
-            error.to_string().contains("Priority fee 15000 exceeds maximum allowed 10000"),
-            "Unexpected error: {error}"
-        );
     }
 
     #[tokio::test]
@@ -1141,7 +1058,7 @@ mod tests {
             transfer(&sender, &recipient, 1000),
             transfer(&sender, &recipient, 1000),
         ];
-        let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &instructions);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         transaction.transaction.signatures = vec![Default::default(); 3];
@@ -1164,16 +1081,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
 
         let instruction = transfer(&sender, &recipient, 1000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_ok());
-
-        let instruction = transfer(&sender, &recipient, 1000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], None));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1192,7 +1100,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1218,8 +1126,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(200_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[compute_budget_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[compute_budget_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1252,10 +1159,7 @@ mod tests {
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(200_000);
         let transfer_ix = transfer(&sender, &recipient, 1000);
-        let message = VersionedMessage::Legacy(Message::new(
-            &[compute_budget_ix, transfer_ix],
-            Some(&fee_payer),
-        ));
+        let message = create_test_message(&fee_payer, &[compute_budget_ix, transfer_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1288,7 +1192,7 @@ mod tests {
             &fee_payer,
             1000,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1325,7 +1229,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1361,7 +1265,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1391,7 +1295,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &disallowed_account);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1423,8 +1327,7 @@ mod tests {
         let instructions =
             create_nonce_account(&fee_payer, &nonce_account, &disallowed_account, 1_000_000);
         // InitializeNonceAccount is the second instruction.
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instructions[1].clone()], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instructions[1].clone()]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1459,7 +1362,7 @@ mod tests {
             &disallowed_account,
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1494,7 +1397,7 @@ mod tests {
             6,
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1518,7 +1421,7 @@ mod tests {
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
 
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1535,7 +1438,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1561,7 +1464,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let instruction = assign(&fee_payer, &new_owner);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1579,7 +1482,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let instruction = assign(&fee_payer, &new_owner);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1606,7 +1509,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let instruction = assign(&fee_payer, &off_policy_owner);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1615,7 +1518,7 @@ mod tests {
             .is_err());
 
         let instruction = assign_with_seed(&fee_payer, &fee_payer, "seed", &off_policy_owner);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1633,7 +1536,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let instruction = assign(&fee_payer, &off_policy_owner);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1642,7 +1545,7 @@ mod tests {
             .is_err());
 
         let instruction = assign_with_seed(&fee_payer, &fee_payer, "seed", &off_policy_owner);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1668,7 +1571,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let instruction = assign(&other_account, &off_policy_owner);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1686,7 +1589,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let instruction = assign(&other_account, &off_policy_owner);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1729,7 +1632,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1757,7 +1660,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1777,7 +1680,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1811,7 +1714,7 @@ mod tests {
             let batch_ix =
                 spl_token_interface::instruction::batch(&spl_token_interface::id(), &[transfer_ix])
                     .unwrap();
-            let message = VersionedMessage::Legacy(Message::new(&[batch_ix], Some(&fee_payer)));
+            let message = create_test_message(&fee_payer, &[batch_ix]);
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
         };
 
@@ -1867,7 +1770,7 @@ mod tests {
                 Some(1000),
             )
             .unwrap();
-            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+            let message = create_test_message(&fee_payer, &[ix]);
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
         };
 
@@ -1931,7 +1834,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -1961,7 +1864,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1983,7 +1886,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2008,7 +1911,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let freeze_ix = alt_instruction::freeze_lookup_table(lookup_table, fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[freeze_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2025,7 +1928,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let freeze_ix = alt_instruction::freeze_lookup_table(lookup_table, fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[freeze_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2036,7 +1939,7 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().build();
         let other_authority = Pubkey::new_unique();
         let freeze_ix = alt_instruction::freeze_lookup_table(lookup_table, other_authority);
-        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[freeze_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2061,7 +1964,7 @@ mod tests {
 
         let (create_ix, _table_address) =
             alt_instruction::create_lookup_table(authority, fee_payer, 42);
-        let message = VersionedMessage::Legacy(Message::new(&[create_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[create_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2079,7 +1982,7 @@ mod tests {
 
         let (create_ix, _table_address) =
             alt_instruction::create_lookup_table(authority, fee_payer, 42);
-        let message = VersionedMessage::Legacy(Message::new(&[create_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[create_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2108,7 +2011,7 @@ mod tests {
             None,
             vec![Pubkey::new_unique()],
         );
-        let message = VersionedMessage::Legacy(Message::new(&[extend_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[extend_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2124,7 +2027,7 @@ mod tests {
             Some(fee_payer),
             vec![Pubkey::new_unique()],
         );
-        let message = VersionedMessage::Legacy(Message::new(&[extend_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[extend_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2146,7 +2049,7 @@ mod tests {
             Some(fee_payer),
             vec![Pubkey::new_unique()],
         );
-        let message = VersionedMessage::Legacy(Message::new(&[extend_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[extend_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2168,7 +2071,7 @@ mod tests {
             Some(Pubkey::new_unique()),
             vec![Pubkey::new_unique()],
         );
-        let message = VersionedMessage::Legacy(Message::new(&[extend_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[extend_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2192,7 +2095,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let deactivate_ix = alt_instruction::deactivate_lookup_table(lookup_table, fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[deactivate_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[deactivate_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2209,7 +2112,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let deactivate_ix = alt_instruction::deactivate_lookup_table(lookup_table, fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[deactivate_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[deactivate_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2220,7 +2123,7 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().build();
         let other_authority = Pubkey::new_unique();
         let deactivate_ix = alt_instruction::deactivate_lookup_table(lookup_table, other_authority);
-        let message = VersionedMessage::Legacy(Message::new(&[deactivate_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[deactivate_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2249,7 +2152,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let close_ix = alt_instruction::close_lookup_table(lookup_table, fee_payer, recipient);
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2266,7 +2169,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let close_ix = alt_instruction::close_lookup_table(lookup_table, fee_payer, recipient);
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2278,7 +2181,7 @@ mod tests {
         let other_authority = Pubkey::new_unique();
         let close_ix =
             alt_instruction::close_lookup_table(lookup_table, other_authority, recipient);
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2313,7 +2216,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let close_ix = alt_instruction::close_lookup_table(lookup_table, fee_payer, recipient);
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2350,7 +2253,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let close_ix = alt_instruction::close_lookup_table(lookup_table, fee_payer, fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2390,7 +2293,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2420,8 +2323,7 @@ mod tests {
 
         let recipient = Pubkey::new_unique();
         let transfer_instruction = transfer(&fee_payer, &recipient, 100_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
@@ -2430,8 +2332,7 @@ mod tests {
 
         let sender = Pubkey::new_unique();
         let transfer_instruction = transfer(&sender, &fee_payer, 50_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2442,8 +2343,7 @@ mod tests {
         let new_account = Pubkey::new_unique();
         let create_instruction =
             create_account(&fee_payer, &new_account, 200_000, 100, &SYSTEM_PROGRAM_ID);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[create_instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
@@ -2459,10 +2359,7 @@ mod tests {
             100,
             &SYSTEM_PROGRAM_ID,
         );
-        let message = VersionedMessage::Legacy(Message::new(
-            &[create_with_seed_instruction],
-            Some(&fee_payer),
-        ));
+        let message = create_test_message(&fee_payer, &[create_with_seed_instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
@@ -2480,10 +2377,7 @@ mod tests {
             &recipient,
             150_000,
         );
-        let message = VersionedMessage::Legacy(Message::new(
-            &[transfer_with_seed_instruction],
-            Some(&fee_payer),
-        ));
+        let message = create_test_message(&fee_payer, &[transfer_with_seed_instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
@@ -2495,7 +2389,7 @@ mod tests {
             transfer(&sender, &fee_payer, 30_000),     // -30_000
             create_account(&fee_payer, &new_account, 50_000, 100, &SYSTEM_PROGRAM_ID), // +50_000
         ];
-        let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &instructions);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
@@ -2507,8 +2401,7 @@ mod tests {
 
         let other_sender = Pubkey::new_unique();
         let transfer_instruction = transfer(&other_sender, &recipient, 500_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[transfer_instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
@@ -2518,8 +2411,7 @@ mod tests {
         let other_funder = Pubkey::new_unique();
         let create_instruction =
             create_account(&other_funder, &new_account, 1_000_000, 100, &SYSTEM_PROGRAM_ID);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[create_instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
@@ -2547,8 +2439,7 @@ mod tests {
             &fee_payer,
             25_000,
         );
-        let message =
-            VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[withdraw_instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
@@ -2584,7 +2475,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[burn_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2610,7 +2501,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[burn_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2630,7 +2521,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[burn_checked_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[burn_checked_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2665,7 +2556,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2690,7 +2581,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2725,7 +2616,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[approve_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2751,7 +2642,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[approve_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2773,8 +2664,7 @@ mod tests {
         )
         .unwrap();
 
-        let message =
-            VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[approve_checked_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2809,7 +2699,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[burn_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2842,7 +2732,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[close_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2876,7 +2766,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[approve_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2902,7 +2792,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[approve_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2924,8 +2814,7 @@ mod tests {
         )
         .unwrap();
 
-        let message =
-            VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[approve_checked_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -2953,7 +2842,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instruction = create_account(&fee_payer, &new_account, 1000, 100, &owner);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -2969,7 +2858,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instruction = create_account(&fee_payer, &new_account, 1000, 100, &owner);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -3041,7 +2930,7 @@ mod tests {
 
             let config = get_config().unwrap();
             let validator = TransactionValidator::new(config, fee_payer).unwrap();
-            let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+            let message = create_test_message(&fee_payer, &[instruction]);
             let mut transaction =
                 TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
             let result =
@@ -3067,7 +2956,7 @@ mod tests {
 
         // Outer message: a transfer not involving the fee payer — policy-neutral, keeps the tx valid.
         let outer = transfer(&new_account, &Pubkey::new_unique(), 1);
-        let message = VersionedMessage::Legacy(Message::new(&[outer], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[outer]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -3115,7 +3004,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instruction = create_account(&fee_payer, &new_account, 1000, 100, &disallowed_owner);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -3147,7 +3036,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instruction = create_account(&fee_payer, &new_account, 1000, 100, &allowed_owner);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -3187,7 +3076,7 @@ mod tests {
             100,
             &off_policy_owner,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -3225,7 +3114,7 @@ mod tests {
             0,
             &SYSTEM_PROGRAM_ID,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -3273,7 +3162,7 @@ mod tests {
                 AccountMeta::new_readonly(fee_payer, true),
             ],
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -3314,7 +3203,7 @@ mod tests {
             },
             vec![AccountMeta::new(from, true), AccountMeta::new(new_account, false)],
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -3356,7 +3245,7 @@ mod tests {
                 &mint,
                 &spl_token_interface::id(),
             );
-        let message = VersionedMessage::Legacy(Message::new(&[ata_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ata_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -3403,7 +3292,7 @@ mod tests {
                 &mint,
                 &spl_token_interface::id(),
             );
-        let message = VersionedMessage::Legacy(Message::new(&[ata_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ata_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -3432,7 +3321,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instruction = allocate(&fee_payer, 100);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -3448,7 +3337,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instruction = allocate(&fee_payer, 100);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -3474,8 +3363,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instructions = create_nonce_account(&fee_payer, &nonce_account, &fee_payer, 1_000_000);
         // Only test the InitializeNonceAccount instruction (second one)
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instructions[1].clone()], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instructions[1].clone()]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -3491,8 +3379,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instructions = create_nonce_account(&fee_payer, &nonce_account, &fee_payer, 1_000_000);
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instructions[1].clone()], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instructions[1].clone()]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -3524,7 +3411,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instruction = advance_nonce_account(&nonce_account, &fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -3547,7 +3434,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instruction = advance_nonce_account(&nonce_account, &fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -3573,7 +3460,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instruction = withdraw_nonce_account(&nonce_account, &fee_payer, &recipient, 1000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -3589,7 +3476,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instruction = withdraw_nonce_account(&nonce_account, &fee_payer, &recipient, 1000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -3626,7 +3513,7 @@ mod tests {
             withdraw_nonce_account(&nonce_account, &fee_payer, &fee_payer, 1_000),
             transfer(&fee_payer, &recipient, 900),
         ];
-        let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &instructions);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -3671,7 +3558,7 @@ mod tests {
 
             let config = get_config().unwrap();
             let validator = TransactionValidator::new(config, fee_payer).unwrap();
-            let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+            let message = create_test_message(&fee_payer, &instructions);
             let mut transaction =
                 TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -3701,7 +3588,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &new_authority);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -3717,7 +3604,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &new_authority);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -3876,7 +3763,7 @@ mod tests {
 
         // Transaction with AdvanceNonceAccount (authority is NOT fee payer)
         let instruction = advance_nonce_account(&nonce_account, &nonce_authority);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -3914,7 +3801,7 @@ mod tests {
 
         // Transaction with AdvanceNonceAccount (authority is NOT fee payer)
         let instruction = advance_nonce_account(&nonce_account, &nonce_authority);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -3938,7 +3825,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let instruction = transfer(&sender, &recipient, 1000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -3970,7 +3857,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[revoke_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[revoke_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -3994,7 +3881,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[revoke_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[revoke_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4027,7 +3914,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[revoke_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[revoke_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4051,7 +3938,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[revoke_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[revoke_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4087,7 +3974,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[set_authority_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[set_authority_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4113,7 +4000,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[set_authority_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[set_authority_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4149,7 +4036,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[set_authority_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[set_authority_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4175,7 +4062,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[set_authority_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[set_authority_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4219,7 +4106,7 @@ mod tests {
 
         for instruction in instructions {
             let rpc_client = RpcMockBuilder::new().build();
-            let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+            let message = create_test_message(&fee_payer, &[instruction]);
             let mut transaction =
                 TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
             let result =
@@ -4260,7 +4147,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[mint_to_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[mint_to_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4286,7 +4173,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[mint_to_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[mint_to_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4322,7 +4209,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[mint_to_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[mint_to_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4348,7 +4235,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[mint_to_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[mint_to_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4383,7 +4270,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[init_mint_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[init_mint_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4408,7 +4295,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[init_mint_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[init_mint_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4442,7 +4329,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[init_mint_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[init_mint_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4467,7 +4354,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[init_mint_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[init_mint_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4502,7 +4389,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[init_account_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[init_account_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4526,7 +4413,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[init_account_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[init_account_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4560,7 +4447,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[init_account_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[init_account_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4584,7 +4471,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[init_account_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[init_account_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4619,7 +4506,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[init_multisig_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[init_multisig_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4643,7 +4530,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[init_multisig_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[init_multisig_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4677,7 +4564,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[init_multisig_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[init_multisig_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4701,7 +4588,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[init_multisig_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[init_multisig_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4737,7 +4624,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[freeze_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4762,7 +4649,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[freeze_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4797,7 +4684,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[freeze_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4822,7 +4709,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[freeze_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4858,7 +4745,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[thaw_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[thaw_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4883,7 +4770,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[thaw_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[thaw_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4918,7 +4805,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[thaw_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[thaw_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -4943,7 +4830,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[thaw_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[thaw_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -4970,7 +4857,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+            let message = create_test_message(&fee_payer, &[ix]);
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
         };
 
@@ -5024,7 +4911,7 @@ mod tests {
                 Some(1000),
             )
             .unwrap();
-            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+            let message = create_test_message(&fee_payer, &[ix]);
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
         };
 
@@ -5099,7 +4986,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let ix = token2022_reallocate_ix(&fee_payer, &slot);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5175,7 +5062,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let reallocate_ix = token2022_reallocate_ix(&fee_payer, &ReallocateSlot::Payer);
         let token_account = reallocate_ix.accounts[0].pubkey;
-        let message = VersionedMessage::Legacy(Message::new(&[reallocate_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[reallocate_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         transaction
@@ -5239,7 +5126,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5271,7 +5158,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5297,7 +5184,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5331,7 +5218,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5373,7 +5260,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5415,7 +5302,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5487,7 +5374,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5525,7 +5412,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5557,7 +5444,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5591,7 +5478,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5625,7 +5512,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5660,7 +5547,7 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5693,8 +5580,7 @@ mod tests {
 
         // Fee payer is deliberately not one of the instruction accounts, so the rejection must
         // come from the blocked-extension check rather than the fee-payer-presence check.
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer.pubkey())));
+        let message = create_test_message(&fee_payer.pubkey(), &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5816,7 +5702,7 @@ mod tests {
                 .pack(),
         };
 
-        let message = VersionedMessage::Legacy(Message::new(&[confidential_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[confidential_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5845,7 +5731,7 @@ mod tests {
                 .pack(),
         };
 
-        let message = VersionedMessage::Legacy(Message::new(&[confidential_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[confidential_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5880,8 +5766,7 @@ mod tests {
                 data: variant.pack(),
             };
 
-            let message =
-                VersionedMessage::Legacy(Message::new(&[confidential_ix], Some(&fee_payer)));
+            let message = create_test_message(&fee_payer, &[confidential_ix]);
             let mut transaction =
                 TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5909,7 +5794,7 @@ mod tests {
                 .pack(),
         };
 
-        let message = VersionedMessage::Legacy(Message::new(&[confidential_ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[confidential_ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -5960,10 +5845,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(
-            &[revoke_ix.clone(), burn_ix.clone()],
-            Some(&fee_payer),
-        ));
+        let message = create_test_message(&fee_payer, &[revoke_ix.clone(), burn_ix.clone()]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(
@@ -5980,10 +5862,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(
-            &[revoke_ix.clone(), burn_ix.clone()],
-            Some(&fee_payer),
-        ));
+        let message = create_test_message(&fee_payer, &[revoke_ix.clone(), burn_ix.clone()]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -6002,10 +5881,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(
-            &[revoke_ix.clone(), burn_ix.clone()],
-            Some(&fee_payer),
-        ));
+        let message = create_test_message(&fee_payer, &[revoke_ix.clone(), burn_ix.clone()]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
@@ -6046,7 +5922,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::write(&program, &fee_payer, 0, vec![1, 2, 3]);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6060,7 +5936,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::write(&program, &fee_payer, 0, vec![1, 2, 3]);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6085,7 +5961,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::deploy(&program, &fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6099,7 +5975,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::deploy(&program, &fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6125,7 +6001,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::copy(&destination, &fee_payer, &source, 0, 0, 64);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6139,7 +6015,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::copy(&destination, &fee_payer, &source, 0, 0, 64);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6164,7 +6040,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::retract(&program, &fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6190,7 +6066,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::set_program_length(&program, &fee_payer, 1024, &fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6218,7 +6094,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::set_program_length(&program, &fee_payer, 0, &user_recipient);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let err = validator
@@ -6246,7 +6122,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::set_program_length(&program, &fee_payer, 1024, &fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6270,7 +6146,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::transfer_authority(&program, &fee_payer, &new_authority);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6300,7 +6176,7 @@ mod tests {
 
         // current_authority = attacker (not fee_payer), new_authority = fee_payer.
         let ix = loader_v4::transfer_authority(&program, &attacker, &fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6324,7 +6200,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::finalize(&program, &fee_payer, &next_version);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6362,7 +6238,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v3::write(&buffer, &fee_payer, 0, vec![1, 2, 3]);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6375,7 +6251,7 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
         let ix = loader_v3::write(&buffer, &fee_payer, 0, vec![1, 2, 3]);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6398,7 +6274,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v3::set_buffer_authority(&buffer, &fee_payer, &user);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6423,7 +6299,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v3::close(&buffer, &attacker, &fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let err = validator
@@ -6453,7 +6329,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v3::close(&buffer, &fee_payer, &fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6481,7 +6357,7 @@ mod tests {
 
         // user_authority signs as upgrade_authority; spill = fee_payer.
         let ix = loader_v3::upgrade(&program, &buffer, &user_authority, &fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6506,7 +6382,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v3::close(&buffer, &fee_payer, &user_authority);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6538,7 +6414,7 @@ mod tests {
         let ix = loader_v3::extend_program_checked(&program, &attacker, Some(&fee_payer), 128);
         // Force payer to be the fee_payer by re-deriving programdata.
         let _ = programdata; // silence warning
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6561,7 +6437,7 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v3::migrate_program(&programdata, &program, &fee_payer);
-        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[ix]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
@@ -6589,7 +6465,7 @@ mod tests {
             "some-key".to_string(),
             false,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -6618,7 +6494,7 @@ mod tests {
             &authority,
             32,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -6686,7 +6562,7 @@ mod tests {
             "some-key".to_string(),
             false,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -6719,7 +6595,7 @@ mod tests {
             "some-key".to_string(),
             false,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -6756,7 +6632,7 @@ mod tests {
             "USDP".to_string(),
             "https://example.com/usdp.json".to_string(),
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -6786,7 +6662,7 @@ mod tests {
             &current_authority,
             MaybeNull::try_from(Some(fee_payer)).unwrap(),
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -6817,7 +6693,7 @@ mod tests {
             &current_authority,
             MaybeNull::try_from(Some(fee_payer)).unwrap(),
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -6938,7 +6814,7 @@ mod tests {
             &current_authority,
             Some(fee_payer),
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -6968,7 +6844,7 @@ mod tests {
             &fee_payer,
             32,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let message = create_test_message(&fee_payer, &[instruction]);
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -6976,72 +6852,6 @@ mod tests {
         assert!(
             result.is_ok(),
             "allow_update_extension_authority opt-in should allow group authority use: {result:?}"
-        );
-    }
-
-    fn transaction_of_each_version() -> Vec<VersionedTransaction> {
-        let fee_payer = Pubkey::new_unique();
-        [
-            create_legacy_message(&fee_payer, &[transfer(&fee_payer, &Pubkey::new_unique(), 1)]),
-            create_v0_message_with_alt_loaded_program(&fee_payer, vec![]),
-            create_v1_message(&fee_payer, v1::TransactionConfig::empty()),
-        ]
-        .into_iter()
-        .map(TransactionUtil::new_unsigned_versioned_transaction)
-        .collect()
-    }
-
-    fn validator_allowing(versions: Vec<TransactionVersion>) -> (Config, TransactionValidator) {
-        let config = ConfigMockBuilder::new()
-            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_allowed_transaction_versions(versions)
-            .build();
-        let validator = TransactionValidator::new(&config, Pubkey::new_unique()).unwrap();
-        (config, validator)
-    }
-
-    #[test]
-    fn test_validate_transaction_version_accepts_only_listed_version() {
-        let transactions = transaction_of_each_version();
-
-        for (allowed_index, allowed) in transactions.iter().enumerate() {
-            let (_, validator) = validator_allowing(vec![allowed.version()]);
-
-            for (candidate_index, candidate) in transactions.iter().enumerate() {
-                let result = validator.validate_transaction_version(candidate);
-
-                if candidate_index == allowed_index {
-                    assert!(
-                        result.is_ok(),
-                        "{candidate_index} should pass when listed: {result:?}"
-                    );
-                } else {
-                    assert_eq!(
-                        result.unwrap_err(),
-                        KoraError::InvalidTransaction(
-                            "Transaction version is not allowed".to_string()
-                        )
-                    );
-                }
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn test_validate_transaction_rejects_disallowed_version() {
-        let (config, validator) = validator_allowing(vec![TransactionVersion::Number(0)]);
-        let rpc_client = RpcMockBuilder::new().build();
-        let fee_payer = Pubkey::new_unique();
-        let message = VersionedMessage::Legacy(Message::new(
-            &[transfer(&fee_payer, &Pubkey::new_unique(), 1)],
-            Some(&fee_payer),
-        ));
-        let mut transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-
-        assert_eq!(
-            validator.validate_transaction(&config, &mut transaction, &rpc_client).await,
-            Err(KoraError::InvalidTransaction("Transaction version is not allowed".to_string()))
         );
     }
 }

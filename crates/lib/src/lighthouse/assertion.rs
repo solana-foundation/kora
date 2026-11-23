@@ -1,5 +1,10 @@
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_message::{compiled_instruction::CompiledInstruction, MessageHeader, VersionedMessage};
+use solana_compute_budget::compute_budget_limits::{
+    MAX_COMPUTE_UNIT_LIMIT, MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
+};
+use solana_message::{
+    compiled_instruction::CompiledInstruction, v1, MessageHeader, VersionedMessage,
+};
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
@@ -22,6 +27,13 @@ const INTEGER_OPERATOR_GTE: u8 = 4;
 
 /// AccountInfoAssertion::Lamports variant (index 0 in the enum)
 const ACCOUNT_INFO_ASSERTION_LAMPORTS: u8 = 0;
+
+/// Lighthouse has no upgrade authority, so what the runtime charges to load it is fixed: 64
+/// bytes plus the data length for the program account (36) and for its program data (424,293).
+const LIGHTHOUSE_LOADED_ACCOUNTS_DATA_SIZE: u32 = 424_457;
+
+/// The assertion consumes 678 compute units on a fee payer, which holds no account data.
+const ASSERTION_COMPUTE_UNITS: u32 = 1_000;
 
 pub struct LighthouseUtil {}
 
@@ -126,52 +138,8 @@ impl LighthouseUtil {
         Ok(())
     }
 
-    /// In a V0 message, lookup-table-loaded accounts share one index space with the static
-    /// `account_keys` and are addressed at indices `>= account_keys.len()`. Inserting static keys
-    /// raises that boundary, so every existing compiled-instruction index pointing into the loaded
-    /// region must move up by the number of inserted keys to keep resolving the same account.
-    fn shift_loaded_account_indices(
-        instructions: &mut [CompiledInstruction],
-        static_boundary: usize,
-        inserted: usize,
-    ) -> Result<(), KoraError> {
-        for instruction in instructions {
-            Self::shift_index_if_loaded(
-                &mut instruction.program_id_index,
-                static_boundary,
-                inserted,
-            )?;
-            for index in &mut instruction.accounts {
-                Self::shift_index_if_loaded(index, static_boundary, inserted)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn shift_index_if_loaded(
-        index: &mut u8,
-        static_boundary: usize,
-        inserted: usize,
-    ) -> Result<(), KoraError> {
-        if (*index as usize) < static_boundary {
-            return Ok(());
-        }
-        let shifted = (*index as usize)
-            .checked_add(inserted)
-            .filter(|value| *value <= u8::MAX as usize)
-            .ok_or_else(|| {
-                KoraError::ValidationError(
-                    "Lighthouse assertion would overflow the transaction account index space"
-                        .to_string(),
-                )
-            })?;
-        *index = shifted as u8;
-        Ok(())
-    }
-
     /// Compile an instruction against a message's account keys, appending any new
-    /// accounts as readonly unsigned. Returns the compiled instruction without
-    /// pushing it, so callers can adjust existing instructions first.
+    /// accounts as readonly unsigned.
     fn compile_appended_instruction(
         account_keys: &mut Vec<Pubkey>,
         header: &mut MessageHeader,
@@ -208,47 +176,30 @@ impl LighthouseUtil {
         transaction: &mut VersionedTransaction,
         instruction: Instruction,
     ) -> Result<(), KoraError> {
-        match &mut transaction.message {
-            VersionedMessage::Legacy(message) => {
-                let compiled = Self::compile_appended_instruction(
-                    &mut message.account_keys,
-                    &mut message.header,
-                    instruction,
-                )?;
-                message.instructions.push(compiled);
-                Ok(())
-            }
-            VersionedMessage::V0(message) => {
-                let static_keys_before = message.account_keys.len();
+        let VersionedMessage::V1(message) = &mut transaction.message else {
+            return Err(KoraError::ValidationError(
+                "Lighthouse assertions require a V1 transaction".to_string(),
+            ));
+        };
+        let compiled = Self::compile_appended_instruction(
+            &mut message.account_keys,
+            &mut message.header,
+            instruction,
+        )?;
+        message.instructions.push(compiled);
+        Ok(())
+    }
 
-                let compiled = Self::compile_appended_instruction(
-                    &mut message.account_keys,
-                    &mut message.header,
-                    instruction,
-                )?;
-
-                let inserted = message.account_keys.len() - static_keys_before;
-                if inserted > 0 && !message.address_table_lookups.is_empty() {
-                    Self::shift_loaded_account_indices(
-                        &mut message.instructions,
-                        static_keys_before,
-                        inserted,
-                    )?;
-                }
-
-                message.instructions.push(compiled);
-                Ok(())
-            }
-            VersionedMessage::V1(message) => {
-                let compiled = Self::compile_appended_instruction(
-                    &mut message.account_keys,
-                    &mut message.header,
-                    instruction,
-                )?;
-                message.instructions.push(compiled);
-                Ok(())
-            }
-        }
+    fn reserve_assertion_resources(config: &mut v1::TransactionConfig) {
+        config.compute_unit_limit = config
+            .compute_unit_limit
+            .map(|limit| limit.saturating_add(ASSERTION_COMPUTE_UNITS).min(MAX_COMPUTE_UNIT_LIMIT));
+        config.loaded_accounts_data_size_limit =
+            config.loaded_accounts_data_size_limit.map(|limit| {
+                limit
+                    .saturating_add(LIGHTHOUSE_LOADED_ACCOUNTS_DATA_SIZE)
+                    .min(MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get())
+            });
     }
 
     /// Handles size overflow based on config settings.
@@ -261,6 +212,9 @@ impl LighthouseUtil {
         // Clone and append to get actual size
         let mut tx_with_assertion = transaction.clone();
         Self::append_instruction_to_transaction(&mut tx_with_assertion, assertion_ix)?;
+        if let VersionedMessage::V1(message) = &mut tx_with_assertion.message {
+            Self::reserve_assertion_resources(&mut message.config);
+        }
 
         let new_size = TransactionUtil::serialize_versioned_transaction(&tx_with_assertion)
             .map_err(|e| {
@@ -275,7 +229,7 @@ impl LighthouseUtil {
         let rejection = if let Err(e) = tx_with_assertion.message.sanitize() {
             Some(format!("would produce an invalid message ({e})"))
         } else {
-            let max_size = TransactionUtil::max_transaction_size(&tx_with_assertion.message);
+            let max_size = v1::MAX_TRANSACTION_SIZE;
             (new_size > max_size)
                 .then(|| format!("would exceed transaction size limit ({new_size} > {max_size})"))
         };
@@ -299,8 +253,10 @@ impl LighthouseUtil {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::transaction_mock::create_mock_v1_transaction_with_max_addresses;
-    use solana_message::{v0, v1, Message, VersionedMessage};
+    use crate::tests::transaction_mock::{
+        create_mock_v1_transaction_with_max_addresses, create_test_message,
+    };
+    use solana_message::{v1, VersionedMessage};
     use solana_sdk::{hash::Hash, instruction::AccountMeta, signature::Keypair, signer::Signer};
 
     #[test]
@@ -332,84 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn test_append_lighthouse_assertion_legacy() {
-        let keypair = Keypair::new();
-        let program_id = Pubkey::new_unique();
-
-        let instruction = Instruction::new_with_bytes(
-            program_id,
-            &[1, 2, 3],
-            vec![AccountMeta::new(keypair.pubkey(), true)],
-        );
-
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
-        let mut transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
-
-        let original_ix_count = transaction.message.instructions().len();
-        let original_readonly_unsigned =
-            transaction.message.header().num_readonly_unsigned_accounts;
-
-        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);
-        let config = LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true };
-
-        let result =
-            LighthouseUtil::append_lighthouse_assertion(&mut transaction, assertion_ix, &config);
-        assert!(result.is_ok());
-
-        assert_eq!(transaction.message.instructions().len(), original_ix_count + 1);
-        assert_eq!(
-            transaction.message.header().num_readonly_unsigned_accounts,
-            original_readonly_unsigned + 1
-        );
-        assert!(transaction.message.static_account_keys().contains(&LIGHTHOUSE_PROGRAM_ID));
-    }
-
-    #[test]
-    fn test_append_lighthouse_assertion_v0() {
-        let keypair = Keypair::new();
-        let program_id = Pubkey::new_unique();
-
-        let v0_message = v0::Message {
-            header: solana_message::MessageHeader {
-                num_required_signatures: 1,
-                num_readonly_signed_accounts: 0,
-                num_readonly_unsigned_accounts: 1,
-            },
-            account_keys: vec![keypair.pubkey(), program_id],
-            recent_blockhash: Hash::new_unique(),
-            instructions: vec![solana_message::compiled_instruction::CompiledInstruction {
-                program_id_index: 1,
-                accounts: vec![0],
-                data: vec![1, 2, 3],
-            }],
-            address_table_lookups: vec![],
-        };
-
-        let message = VersionedMessage::V0(v0_message);
-        let mut transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
-
-        let original_ix_count = transaction.message.instructions().len();
-        let original_readonly_unsigned =
-            transaction.message.header().num_readonly_unsigned_accounts;
-
-        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);
-        let config = LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true };
-
-        let result =
-            LighthouseUtil::append_lighthouse_assertion(&mut transaction, assertion_ix, &config);
-        assert!(result.is_ok());
-
-        assert_eq!(transaction.message.instructions().len(), original_ix_count + 1);
-        assert_eq!(
-            transaction.message.header().num_readonly_unsigned_accounts,
-            original_readonly_unsigned + 1
-        );
-        assert!(transaction.message.static_account_keys().contains(&LIGHTHOUSE_PROGRAM_ID));
-    }
-
-    #[test]
-    fn test_append_lighthouse_assertion_v1() {
+    fn test_append_lighthouse_assertion() {
         let keypair = Keypair::new();
         let program_id = Pubkey::new_unique();
 
@@ -452,42 +331,51 @@ mod tests {
     }
 
     #[test]
-    fn test_append_lighthouse_assertion_v1_allows_sizes_above_legacy_limit() {
+    fn test_append_lighthouse_assertion_reserves_resources_for_the_assertion() {
         let keypair = Keypair::new();
-        let program_id = Pubkey::new_unique();
-
-        // Larger than the 1232-byte legacy limit but well within the 4096-byte
-        // v1 limit: appending the assertion must use the v1 limit.
-        let v1_message = v1::Message {
-            header: solana_message::MessageHeader {
-                num_required_signatures: 1,
-                num_readonly_signed_accounts: 0,
-                num_readonly_unsigned_accounts: 1,
-            },
-            config: v1::TransactionConfig::empty(),
-            lifetime_specifier: Hash::new_unique(),
-            account_keys: vec![keypair.pubkey(), program_id],
-            instructions: vec![solana_message::compiled_instruction::CompiledInstruction {
-                program_id_index: 1,
-                accounts: vec![0],
-                data: vec![0; 1500],
-            }],
+        let instruction = Instruction::new_with_bytes(Pubkey::new_unique(), &[1, 2, 3], vec![]);
+        let build = |compute_unit_limit, loaded_accounts_data_size_limit| {
+            let message = v1::Message::try_compile_with_config(
+                &keypair.pubkey(),
+                std::slice::from_ref(&instruction),
+                Hash::new_unique(),
+                v1::TransactionConfig::empty()
+                    .with_compute_unit_limit(compute_unit_limit)
+                    .with_loaded_accounts_data_size_limit(loaded_accounts_data_size_limit),
+            )
+            .unwrap();
+            let mut transaction =
+                VersionedTransaction::try_new(VersionedMessage::V1(message), &[&keypair]).unwrap();
+            let appended = LighthouseUtil::append_lighthouse_assertion(
+                &mut transaction,
+                LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000),
+                &LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true },
+            )
+            .unwrap();
+            assert!(appended);
+            let VersionedMessage::V1(message) = transaction.message else {
+                panic!("expected a V1 message");
+            };
+            message.config
         };
 
-        let message = VersionedMessage::V1(v1_message);
-        let mut transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+        let config = build(5_000, 100_000);
+        assert_eq!(config.compute_unit_limit, Some(5_000 + ASSERTION_COMPUTE_UNITS));
+        assert_eq!(
+            config.loaded_accounts_data_size_limit,
+            Some(100_000 + LIGHTHOUSE_LOADED_ACCOUNTS_DATA_SIZE)
+        );
 
-        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);
-        let config = LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true };
-
-        let result =
-            LighthouseUtil::append_lighthouse_assertion(&mut transaction, assertion_ix, &config);
-        assert!(result.is_ok());
-        assert!(transaction.message.static_account_keys().contains(&LIGHTHOUSE_PROGRAM_ID));
+        let config = build(MAX_COMPUTE_UNIT_LIMIT, MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get());
+        assert_eq!(config.compute_unit_limit, Some(MAX_COMPUTE_UNIT_LIMIT));
+        assert_eq!(
+            config.loaded_accounts_data_size_limit,
+            Some(MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get())
+        );
     }
 
     #[test]
-    fn test_append_lighthouse_assertion_v1_rejects_exceeding_address_limit() {
+    fn test_append_lighthouse_assertion_rejects_exceeding_address_limit() {
         let keypair = Keypair::new_from_array([1; 32]);
         let mut transaction = create_mock_v1_transaction_with_max_addresses(&keypair);
 
@@ -506,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn test_append_lighthouse_assertion_v1_skips_exceeding_address_limit_when_configured() {
+    fn test_append_lighthouse_assertion_skips_exceeding_address_limit_when_configured() {
         let keypair = Keypair::new_from_array([2; 32]);
         let mut transaction = create_mock_v1_transaction_with_max_addresses(&keypair);
         let original_ix_count = transaction.message.instructions().len();
@@ -533,8 +421,7 @@ mod tests {
             vec![AccountMeta::new(keypair.pubkey(), true)],
         );
 
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let message = create_test_message(&keypair.pubkey(), &[instruction]);
         let mut transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
         let original_readonly_unsigned =
             transaction.message.header().num_readonly_unsigned_accounts;
@@ -556,16 +443,17 @@ mod tests {
         let keypair = Keypair::new();
         let program_id = Pubkey::new_unique();
 
-        let large_data = vec![0u8; 1100];
+        let large_data = vec![0u8; 3900];
         let instruction = Instruction::new_with_bytes(
             program_id,
             &large_data,
             vec![AccountMeta::new(keypair.pubkey(), true)],
         );
 
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let message = create_test_message(&keypair.pubkey(), &[instruction]);
         let mut transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+        let size = TransactionUtil::serialize_versioned_transaction(&transaction).unwrap().len();
+        assert!(size <= v1::MAX_TRANSACTION_SIZE, "fixture must fit before the assertion: {size}");
 
         let original_ix_count = transaction.message.instructions().len();
 
@@ -584,16 +472,17 @@ mod tests {
         let keypair = Keypair::new();
         let program_id = Pubkey::new_unique();
 
-        let large_data = vec![0u8; 1100];
+        let large_data = vec![0u8; 3900];
         let instruction = Instruction::new_with_bytes(
             program_id,
             &large_data,
             vec![AccountMeta::new(keypair.pubkey(), true)],
         );
 
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let message = create_test_message(&keypair.pubkey(), &[instruction]);
         let mut transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+        let size = TransactionUtil::serialize_versioned_transaction(&transaction).unwrap().len();
+        assert!(size <= v1::MAX_TRANSACTION_SIZE, "fixture must fit before the assertion: {size}");
 
         let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);
         let config = LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true };
@@ -607,178 +496,5 @@ mod tests {
         } else {
             panic!("Expected ValidationError");
         }
-    }
-
-    fn v0_transaction_with_lookup(
-        account_keys: Vec<Pubkey>,
-        num_readonly_unsigned_accounts: u8,
-        instructions: Vec<CompiledInstruction>,
-        lookup_key: Pubkey,
-        writable_indexes: Vec<u8>,
-    ) -> VersionedTransaction {
-        let message = v0::Message {
-            header: MessageHeader {
-                num_required_signatures: 1,
-                num_readonly_signed_accounts: 0,
-                num_readonly_unsigned_accounts,
-            },
-            account_keys,
-            recent_blockhash: Hash::new_unique(),
-            instructions,
-            address_table_lookups: vec![v0::MessageAddressTableLookup {
-                account_key: lookup_key,
-                writable_indexes,
-                readonly_indexes: vec![],
-            }],
-        };
-
-        VersionedTransaction { signatures: vec![], message: VersionedMessage::V0(message) }
-    }
-
-    #[test]
-    fn test_append_v0_with_lookup_rebases_loaded_indices() {
-        let fee_payer = Keypair::new().pubkey();
-        let program = Pubkey::new_unique();
-        let lookup_key = Pubkey::new_unique();
-
-        let original =
-            CompiledInstruction { program_id_index: 1, accounts: vec![0, 2, 3], data: vec![9] };
-        let mut transaction = v0_transaction_with_lookup(
-            vec![fee_payer, program],
-            1,
-            vec![original],
-            lookup_key,
-            vec![0, 1],
-        );
-
-        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&fee_payer, 1_000_000);
-        LighthouseUtil::append_instruction_to_transaction(&mut transaction, assertion_ix).unwrap();
-
-        let VersionedMessage::V0(message) = &transaction.message else {
-            panic!("expected V0 message");
-        };
-
-        assert_eq!(message.account_keys, vec![fee_payer, program, LIGHTHOUSE_PROGRAM_ID]);
-        assert_eq!(message.header.num_readonly_unsigned_accounts, 2);
-
-        // Loaded indices 2 and 3 must move to 3 and 4 so they still resolve to the same
-        // lookup-loaded accounts now that the static boundary grew from 2 to 3.
-        assert_eq!(message.instructions[0].program_id_index, 1);
-        assert_eq!(message.instructions[0].accounts, vec![0, 3, 4]);
-
-        assert_eq!(message.instructions[1].program_id_index, 2);
-        assert_eq!(message.instructions[1].accounts, vec![0]);
-    }
-
-    #[test]
-    fn test_append_v0_with_lookup_rebases_multiple_instructions() {
-        let fee_payer = Keypair::new().pubkey();
-        let program = Pubkey::new_unique();
-        let lookup_key = Pubkey::new_unique();
-
-        // Two pre-existing instructions, each mixing static (0,1) and loaded (2,3) operands, to
-        // exercise the shift loop across more than one instruction.
-        let ix_a =
-            CompiledInstruction { program_id_index: 1, accounts: vec![0, 2, 3], data: vec![1] };
-        let ix_b =
-            CompiledInstruction { program_id_index: 1, accounts: vec![3, 0, 2], data: vec![2] };
-        let mut transaction = v0_transaction_with_lookup(
-            vec![fee_payer, program],
-            1,
-            vec![ix_a, ix_b],
-            lookup_key,
-            vec![0, 1],
-        );
-
-        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&fee_payer, 1_000_000);
-        LighthouseUtil::append_instruction_to_transaction(&mut transaction, assertion_ix).unwrap();
-
-        let VersionedMessage::V0(message) = &transaction.message else {
-            panic!("expected V0 message");
-        };
-
-        assert_eq!(message.account_keys, vec![fee_payer, program, LIGHTHOUSE_PROGRAM_ID]);
-        // Both instructions' loaded operands (2,3) shift to (3,4); static operands (0,1) stay.
-        assert_eq!(message.instructions[0].accounts, vec![0, 3, 4]);
-        assert_eq!(message.instructions[1].accounts, vec![4, 0, 3]);
-        // Appended assertion references the fee payer at static index 0.
-        assert_eq!(message.instructions[2].program_id_index, 2);
-        assert_eq!(message.instructions[2].accounts, vec![0]);
-    }
-
-    #[test]
-    fn test_append_v0_with_lookup_shifts_loaded_program_id_index() {
-        let fee_payer = Keypair::new().pubkey();
-        let static_account = Pubkey::new_unique();
-        let lookup_key = Pubkey::new_unique();
-
-        // The invoked program is loaded from the lookup table, so program_id_index sits in the
-        // loaded region and must shift along with the account operands.
-        let original =
-            CompiledInstruction { program_id_index: 2, accounts: vec![0, 3], data: vec![9] };
-        let mut transaction = v0_transaction_with_lookup(
-            vec![fee_payer, static_account],
-            1,
-            vec![original],
-            lookup_key,
-            vec![0, 1],
-        );
-
-        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&fee_payer, 1_000_000);
-        LighthouseUtil::append_instruction_to_transaction(&mut transaction, assertion_ix).unwrap();
-
-        let VersionedMessage::V0(message) = &transaction.message else {
-            panic!("expected V0 message");
-        };
-
-        // Lighthouse inserted at static index 2, growing the boundary from 2 to 3.
-        assert_eq!(message.account_keys, vec![fee_payer, static_account, LIGHTHOUSE_PROGRAM_ID]);
-        // Loaded program_id_index 2 -> 3 and loaded operand 3 -> 4.
-        assert_eq!(message.instructions[0].program_id_index, 3);
-        assert_eq!(message.instructions[0].accounts, vec![0, 4]);
-    }
-
-    #[test]
-    fn test_append_v0_with_lookup_no_shift_when_program_present() {
-        let fee_payer = Keypair::new().pubkey();
-        let lookup_key = Pubkey::new_unique();
-
-        // Lighthouse program already a static key; no new key is inserted, so nothing shifts.
-        let original =
-            CompiledInstruction { program_id_index: 1, accounts: vec![0, 2, 3], data: vec![9] };
-        let mut transaction = v0_transaction_with_lookup(
-            vec![fee_payer, LIGHTHOUSE_PROGRAM_ID],
-            1,
-            vec![original],
-            lookup_key,
-            vec![0, 1],
-        );
-
-        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&fee_payer, 1_000_000);
-        LighthouseUtil::append_instruction_to_transaction(&mut transaction, assertion_ix).unwrap();
-
-        let VersionedMessage::V0(message) = &transaction.message else {
-            panic!("expected V0 message");
-        };
-
-        assert_eq!(message.account_keys, vec![fee_payer, LIGHTHOUSE_PROGRAM_ID]);
-        assert_eq!(message.header.num_readonly_unsigned_accounts, 1);
-        assert_eq!(message.instructions[0].accounts, vec![0, 2, 3]);
-        assert_eq!(message.instructions[1].accounts, vec![0]);
-    }
-
-    #[test]
-    fn test_shift_index_if_loaded_bounds() {
-        let mut below = 10u8;
-        LighthouseUtil::shift_index_if_loaded(&mut below, 20, 5).unwrap();
-        assert_eq!(below, 10);
-
-        let mut at_boundary = 20u8;
-        LighthouseUtil::shift_index_if_loaded(&mut at_boundary, 20, 3).unwrap();
-        assert_eq!(at_boundary, 23);
-
-        let mut overflow = 255u8;
-        let err = LighthouseUtil::shift_index_if_loaded(&mut overflow, 0, 1).unwrap_err();
-        assert!(matches!(err, KoraError::ValidationError(_)));
     }
 }

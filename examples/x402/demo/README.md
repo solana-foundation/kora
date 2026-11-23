@@ -113,3 +113,5 @@ Facilitators are a crucial component in the x402 ecosystem. They act as speciali
 
 In this demo the facilitator runs the `exact` scheme from `@x402/svm`, which checks the payment against `paymentRequirements` (amount, asset, recipient, instruction layout), and uses Kora as the fee payer signer. Kora's signing policy protects the fee payer; it does not check that the payment matches what the resource server asked for, so a facilitator must not treat a successful Kora signature as a valid payment.
 
+Kora accepts only V1 transactions, so the facilitator registers the scheme with `transactionVersions: [1]`. It advertises that through `/supported`, and the `@x402/svm` client then builds a V1 payment.
+

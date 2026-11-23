@@ -5,7 +5,7 @@ use kora_lib::{
     Config,
 };
 use serde_json::{json, Value};
-use solana_message::{v0, v1, Message, VersionedMessage};
+use solana_message::{v1, VersionedMessage};
 use solana_sdk::{
     hash::Hash,
     instruction::{AccountMeta, Instruction},
@@ -27,6 +27,8 @@ const MAX_SIGNERS: usize = 3;
 const MAX_BYTES: usize = 32;
 const MAX_RAW_ACCOUNTS: usize = 8;
 const CREATE_ACCOUNT_ALLOW_PREFUND_TAG: u32 = 13;
+const COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+const LOADED_ACCOUNTS_DATA_SIZE_LIMIT: u32 = 64 * 1024 * 1024;
 
 #[derive(Arbitrary, Debug, Clone, Copy)]
 pub struct Key(u8);
@@ -89,13 +91,6 @@ impl TokenProgram {
             Self::Token2022 => spl_token_2022_interface::ID,
         }
     }
-}
-
-#[derive(Arbitrary, Debug, Clone, Copy)]
-pub enum MessageVersion {
-    Legacy,
-    V0,
-    V1,
 }
 
 #[derive(Arbitrary, Debug, Clone)]
@@ -1159,7 +1154,6 @@ impl LoaderV4Op {
 
 #[derive(Arbitrary, Debug)]
 pub struct Scenario {
-    pub version: MessageVersion,
     pub policy_seed: u128,
     pub allow_durable_transactions: bool,
     pub ops: Vec<Op>,
@@ -1171,17 +1165,13 @@ impl Scenario {
     }
 
     pub fn transaction(&self, instructions: &[Instruction]) -> Option<VersionedTransaction> {
-        let message = match self.version {
-            MessageVersion::Legacy => {
-                VersionedMessage::Legacy(Message::new(instructions, Some(&FEE_PAYER)))
-            }
-            MessageVersion::V0 => VersionedMessage::V0(
-                v0::Message::try_compile(&FEE_PAYER, instructions, &[], Hash::default()).ok()?,
-            ),
-            MessageVersion::V1 => VersionedMessage::V1(
-                v1::Message::try_compile(&FEE_PAYER, instructions, Hash::default()).ok()?,
-            ),
-        };
+        let config = v1::TransactionConfig::empty()
+            .with_compute_unit_limit(COMPUTE_UNIT_LIMIT)
+            .with_loaded_accounts_data_size_limit(LOADED_ACCOUNTS_DATA_SIZE_LIMIT);
+        let message = VersionedMessage::V1(
+            v1::Message::try_compile_with_config(&FEE_PAYER, instructions, Hash::default(), config)
+                .ok()?,
+        );
         let signatures = usize::from(message.header().num_required_signatures);
         Some(VersionedTransaction { signatures: vec![Default::default(); signatures], message })
     }
