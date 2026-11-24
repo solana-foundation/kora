@@ -1,3 +1,204 @@
+## ts-sdk-v0.3.0-beta.5 - 2026-11-24
+
+Also ships the changes listed under ts-sdk-v0.3.0-beta.4, which was never published.
+
+
+### Breaking Changes
+
+- `SplTokenInstructionPolicy` adds required `allow_unwrap_lamports` and `allow_withdraw_excess_lamports` (#782)
+
+- `Token2022InstructionPolicy` adds required `allow_initialize_extension_authority`, `allow_initialize_interface_extension`, `allow_reallocate`, `allow_unwrap_lamports`, `allow_update_extension_authority`, `allow_withdraw_excess_lamports` and `allow_withdraw_withheld_tokens` (#739, #782)
+
+
+## 3.0.0 - 2026-11-24
+
+First stable release since 2.0.5. It includes every 2.1 and 2.2 beta. Audit status for this tag is in `audits/AUDIT_STATUS.md`.
+
+
+### Breaking Changes
+
+#### Removed
+
+- `type = "crossmint"` in signers.toml is no longer accepted (#715)
+
+- the `transferTransaction` JSON-RPC method, the `docs` cargo feature and `kora openapi` are removed (#770)
+
+- getConfig no longer returns `validation.cross_cluster_endpoints` (#782)
+
+#### Config and deployment
+
+- usage limit `instruction` rules on instructions that can never be counted now fail `config validate` and `rpc start` (#782)
+
+- a `rediss://` cache URL is a startup error. With the cache enabled, startup calls `getGenesisHash` and cache keys are namespaced by cluster, so the cache starts cold (#782)
+
+- docker-compose requires `REDIS_PASSWORD`, no longer publishes Redis on the host, and the shipped redis.conf sets `protected-mode yes` (#782)
+
+- fee payer token transfers, burns, approvals and token account handoffs need the mint in `allowed_tokens` (#782)
+
+- Token-2022 flags (#782):
+  - withheld fee withdrawals need `allow_withdraw_withheld_tokens`
+  - TokenMetadata Initialize, TokenGroup InitializeGroup and InitializeMember need `allow_initialize_interface_extension`
+  - PermissionedBurn Initialize needs `allow_initialize_extension_authority`
+
+- `blocked_mint_extensions` is enforced on fee payer transfers, burns and approvals, and on Pause and Resume (#782)
+
+- `allow_assign` no longer allows reassigning the fee payer to a non-System owner (#782)
+
+- the fee payer can never be created, initialized as a nonce account or retyped, whatever the policy flags (#782)
+
+- `alt.allow_close` and loader-v3 Close of the fee payer must refund the fee payer, and `allow_upgrade` with the fee payer as authority must spill to the fee payer (#782)
+
+- Stake and Vote instructions or CPIs that reference the fee payer are rejected (#782)
+
+#### Fees and outflow
+
+- fee payer burns, approvals, unwraps, excess withdrawals, owner or close authority handoffs, nonce authority handoffs and multisig movements count against `max_allowed_lamports` and margin pricing. Mints without a price fail (#782)
+
+- a bundle's fee payer outflow is capped against `max_allowed_lamports` as a whole, not per member (#782)
+
+- quotes can be higher:
+  - the Lighthouse assertion's priority fee is charged
+  - the default compute unit limit counts compute budget instructions
+  - a scheduled Token-2022 transfer fee increase is charged at the higher fee
+  - ScaledUiAmount and InterestBearing mints are valued conservatively
+
+  (#782, #783)
+
+#### Clients
+
+- signAndSendTransaction and signAndSendBundle reject required co-signer signatures that do not verify, even with `sig_verify = false` (#782)
+
+- signBundle adds a Lighthouse assertion to every member it signs, so clients must re-sign every member (#782)
+
+- payment validation rejects unchecked transfers with mismatched mints and PermissionedBurn from a payment account. gas_swap needs the token transfer to be the only token instruction (#782)
+
+#### deploy_authority plugin and kora-deploy
+
+- upgrade kora-deploy. Loader-v3 buffer writes, deploys, upgrades and buffer closes through the plugin need the buffer keypair's signature, and deploys also need the program keypair's (#782)
+
+- with the deploy registry allowlisted, ExtendProgramChecked needs the registered owner's signature (#782)
+
+
+### Bug Fixes
+
+- Lighthouse bundle order, skipped assertion fee, example buffer close and url advisory (#783)
+
+- harden fee payer guards, payments, Token-2022 policy, signing and error sanitization (#782)
+
+- enforce strict fixed pricing when signing bundles (#774)
+
+- warn on every enabled fee payer policy flag (#773)
+
+- unify payment detection across fee, validation and usage (#772)
+
+- pin the discovered payer in kit fee estimation and submission (#747)
+
+- count WithdrawNonce from the fee payer itself as fee payer outflow (#743)
+
+- make Token-2022 lamport flags take effect and extend drain props (#725)
+
+- validate payments against requirements in facilitator (#727)
+
+- gate fee payer as new or freeze authority in token policy (#729)
+
+- keep signer balance gauge on RPC fetch failure (#723)
+
+- bound HMAC timestamp skew and reject overflowing timestamps (#722)
+
+- size buffer writes to the loader's instruction data limit (#690)
+
+- propagate local unit test failures (#672)
+
+- reject zero fee payer balance metrics interval (#673)
+
+- reject v1 transactions that cannot execute (#654)
+
+- allow Token-2022 metadata and group instructions (#590)
+
+- send unsigned wire for fee estimation in kit executor (#633)
+
+
+### Documentation
+
+- link hosted Kora node providers from the README (#767)
+
+- add disclaimer to readme (#761)
+
+- trim CLAUDE.md and skills to gotchas, adopt CONTRIBUTING (#655)
+
+
+### Features
+
+- add create_account_only_via fee payer policy (#732)
+
+- add global pre-auth explicitly rejecting rate limiter (#719)
+
+- gate Token-2022 Reallocate behind fee_payer_policy.token_2022.allow_reallocate (#739)
+
+- build v1 transactions in the kit planner and executor (#688)
+
+- add allowed_transaction_versions validation option (#724)
+
+- report whether signTransaction appended a Lighthouse assertion (#675)
+
+- add RejectionReason enum and http_rejections_total counter (#669)
+
+- send deployer and reaper transactions as tx v1 (#686)
+
+- support multiple `API` keys (#663)
+
+- make CORS allow origins configurable (#658)
+
+- add max_priority_fee_lamports validation config (#638)
+
+- add support for v1 transactions (#627)
+
+- opt-in support for confidential Token-2022 instructions (#628)
+
+
+### Performance
+
+- compute fee payer outflow once per transaction (#771)
+
+
+### Refactoring
+
+- remove dead code and deprecated surface (#770)
+
+- pass transactions to plugins by shared reference (#728)
+
+- remove duplicate code, extract common utils, separate code by concern and general cleanup (#708)
+
+- remove dead test helpers and redundant tests (#685)
+
+- return execution context from Kora transaction plan executor (#635)
+
+
+### Testing
+
+- add outflow cap props, validator and LiteSVM fuzz targets, seed corpus (#731)
+
+- size the smoke suite's inflated deploy from cluster rent (#693)
+
+- run every integration phase on an embedded surfpool harness (#667)
+
+- add Loader v4 fee-payer drain property coverage (#650)
+
+- add BPF Loader Upgradeable fee-payer drain property coverage (#651)
+
+- add SPL Token fee-payer drain property coverage (#649)
+
+- cover ALT fee-payer policy (#648)
+
+- split fee-payer drain props into one file per program type (#640)
+
+- stop Redis tests from flushing the shared DB (#630)
+
+- add System nonce roles to fee-payer drain property test (#625)
+
+- add fuzzing harness and fee-payer property tests (#618)
+
+
 ## ts-sdk-v0.3.0-beta.4 - 2026-10-28
 
 
