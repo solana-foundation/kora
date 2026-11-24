@@ -190,7 +190,11 @@ impl Harness {
     ) -> Result<()> {
         let mut ix = v3::close_any(close_addr, &self.payer, Some(&self.payer), program);
         for signer in signers {
-            ix.accounts.push(AccountMeta::new_readonly(signer.pubkey(), true));
+            let key = signer.pubkey();
+            match ix.accounts.iter_mut().find(|meta| meta.pubkey == key) {
+                Some(meta) => meta.is_signer = true,
+                None => ix.accounts.push(AccountMeta::new_readonly(key, true)),
+            }
         }
         self.send(&[ix], signers).await?;
         Ok(())
