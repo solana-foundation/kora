@@ -552,8 +552,9 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             .await?
             .checked_add(TransactionFeeUtil::get_lighthouse_assertion_fee(
                 self,
+                &fee_payer,
                 appends_lighthouse_assertion,
-            ))
+            )?)
             .ok_or_else(|| KoraError::ValidationError("Estimated fee overflow".to_string()))?;
         validator.validate_lamport_fee(estimated_fee)?;
 

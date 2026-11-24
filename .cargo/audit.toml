@@ -9,6 +9,9 @@ ignore = [
     # idna 0.1.5 comes from jsonrpc-core-client, reached only by the tests crate via
     # surfpool-sdk.
     "RUSTSEC-2024-0421",
+    # url 1.7.2 has no patched 1.x release and comes from jsonrpc-client-transports and
+    # surfpool-types, reached only by the tests crate via surfpool-sdk. url 2.x is patched.
+    "RUSTSEC-2026-0592",
     # crypto-bigint 0.5.x has no patched release and is pinned by elliptic-curve 0.13
     # (k256/p256/p384); the fix landed in 0.7.6, which needs elliptic-curve 0.14.
     "RUSTSEC-2026-0387",

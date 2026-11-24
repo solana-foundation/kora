@@ -5,6 +5,7 @@ use crate::{
     constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
     error::KoraError,
     fee::price::PriceModel,
+    lighthouse::LighthouseUtil,
     sanitize_error,
     token::{
         spl_token_2022::Token2022Mint,
@@ -171,8 +172,9 @@ impl FeeConfigUtil {
             .await?
             .checked_add(TransactionFeeUtil::get_lighthouse_assertion_fee(
                 transaction,
+                fee_payer,
                 appends_lighthouse_assertion,
-            ))
+            )?)
             .ok_or_else(|| KoraError::ValidationError("Base fee overflow".to_string()))?;
 
         // If the Kora signer is not included in the signers, add LAMPORTS_PER_SIGNATURE
@@ -403,20 +405,26 @@ impl TransactionFeeUtil {
     /// the runtime's lower builtin allocation does not, so the full increase is charged.
     pub fn get_lighthouse_assertion_fee(
         resolved_transaction: &VersionedTransactionResolved,
+        fee_payer: &Pubkey,
         appends_assertion: bool,
-    ) -> u64 {
+    ) -> Result<u64, KoraError> {
         let message = &resolved_transaction.transaction.message;
         if !appends_assertion || matches!(message, VersionedMessage::V1(_)) {
-            return 0;
+            return Ok(0);
         }
-        Self::compute_budget_request(message, &resolved_transaction.all_account_keys)
-            .filter(|request| request.compute_unit_limit.is_none())
-            .map_or(0, |request| {
-                Self::prioritization_fee(
-                    request.compute_unit_price,
-                    DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT,
-                )
-            })
+        let Some(request) =
+            Self::compute_budget_request(message, &resolved_transaction.all_account_keys)
+                .filter(|request| request.compute_unit_limit.is_none())
+        else {
+            return Ok(0);
+        };
+        if !LighthouseUtil::assertion_fits(&resolved_transaction.transaction, fee_payer)? {
+            return Ok(0);
+        }
+        Ok(Self::prioritization_fee(
+            request.compute_unit_price,
+            DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT,
+        ))
     }
 
     fn compute_budget_request(
@@ -473,7 +481,7 @@ impl TransactionFeeUtil {
 mod tests {
     use super::*;
     use crate::{
-        config::{SplTokenConfig, TransferHookPolicy},
+        config::{LighthouseConfig, SplTokenConfig, TransferHookPolicy},
         constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
         fee::{
             fee::{FeeConfigUtil, TransactionFeeUtil},
@@ -2869,18 +2877,21 @@ mod tests {
             ],
         ));
         assert_eq!(
-            TransactionFeeUtil::get_lighthouse_assertion_fee(&price_only, true),
+            TransactionFeeUtil::get_lighthouse_assertion_fee(&price_only, &payer, true).unwrap(),
             5_000,
             "The appended assertion raises the default limit by one instruction"
         );
-        assert_eq!(TransactionFeeUtil::get_lighthouse_assertion_fee(&price_only, false), 0);
+        assert_eq!(
+            TransactionFeeUtil::get_lighthouse_assertion_fee(&price_only, &payer, false).unwrap(),
+            0
+        );
 
         let mut capped_instructions =
             vec![ComputeBudgetInstruction::set_compute_unit_price(25_000)];
         capped_instructions.extend((0..7).map(|_| transfer(&payer, &recipient, 1_000)));
         let capped_estimate = resolve(create_legacy_message(&payer, &capped_instructions));
         assert_eq!(
-            TransactionFeeUtil::get_lighthouse_assertion_fee(&capped_estimate, true),
+            TransactionFeeUtil::get_lighthouse_assertion_fee(&capped_estimate, &payer, true).unwrap(),
             5_000,
             "Builtins get a lower runtime allocation, so a capped estimate still owes the assertion"
         );
@@ -2893,7 +2904,68 @@ mod tests {
                 transfer(&payer, &recipient, 1_000),
             ],
         ));
-        assert_eq!(TransactionFeeUtil::get_lighthouse_assertion_fee(&explicit_limit, true), 0);
+        assert_eq!(
+            TransactionFeeUtil::get_lighthouse_assertion_fee(&explicit_limit, &payer, true)
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn test_get_lighthouse_assertion_fee_near_size_limit() {
+        let payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let with_data = |len: usize| {
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(create_legacy_message(
+                &payer,
+                &[
+                    ComputeBudgetInstruction::set_compute_unit_price(25_000),
+                    Instruction::new_with_bytes(program, &vec![0; len], vec![]),
+                ],
+            ))
+            .unwrap()
+        };
+        let size = |resolved: &VersionedTransactionResolved| {
+            TransactionUtil::serialize_versioned_transaction(&resolved.transaction).unwrap().len()
+        };
+        let max_size = TransactionUtil::max_transaction_size(&with_data(0).transaction.message);
+
+        let largest_fitting = (0..max_size)
+            .rev()
+            .find(|&len| {
+                LighthouseUtil::assertion_fits(&with_data(len).transaction, &payer).unwrap()
+            })
+            .unwrap();
+        let fits = with_data(largest_fitting);
+        let overflows = with_data(largest_fitting + 1);
+        assert!(
+            size(&overflows) <= max_size,
+            "The transaction must be valid without the assertion"
+        );
+
+        assert_eq!(
+            TransactionFeeUtil::get_lighthouse_assertion_fee(&fits, &payer, true).unwrap(),
+            5_000
+        );
+        assert_eq!(
+            TransactionFeeUtil::get_lighthouse_assertion_fee(&overflows, &payer, true).unwrap(),
+            0,
+            "An assertion that does not fit is skipped at signing, so it must not be charged"
+        );
+
+        let skip_overflow =
+            LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: false };
+        let mut signed = overflows.transaction.clone();
+        assert!(!LighthouseUtil::add_fee_payer_assertion_for_balance(
+            &mut signed,
+            &payer,
+            1_000_000,
+            0,
+            0,
+            &skip_overflow,
+        )
+        .unwrap());
+        assert_eq!(signed, overflows.transaction, "Signing must skip the unpriced assertion");
     }
 
     #[test]
