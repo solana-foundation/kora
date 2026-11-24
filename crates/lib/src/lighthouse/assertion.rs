@@ -289,6 +289,17 @@ impl LighthouseUtil {
         }
     }
 
+    /// Whether a fee payer assertion can be appended without exceeding a transaction limit. The
+    /// assertion's size does not depend on its balance, so this matches what signing will do.
+    pub fn assertion_fits(
+        transaction: &VersionedTransaction,
+        fee_payer: &Pubkey,
+    ) -> Result<bool, KoraError> {
+        let assertion_ix = Self::build_fee_payer_assertion(fee_payer, 0);
+        let (_, rejection) = Self::with_assertion(transaction, assertion_ix)?;
+        Ok(rejection.is_none())
+    }
+
     /// Handles size overflow based on config settings.
     /// Returns `true` when the assertion was appended, `false` when it was skipped for size.
     pub(crate) fn append_lighthouse_assertion(
@@ -296,7 +307,27 @@ impl LighthouseUtil {
         assertion_ix: Instruction,
         config: &LighthouseConfig,
     ) -> Result<bool, KoraError> {
-        // Clone and append to get actual size
+        let (tx_with_assertion, rejection) = Self::with_assertion(transaction, assertion_ix)?;
+
+        if let Some(reason) = rejection {
+            if config.fail_if_transaction_size_overflow {
+                return Err(KoraError::ValidationError(format!(
+                    "Adding Lighthouse assertion {reason}"
+                )));
+            } else {
+                log::warn!("Lighthouse assertion {reason}. Skipping.");
+                return Ok(false);
+            }
+        }
+
+        *transaction = tx_with_assertion;
+        Ok(true)
+    }
+
+    fn with_assertion(
+        transaction: &VersionedTransaction,
+        assertion_ix: Instruction,
+    ) -> Result<(VersionedTransaction, Option<String>), KoraError> {
         let mut tx_with_assertion = transaction.clone();
         Self::append_instruction_to_transaction(&mut tx_with_assertion, assertion_ix)?;
 
@@ -318,19 +349,7 @@ impl LighthouseUtil {
                 .then(|| format!("would exceed transaction size limit ({new_size} > {max_size})"))
         };
 
-        if let Some(reason) = rejection {
-            if config.fail_if_transaction_size_overflow {
-                return Err(KoraError::ValidationError(format!(
-                    "Adding Lighthouse assertion {reason}"
-                )));
-            } else {
-                log::warn!("Lighthouse assertion {reason}. Skipping.");
-                return Ok(false);
-            }
-        }
-
-        *transaction = tx_with_assertion;
-        Ok(true)
+        Ok((tx_with_assertion, rejection))
     }
 }
 
