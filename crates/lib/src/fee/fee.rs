@@ -481,7 +481,7 @@ impl TransactionFeeUtil {
 mod tests {
     use super::*;
     use crate::{
-        config::{SplTokenConfig, TransferHookPolicy},
+        config::{LighthouseConfig, SplTokenConfig, TransferHookPolicy},
         constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
         fee::{
             fee::{FeeConfigUtil, TransactionFeeUtil},
@@ -2909,18 +2909,63 @@ mod tests {
                 .unwrap(),
             0
         );
-        let oversized = resolve(create_legacy_message(
-            &payer,
-            &[
-                ComputeBudgetInstruction::set_compute_unit_price(25_000),
-                Instruction::new_with_bytes(Pubkey::new_unique(), &[0; 1_300], vec![]),
-            ],
-        ));
+    }
+
+    #[test]
+    fn test_get_lighthouse_assertion_fee_near_size_limit() {
+        let payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let with_data = |len: usize| {
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(create_legacy_message(
+                &payer,
+                &[
+                    ComputeBudgetInstruction::set_compute_unit_price(25_000),
+                    Instruction::new_with_bytes(program, &vec![0; len], vec![]),
+                ],
+            ))
+            .unwrap()
+        };
+        let size = |resolved: &VersionedTransactionResolved| {
+            TransactionUtil::serialize_versioned_transaction(&resolved.transaction).unwrap().len()
+        };
+        let max_size = TransactionUtil::max_transaction_size(&with_data(0).transaction.message);
+
+        let largest_fitting = (0..max_size)
+            .rev()
+            .find(|&len| {
+                LighthouseUtil::assertion_fits(&with_data(len).transaction, &payer).unwrap()
+            })
+            .unwrap();
+        let fits = with_data(largest_fitting);
+        let overflows = with_data(largest_fitting + 1);
+        assert!(
+            size(&overflows) <= max_size,
+            "The transaction must be valid without the assertion"
+        );
+
         assert_eq!(
-            TransactionFeeUtil::get_lighthouse_assertion_fee(&oversized, &payer, true).unwrap(),
+            TransactionFeeUtil::get_lighthouse_assertion_fee(&fits, &payer, true).unwrap(),
+            5_000
+        );
+        assert_eq!(
+            TransactionFeeUtil::get_lighthouse_assertion_fee(&overflows, &payer, true).unwrap(),
             0,
             "An assertion that does not fit is skipped at signing, so it must not be charged"
         );
+
+        let skip_overflow =
+            LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: false };
+        let mut signed = overflows.transaction.clone();
+        assert!(!LighthouseUtil::add_fee_payer_assertion_for_balance(
+            &mut signed,
+            &payer,
+            1_000_000,
+            0,
+            0,
+            &skip_overflow,
+        )
+        .unwrap());
+        assert_eq!(signed, overflows.transaction, "Signing must skip the unpriced assertion");
     }
 
     #[test]
