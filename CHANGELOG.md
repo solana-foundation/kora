@@ -1,13 +1,33 @@
-## ts-sdk-v0.3.0-beta.5 - 2026-11-24
+## ts-sdk-v0.3.0 - 2026-11-24
 
-Also ships the changes listed under ts-sdk-v0.3.0-beta.4, which was never published.
+First stable 0.3 release, for Kora nodes 3.x. This section covers what is new since ts-sdk-v0.3.0-beta.3. Earlier 0.3.0 betas are described in their GitHub releases (ts-sdk-v0.3.0-beta.0, beta.2 and beta.3).
 
 
 ### Breaking Changes
 
+- build v1 transactions (SIMD-0385) in the kit planner and executor, with the compute budget in the message config; `computeUnitPrice` is replaced by `priorityFeeLamports` (#688)
+
+- peer dependency moves to `@solana/kit` ^8.4 (#734)
+
+- `executeTransactionMessage` returns `{ signature }` instead of a bare signature (#635)
+
 - `SplTokenInstructionPolicy` adds required `allow_unwrap_lamports` and `allow_withdraw_excess_lamports` (#782)
 
 - `Token2022InstructionPolicy` adds required `allow_initialize_extension_authority`, `allow_initialize_interface_extension`, `allow_reallocate`, `allow_unwrap_lamports`, `allow_update_extension_authority`, `allow_withdraw_excess_lamports` and `allow_withdraw_withheld_tokens` (#739, #782)
+
+
+### Features
+
+- allow an explicit loaded accounts data size limit; setting both v1 resource limits skips simulation (#688)
+
+- accept `@solana/kit-plugin-rpc` 0.22 and `@solana-program/token` 0.18 as peers
+
+
+### Bug Fixes
+
+- pin the discovered payer in kit fee estimation and submission (#747)
+
+- send unsigned wire for fee estimation in kit executor (#633)
 
 
 ## 3.0.0 - 2026-11-24
@@ -197,32 +217,6 @@ First stable release since 2.0.5. It includes every 2.1 and 2.2 beta. Audit stat
 - add System nonce roles to fee-payer drain property test (#625)
 
 - add fuzzing harness and fee-payer property tests (#618)
-
-
-## ts-sdk-v0.3.0-beta.4 - 2026-10-28
-
-
-### Breaking Changes
-
-- build v1 transactions (SIMD-0385) in the kit planner and executor, with the compute budget in the message config; `computeUnitPrice` is replaced by `priorityFeeLamports` (#688)
-
-- peer dependency moves to `@solana/kit` ^8.4 (#734)
-
-- `executeTransactionMessage` returns `{ signature }` instead of a bare signature (#635)
-
-
-### Features
-
-- allow an explicit loaded accounts data size limit; setting both v1 resource limits skips simulation (#688)
-
-- accept `@solana/kit-plugin-rpc` 0.22 and `@solana-program/token` 0.18 as peers
-
-
-### Bug Fixes
-
-- pin the discovered payer in kit fee estimation and submission (#747)
-
-- send unsigned wire for fee estimation in kit executor (#633)
 
 
 ## 2.2.0-beta.8 - 2026-07-29
