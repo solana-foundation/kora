@@ -887,7 +887,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
- "url 2.5.8",
+ "url 2.5.9",
  "zeroize",
 ]
 
@@ -3184,9 +3184,9 @@ checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding 2.3.2",
 ]
@@ -3507,7 +3507,7 @@ dependencies = [
  "thiserror 2.0.20",
  "time",
  "tokio",
- "url 2.5.8",
+ "url 2.5.9",
 ]
 
 [[package]]
@@ -3697,7 +3697,7 @@ dependencies = [
  "serde_with",
  "thiserror 2.0.20",
  "time",
- "url 2.5.8",
+ "url 2.5.9",
 ]
 
 [[package]]
@@ -4741,7 +4741,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-util 0.7.19",
  "tracing",
- "url 2.5.8",
+ "url 2.5.9",
 ]
 
 [[package]]
@@ -4792,7 +4792,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tower",
- "url 2.5.8",
+ "url 2.5.9",
 ]
 
 [[package]]
@@ -4870,7 +4870,7 @@ dependencies = [
  "jsonrpsee-core",
  "jsonrpsee-types",
  "tower",
- "url 2.5.8",
+ "url 2.5.9",
 ]
 
 [[package]]
@@ -5067,7 +5067,7 @@ dependencies = [
  "toml 1.1.4+spec-1.1.0",
  "tower",
  "tower-http 0.7.1",
- "url 2.5.8",
+ "url 2.5.9",
  "wincode",
 ]
 
@@ -5960,7 +5960,7 @@ dependencies = [
  "rand 0.7.3",
  "sha-1",
  "slab",
- "url 2.5.8",
+ "url 2.5.9",
 ]
 
 [[package]]
@@ -6795,7 +6795,7 @@ dependencies = [
  "socket2 0.6.5",
  "tokio",
  "tokio-util 0.7.19",
- "url 2.5.8",
+ "url 2.5.9",
  "xxhash-rust",
 ]
 
@@ -6916,7 +6916,7 @@ dependencies = [
  "tower",
  "tower-http 0.6.11",
  "tower-service",
- "url 2.5.8",
+ "url 2.5.9",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -6961,7 +6961,7 @@ dependencies = [
  "tower",
  "tower-http 0.6.11",
  "tower-service",
- "url 2.5.8",
+ "url 2.5.9",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-streams",
@@ -9537,7 +9537,7 @@ dependencies = [
  "solana-svm-type-overrides",
  "thiserror 2.0.20",
  "tokio",
- "url 2.5.8",
+ "url 2.5.9",
 ]
 
 [[package]]
@@ -10051,7 +10051,7 @@ dependencies = [
  "tokio-stream",
  "tokio-tungstenite",
  "tungstenite",
- "url 2.5.8",
+ "url 2.5.9",
 ]
 
 [[package]]
@@ -12966,7 +12966,7 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
- "url 2.5.8",
+ "url 2.5.9",
 ]
 
 [[package]]
@@ -12996,7 +12996,7 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
- "url 2.5.8",
+ "url 2.5.9",
  "uuid",
 ]
 
@@ -13157,7 +13157,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "strum 0.26.3",
- "url 2.5.8",
+ "url 2.5.9",
  "uuid",
 ]
 
@@ -13354,9 +13354,9 @@ dependencies = [
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna 1.1.0",
