@@ -98,6 +98,7 @@ pub(crate) async fn sign_with_signer_pool(
 ) -> Result<Signature, KoraError> {
     let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
     let max_retries = config.kora.sign_max_retries;
+    let admitted_at = std::time::Instant::now();
     let signer = reserve_request_signer_by_pubkey(signer_pubkey)?;
     match sign_with_retry(sign_timeout, max_retries, retry_operation_name, error_prefix, || async {
         signer
@@ -109,7 +110,7 @@ pub(crate) async fn sign_with_signer_pool(
     {
         Ok(sig) => {
             match get_signer_pool() {
-                Ok(pool) => pool.record_signing_success(&signer),
+                Ok(pool) => pool.record_signing_success(&signer, admitted_at),
                 Err(e) => log::warn!(
                     "Could not record {retry_operation_name} success to pool: {}",
                     sanitize_error!(e)

@@ -200,7 +200,7 @@ impl KoraError {
 impl From<KoraError> for ErrorObjectOwned {
     fn from(err: KoraError) -> Self {
         let code = err.error_code();
-        let message = err.to_string();
+        let message = crate::sanitize_error!(err);
         let data = err.to_json_error_data();
 
         ErrorObjectOwned::owned(code as i32, message, Some(data))
@@ -213,8 +213,8 @@ impl_kora_error_from!(solana_keychain::SignerError => SigningError);
 impl From<BundleError> for KoraError {
     fn from(err: BundleError) -> Self {
         match err {
-            BundleError::Jito(_) => KoraError::JitoError(err.to_string()),
-            _ => KoraError::InvalidTransaction(err.to_string()),
+            BundleError::Jito(_) => KoraError::JitoError(crate::sanitize_error!(err)),
+            _ => KoraError::InvalidTransaction(crate::sanitize_error!(err)),
         }
     }
 }
@@ -224,6 +224,34 @@ mod tests {
     use super::*;
     use solana_program::program_error::ProgramError;
     use std::{collections::HashSet, error::Error as StdError};
+
+    #[cfg(not(feature = "unsafe-debug"))]
+    #[test]
+    fn test_rpc_error_object_redacts_provider_url_credentials() {
+        let err = KoraError::RpcError(
+            "error sending request for url (https://rpc.example.com/v2/PATHSECRET?api-key=QUERYSECRET)"
+                .to_string(),
+        );
+        let object = ErrorObjectOwned::from(err);
+        assert!(!object.message().contains("PATHSECRET"));
+        assert!(!object.message().contains("QUERYSECRET"));
+        assert!(object.message().contains("https://rpc.example.com"));
+    }
+
+    #[cfg(not(feature = "unsafe-debug"))]
+    #[test]
+    fn test_bundle_error_conversion_redacts_provider_url_credentials() {
+        let leaky = "https://mainnet.block-engine.example.com/api/v1?uuid=QUERYSECRET";
+        let errors = [
+            BundleError::Jito(crate::bundle::JitoError::ApiError(leaky.to_string())),
+            BundleError::ValidationError(leaky.to_string()),
+        ];
+        for err in errors {
+            let kora_error = KoraError::from(err);
+            assert!(!kora_error.to_string().contains("QUERYSECRET"));
+            assert!(!format!("{kora_error:?}").contains("QUERYSECRET"));
+        }
+    }
 
     #[test]
     fn test_client_error_conversion() {

@@ -130,6 +130,15 @@ impl ConfigValidator {
                 Consider enabling api_keys or hmac_secret in [kora.auth]."
                     .to_string(),
             );
+
+            if config.kora.usage_limit.enabled && !config.validation.is_payment_required() {
+                warnings.push(
+                    "⚠️  SECURITY: usage_limit is enabled with free pricing and no authentication. \
+                    Quotas are keyed by the caller-supplied user_id, so any caller can pick a fresh \
+                    user_id to get a new quota. Configure api_keys or hmac_secret in [kora.auth]."
+                        .to_string(),
+                );
+            }
         }
 
         // The running server resolves auth env-first, so a stale KORA_* environment variable
@@ -150,6 +159,9 @@ impl ConfigValidator {
                      [[kora.usage_limit.rules]] or set enabled = false"
                         .to_string(),
                 );
+            }
+            if let Err(e) = usage_config.build_rules() {
+                errors.push(e.to_string());
             }
 
             let (usage_errors, usage_warnings) = CacheValidator::validate(usage_config).await;

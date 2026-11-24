@@ -1,5 +1,7 @@
+use std::net::IpAddr;
+
 use deadpool_redis::Runtime;
-use redis::AsyncCommands;
+use redis::{AsyncCommands, ConnectionAddr, IntoConnectionInfo};
 
 use crate::config::{CacheConfig, UsageLimitConfig};
 
@@ -23,6 +25,35 @@ impl CacheValidator {
         Ok(())
     }
 
+    fn url_format_error(cache_url: &str) -> Option<String> {
+        if cache_url.starts_with("rediss://") {
+            Some(
+                "rediss:// cache URLs are not supported: Kora is built without Redis TLS"
+                    .to_string(),
+            )
+        } else if !cache_url.starts_with("redis://") {
+            Some("Invalid cache_url format: must start with redis://".to_string())
+        } else {
+            None
+        }
+    }
+
+    fn unauthenticated_remote_warning(cache_url: &str) -> Option<String> {
+        let info = cache_url.into_connection_info().ok()?;
+        let ConnectionAddr::Tcp(host, _) = info.addr() else {
+            return None;
+        };
+        let is_loopback = host == "localhost"
+            || host.trim_matches(['[', ']']).parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback());
+        if is_loopback || info.redis_settings().password().is_some() {
+            return None;
+        }
+        Some(format!(
+            "Redis at {host} has no password: anyone who can reach it can forge cached prices, \
+             accounts and usage counters"
+        ))
+    }
+
     pub async fn validate(usage_config: &UsageLimitConfig) -> (Vec<String>, Vec<String>) {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
@@ -41,11 +72,10 @@ impl CacheValidator {
                 );
             }
             Some(cache_url) => {
-                if !cache_url.starts_with("redis://") && !cache_url.starts_with("rediss://") {
-                    errors.push(
-                        "Invalid cache_url format: must start with redis:// or rediss://"
-                            .to_string(),
-                    );
+                if let Some(error) = Self::url_format_error(cache_url) {
+                    errors.push(error);
+                } else if let Some(warning) = Self::unauthenticated_remote_warning(cache_url) {
+                    warnings.push(warning);
                 }
             }
         }
@@ -58,7 +88,7 @@ impl CacheValidator {
         }
 
         if let Some(cache_url) = &resolved_cache_url {
-            if cache_url.starts_with("redis://") || cache_url.starts_with("rediss://") {
+            if Self::url_format_error(cache_url).is_none() {
                 if let Err(e) = Self::test_redis_connection(cache_url).await {
                     if usage_config.fallback_if_unavailable {
                         warnings.push(format!(
@@ -81,8 +111,7 @@ impl CacheValidator {
     /// Returns (errors, warnings) — errors block startup, warnings are informational.
     pub async fn validate_rpc_cache(cache_config: &CacheConfig) -> (Vec<String>, Vec<String>) {
         let mut errors = Vec::new();
-        // warnings reserved for future soft-fail scenarios (e.g. fallback mode)
-        let warnings: Vec<String> = Vec::new();
+        let mut warnings = Vec::new();
 
         if !cache_config.enabled {
             return (errors, warnings);
@@ -93,13 +122,12 @@ impl CacheValidator {
                 errors.push("RPC cache is enabled but no Redis URL is configured".to_string());
             }
             Some(cache_url) => {
-                if !cache_url.starts_with("redis://") && !cache_url.starts_with("rediss://") {
-                    errors.push(
-                        "Invalid cache_url format: must start with redis:// or rediss://"
-                            .to_string(),
-                    );
+                if let Some(error) = Self::url_format_error(&cache_url) {
+                    errors.push(error);
                 } else if let Err(_e) = Self::test_redis_connection(&cache_url).await {
                     errors.push("RPC cache Redis connection failed".to_string());
+                } else if let Some(warning) = Self::unauthenticated_remote_warning(&cache_url) {
+                    warnings.push(warning);
                 }
             }
         }
@@ -173,11 +201,41 @@ mod tests {
 
         let (errors, warnings) = CacheValidator::validate(&config.kora.usage_limit).await;
 
-        assert!(errors.iter().any(|e| e.contains("Invalid cache_url format")
-            && e.contains("must start with redis:// or rediss://")));
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Invalid cache_url format")
+                && e.contains("must start with redis://")));
         assert!(!warnings.iter().any(|w| w.contains(
             "Usage limit fallback disabled - service will fail if cache becomes unavailable"
         )));
+    }
+
+    #[test]
+    fn test_url_format_error_rejects_tls_urls() {
+        assert!(CacheValidator::url_format_error("rediss://cache.example.com:6380")
+            .is_some_and(|e| e.contains("built without Redis TLS")));
+        assert!(CacheValidator::url_format_error("redis://cache.example.com:6379").is_none());
+    }
+
+    #[test]
+    fn test_unauthenticated_remote_warning() {
+        for url in ["redis://redis:6379", "redis://10.0.0.5:6379", "redis://user@cache.example.com"]
+        {
+            assert!(
+                CacheValidator::unauthenticated_remote_warning(url)
+                    .is_some_and(|w| w.contains("has no password")),
+                "{url} should warn"
+            );
+        }
+        for url in [
+            "redis://localhost:6379",
+            "redis://127.0.0.1:6379",
+            "redis://[::1]:6379",
+            "redis://:secret@redis:6379",
+            "redis://user:secret@cache.example.com:6379",
+        ] {
+            assert!(CacheValidator::unauthenticated_remote_warning(url).is_none(), "{url}");
+        }
     }
 
     #[tokio::test]

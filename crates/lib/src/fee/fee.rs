@@ -5,6 +5,7 @@ use crate::{
     constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
     error::KoraError,
     fee::price::PriceModel,
+    sanitize_error,
     token::{
         spl_token_2022::Token2022Mint,
         token::{TokenType, TokenUtil, TransferHookValidationFlow},
@@ -18,9 +19,11 @@ use crate::cache::CacheUtil;
 
 #[cfg(test)]
 use crate::tests::cache_mock::MockCacheUtil as CacheUtil;
+use borsh::BorshDeserialize;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableMessage};
 use solana_compute_budget::compute_budget_limits::{
-    ComputeBudgetLimits, DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT, MAX_COMPUTE_UNIT_LIMIT,
+    ComputeBudgetLimits, DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT,
+    MAX_BUILTIN_ALLOCATION_COMPUTE_UNIT_LIMIT, MAX_COMPUTE_UNIT_LIMIT,
 };
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::VersionedMessage;
@@ -79,7 +82,10 @@ impl TotalFeeCalculation {
                     self.base_fee, self.kora_signature_fee, self.fee_payer_outflow, self.payment_instruction_fee, self.transfer_fee_amount);
                 KoraError::ValidationError("Fee calculation overflow".to_string())
             })?;
-        Ok(sum.max(0) as u64)
+        u64::try_from(sum.max(0)).map_err(|_| {
+            log::error!("Fee calculation exceeds u64 range: {sum}");
+            KoraError::ValidationError("Fee calculation exceeds u64 range".to_string())
+        })
     }
 }
 
@@ -158,10 +164,16 @@ impl FeeConfigUtil {
         rpc_client: &RpcClient,
         config: &Config,
         bundle_instructions: Option<&[Instruction]>,
+        appends_lighthouse_assertion: bool,
     ) -> Result<TotalFeeCalculation, KoraError> {
         // Get base transaction fee using resolved transaction to handle lookup tables
-        let base_fee =
-            TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, transaction).await?;
+        let base_fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, transaction)
+            .await?
+            .checked_add(TransactionFeeUtil::get_lighthouse_assertion_fee(
+                transaction,
+                appends_lighthouse_assertion,
+            ))
+            .ok_or_else(|| KoraError::ValidationError("Base fee overflow".to_string()))?;
 
         // If the Kora signer is not included in the signers, add LAMPORTS_PER_SIGNATURE
         let mut kora_signature_fee = 0u64;
@@ -203,6 +215,7 @@ impl FeeConfigUtil {
     }
 
     /// Main entry point for fee calculation with Kora's price model applied
+    #[allow(clippy::too_many_arguments)]
     pub async fn estimate_kora_fee(
         transaction: &mut VersionedTransactionResolved,
         fee_payer: &Pubkey,
@@ -211,6 +224,7 @@ impl FeeConfigUtil {
         config: &Config,
         transfer_hook_validation_flow: TransferHookValidationFlow,
         bundle_instructions: Option<&[Instruction]>,
+        appends_lighthouse_assertion: bool,
     ) -> Result<TotalFeeCalculation, KoraError> {
         // Always validate Token2022 transfer-hook mutability before pricing logic so
         // both free and paid modes enforce the same transfer-hook security guard.
@@ -219,6 +233,13 @@ impl FeeConfigUtil {
             transaction,
             rpc_client,
             transfer_hook_validation_flow,
+        )
+        .await?;
+        TokenUtil::validate_fee_payer_token2022_transfer_mints(
+            config,
+            transaction,
+            rpc_client,
+            fee_payer,
         )
         .await?;
 
@@ -239,6 +260,7 @@ impl FeeConfigUtil {
                         rpc_client,
                         config,
                         bundle_instructions,
+                        appends_lighthouse_assertion,
                     )
                     .await?;
 
@@ -258,6 +280,7 @@ impl FeeConfigUtil {
                     rpc_client,
                     config,
                     bundle_instructions,
+                    appends_lighthouse_assertion,
                 )
                 .await?;
 
@@ -319,6 +342,12 @@ impl SerializableMessage for V1FeeMessage<'_> {
     }
 }
 
+struct ComputeBudgetRequest {
+    compute_unit_price: u64,
+    compute_unit_limit: Option<u32>,
+    default_compute_unit_limit: u32,
+}
+
 impl TransactionFeeUtil {
     pub async fn get_estimate_fee(
         rpc_client: &RpcClient,
@@ -331,7 +360,7 @@ impl TransactionFeeUtil {
                 rpc_client.get_fee_for_message(&V1FeeMessage(message)).await
             }
         }
-        .map_err(|e| KoraError::RpcError(e.to_string()))
+        .map_err(|e| KoraError::RpcError(sanitize_error!(e)))
     }
 
     /// Get fee estimate for a resolved transaction, handling V0 transactions with lookup tables
@@ -357,11 +386,48 @@ impl TransactionFeeUtil {
         if let VersionedMessage::V1(v1_message) = message {
             return v1_message.config.priority_fee.unwrap_or(0);
         }
+        Self::compute_budget_request(message, account_keys).map_or(0, |request| {
+            Self::prioritization_fee(
+                request.compute_unit_price,
+                request
+                    .compute_unit_limit
+                    .unwrap_or(request.default_compute_unit_limit)
+                    .min(MAX_COMPUTE_UNIT_LIMIT),
+            )
+        })
+    }
 
+    /// Priority fee the Lighthouse assertion adds when it is appended after pricing: without a
+    /// SetComputeUnitLimit, the assertion instruction raises the runtime's default limit by up
+    /// to one per-instruction default. The estimated default may already sit at the cap while
+    /// the runtime's lower builtin allocation does not, so the full increase is charged.
+    pub fn get_lighthouse_assertion_fee(
+        resolved_transaction: &VersionedTransactionResolved,
+        appends_assertion: bool,
+    ) -> u64 {
+        let message = &resolved_transaction.transaction.message;
+        if !appends_assertion || matches!(message, VersionedMessage::V1(_)) {
+            return 0;
+        }
+        Self::compute_budget_request(message, &resolved_transaction.all_account_keys)
+            .filter(|request| request.compute_unit_limit.is_none())
+            .map_or(0, |request| {
+                Self::prioritization_fee(
+                    request.compute_unit_price,
+                    DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT,
+                )
+            })
+    }
+
+    fn compute_budget_request(
+        message: &VersionedMessage,
+        account_keys: &[Pubkey],
+    ) -> Option<ComputeBudgetRequest> {
         let compute_budget_program_id = solana_compute_budget_interface::id();
         let mut compute_unit_price: Option<u64> = None;
         let mut compute_unit_limit: Option<u32> = None;
         let mut non_compute_budget_instructions: u32 = 0;
+        let mut compute_budget_instructions: u32 = 0;
         for instruction in message.instructions() {
             if account_keys.get(instruction.program_id_index as usize)
                 != Some(&compute_budget_program_id)
@@ -369,7 +435,10 @@ impl TransactionFeeUtil {
                 non_compute_budget_instructions = non_compute_budget_instructions.saturating_add(1);
                 continue;
             }
-            match borsh::from_slice(&instruction.data) {
+            compute_budget_instructions = compute_budget_instructions.saturating_add(1);
+            // The runtime ignores trailing bytes here, so a strict parse would miss a price or
+            // limit that still takes effect on-chain.
+            match ComputeBudgetInstruction::deserialize(&mut instruction.data.as_slice()) {
                 Ok(ComputeBudgetInstruction::SetComputeUnitPrice(micro_lamports)) => {
                     compute_unit_price.get_or_insert(micro_lamports);
                 }
@@ -380,21 +449,23 @@ impl TransactionFeeUtil {
             }
         }
 
-        let Some(price) = compute_unit_price.filter(|price| *price > 0) else {
-            return 0;
-        };
+        let compute_unit_price = compute_unit_price.filter(|price| *price > 0)?;
+        let default_compute_unit_limit = non_compute_budget_instructions
+            .saturating_mul(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT)
+            .saturating_add(
+                compute_budget_instructions
+                    .saturating_mul(MAX_BUILTIN_ALLOCATION_COMPUTE_UNIT_LIMIT),
+            );
+        Some(ComputeBudgetRequest {
+            compute_unit_price,
+            compute_unit_limit,
+            default_compute_unit_limit,
+        })
+    }
 
-        let default_compute_unit_limit =
-            non_compute_budget_instructions.saturating_mul(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT);
-
-        ComputeBudgetLimits {
-            compute_unit_price: price,
-            compute_unit_limit: compute_unit_limit
-                .unwrap_or(default_compute_unit_limit)
-                .min(MAX_COMPUTE_UNIT_LIMIT),
-            ..Default::default()
-        }
-        .get_prioritization_fee()
+    fn prioritization_fee(compute_unit_price: u64, compute_unit_limit: u32) -> u64 {
+        ComputeBudgetLimits { compute_unit_price, compute_unit_limit, ..Default::default() }
+            .get_prioritization_fee()
     }
 }
 
@@ -429,14 +500,14 @@ mod tests {
     use solana_sdk::{
         account::Account,
         hash::Hash,
-        instruction::Instruction,
+        instruction::{AccountMeta, Instruction},
         pubkey::Pubkey,
         signature::{Keypair, Signer},
     };
     use solana_system_interface::{
         instruction::{
-            create_account, create_account_with_seed, transfer, transfer_with_seed,
-            withdraw_nonce_account,
+            authorize_nonce_account, create_account, create_account_with_seed, transfer,
+            transfer_with_seed, withdraw_nonce_account,
         },
         program::ID as SYSTEM_PROGRAM_ID,
     };
@@ -560,8 +631,38 @@ mod tests {
             &config,
             transfer_hook_validation_flow,
             None,
+            false,
         )
         .await
+    }
+
+    #[test]
+    fn test_total_fee_rejects_sum_above_u64_instead_of_wrapping_to_zero() {
+        let calculation = TotalFeeCalculation::new(0, 5000, 0, 0, 0, u64::MAX - 4999);
+        assert!(calculation.get_total_fee_lamports().is_err());
+    }
+
+    #[test]
+    fn test_total_fee_accepts_sum_at_u64_max() {
+        let calculation = TotalFeeCalculation::new(0, 5000, 0, 0, 0, u64::MAX - 5000);
+        assert_eq!(calculation.get_total_fee_lamports().unwrap(), u64::MAX);
+    }
+
+    #[cfg(not(feature = "unsafe-debug"))]
+    #[tokio::test]
+    async fn test_get_estimate_fee_redacts_provider_url_credentials() {
+        let rpc_client =
+            RpcClient::new("http://127.0.0.1:1/PATHSECRET?api-key=QUERYSECRET".to_string());
+        let message = VersionedMessage::Legacy(Message::default());
+
+        let err = TransactionFeeUtil::get_estimate_fee(&rpc_client, &message)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("127.0.0.1:1"), "transport error should name the host: {err}");
+        assert!(!err.contains("PATHSECRET"));
+        assert!(!err.contains("QUERYSECRET"));
     }
 
     #[tokio::test]
@@ -686,6 +787,7 @@ mod tests {
             &config,
             TransferHookValidationFlow::DelayedSigning,
             None,
+            false,
         )
         .await
     }
@@ -839,6 +941,7 @@ mod tests {
             &config,
             TransferHookValidationFlow::DelayedSigning,
             None,
+            false,
         )
         .await;
 
@@ -1203,6 +1306,78 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_nonce_withdraw_with_fee_payer_as_extra_signer() {
+        let mocked_rpc_client = RpcMockBuilder::new().build();
+        let fee_payer = Pubkey::new_unique();
+        let mut withdraw_instruction = withdraw_nonce_account(
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            50_000,
+        );
+        withdraw_instruction.accounts.push(AccountMeta::new_readonly(fee_payer, true));
+        let message =
+            VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = setup_or_get_test_config();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 50_000);
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_nonce_authorize_hands_off_balance() {
+        let nonce_balance = 5_000_000;
+        let mocked_rpc_client = RpcMockBuilder::new()
+            .with_account_info(&Account {
+                lamports: nonce_balance,
+                data: vec![0; 80],
+                owner: SYSTEM_PROGRAM_ID,
+                executable: false,
+                rent_epoch: 0,
+            })
+            .build();
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+        let config = setup_or_get_test_config();
+
+        let outflow_for = |new_authority: Pubkey| {
+            let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &new_authority);
+            let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        let mut handoff = outflow_for(Pubkey::new_unique());
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut handoff,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, nonce_balance as i128);
+
+        let mut keep = outflow_for(fee_payer);
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut keep,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 0);
+    }
+
+    #[tokio::test]
     async fn test_calculate_fee_payer_outflow_nonce_withdraw() {
         setup_or_get_test_config();
         let mocked_rpc_client = RpcMockBuilder::new().build();
@@ -1267,8 +1442,8 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(
-            outflow, -25_000,
-            "WithdrawNonceAccount to fee payer from an unrelated authority should be negative (net inflow)"
+            outflow, 0,
+            "WithdrawNonceAccount to the fee payer must not offset other outflow: as the recipient it signs, so the nonce account may be its own"
         );
 
         let other_authority = Pubkey::new_unique();
@@ -1390,6 +1565,264 @@ mod tests {
         );
     }
 
+    async fn outflow_of(fee_payer: &Pubkey, ix: Instruction, rpc_client: &RpcClient) -> i128 {
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        FeeConfigUtil::calculate_fee_payer_outflow(
+            fee_payer,
+            &mut resolved,
+            rpc_client,
+            &get_config().unwrap(),
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_unwrap_lamports() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let source = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let source_account = AccountMockBuilder::new().with_lamports(5_000_000).build();
+        let no_rpc = RpcMockBuilder::new().build();
+
+        for program_id in [spl_token_interface::id(), spl_token_2022_interface::id()] {
+            let ix = spl_token_interface::instruction::unwrap_lamports(
+                &spl_token_interface::id(),
+                &source,
+                &recipient,
+                &fee_payer,
+                &[],
+                Some(1_500_000),
+            )
+            .unwrap();
+            let ix = Instruction { program_id, ..ix };
+            assert_eq!(outflow_of(&fee_payer, ix.clone(), &no_rpc).await, 1_500_000);
+
+            let rpc_client =
+                RpcMockBuilder::new().build_with_sequential_accounts(vec![&source_account]);
+            let mut full_unwrap = ix.clone();
+            full_unwrap.data = spl_token_interface::instruction::TokenInstruction::UnwrapLamports {
+                amount: None.into(),
+            }
+            .pack();
+            assert_eq!(
+                outflow_of(&fee_payer, full_unwrap, &rpc_client).await,
+                5_000_000,
+                "Unwrapping the whole balance must count the source balance"
+            );
+
+            let mut to_fee_payer = ix.clone();
+            to_fee_payer.accounts[1].pubkey = fee_payer;
+            assert_eq!(outflow_of(&fee_payer, to_fee_payer, &no_rpc).await, 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_full_unwrap_counts_same_transaction_deposits() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let payer = Pubkey::new_unique();
+        let source = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let source_account = AccountMockBuilder::new().with_lamports(5_000_000).build();
+        let native_mint = spl_token_interface::native_mint::id();
+
+        let deposit = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &native_mint,
+            &source,
+            &payer,
+            &[],
+            2_000_000,
+            9,
+        )
+        .unwrap();
+        let full_unwrap = spl_token_interface::instruction::unwrap_lamports(
+            &spl_token_interface::id(),
+            &source,
+            &recipient,
+            &fee_payer,
+            &[],
+            None,
+        )
+        .unwrap();
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[deposit, full_unwrap], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&source_account]);
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &rpc_client,
+            &get_config().unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 7_000_000);
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_burn() {
+        let mint = Pubkey::new_unique();
+        let _m = ConfigMockBuilder::new()
+            .with_cache_enabled(false)
+            .with_allowed_tokens(vec![mint.to_string()])
+            .build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let source = Pubkey::new_unique();
+
+        let burn = spl_token_interface::instruction::burn(
+            &spl_token_interface::id(),
+            &source,
+            &mint,
+            &fee_payer,
+            &[],
+            100_000_000,
+        )
+        .unwrap();
+        let burn_checked = spl_token_2022_interface::instruction::burn_checked(
+            &spl_token_2022_interface::id(),
+            &source,
+            &mint,
+            &fee_payer,
+            &[],
+            100_000_000,
+            6,
+        )
+        .unwrap();
+        for ix in [burn, burn_checked] {
+            let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+            assert_eq!(
+                outflow_of(&fee_payer, ix.clone(), &rpc_client).await,
+                100_000_000,
+                "A fee-payer burn must count the priced token value as outflow"
+            );
+
+            let mut other_owner = ix;
+            other_owner.accounts[2].pubkey = Pubkey::new_unique();
+            assert_eq!(outflow_of(&fee_payer, other_owner, &rpc_client).await, 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_lamport_outflow_excludes_token_value() {
+        let mint = Pubkey::new_unique();
+        let _m = ConfigMockBuilder::new()
+            .with_cache_enabled(false)
+            .with_allowed_tokens(vec![mint.to_string()])
+            .build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let burn = spl_token_interface::instruction::burn(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &mint,
+            &fee_payer,
+            &[],
+            100_000_000,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(
+            &[transfer(&fee_payer, &Pubkey::new_unique(), 100_000), burn],
+            Some(&fee_payer),
+        ));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+        let config = get_config().unwrap();
+
+        let total = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        let lamports = FeeConfigUtil::calculate_fee_payer_lamport_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(total, 100_100_000);
+        assert_eq!(lamports, 100_000, "Token value never leaves the fee payer's SOL balance");
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_withdraw_excess_lamports() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let source = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let source_account = AccountMockBuilder::new().with_lamports(3_000_000).build();
+        let rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                serde_json::json!(2_039_280),
+            )
+            .build_with_sequential_accounts(vec![&source_account]);
+
+        let ix = spl_token_2022_interface::instruction::withdraw_excess_lamports(
+            &spl_token_2022_interface::id(),
+            &source,
+            &recipient,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(outflow_of(&fee_payer, ix.clone(), &rpc_client).await, 960_720);
+
+        let mut to_fee_payer = ix;
+        to_fee_payer.accounts[1].pubkey = fee_payer;
+        assert_eq!(outflow_of(&fee_payer, to_fee_payer, &rpc_client).await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_accepts_accounts_created_in_the_transaction() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let account = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let not_found = RpcMockBuilder::new().with_account_not_found().build();
+
+        let nonce_handoff = authorize_nonce_account(&account, &fee_payer, &recipient);
+        let full_unwrap = spl_token_interface::instruction::unwrap_lamports(
+            &spl_token_interface::id(),
+            &account,
+            &recipient,
+            &fee_payer,
+            &[],
+            None,
+        )
+        .unwrap();
+        let withdraw_excess = spl_token_2022_interface::instruction::withdraw_excess_lamports(
+            &spl_token_2022_interface::id(),
+            &account,
+            &recipient,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        for ix in [nonce_handoff, full_unwrap, withdraw_excess] {
+            assert_eq!(
+                outflow_of(&fee_payer, ix, &not_found).await,
+                0,
+                "an account that does not exist yet holds nothing before the transaction"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_reuses_first_snapshot_per_transaction() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
@@ -1434,6 +1867,38 @@ mod tests {
             priced, validated,
             "The outflow priced into the fee must be the one checked against max_allowed_lamports"
         );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_counts_multisig_close_to_third_party() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let multisig = Pubkey::new_unique();
+        let rent_account = AccountMockBuilder::new().with_lamports(2_157_600).build();
+        let config = get_config().unwrap();
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &multisig,
+            &[&fee_payer],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outflow, 2_157_600);
     }
 
     #[tokio::test]
@@ -1546,6 +2011,32 @@ mod tests {
             outflow, 0,
             "Close where the fee payer is neither authority nor recipient should be zero"
         );
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &fee_payer,
+            &recipient,
+            &other_authority,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, 2_157_600,
+            "Closing the fee payer account itself to a third party should count its balance"
+        );
     }
 
     #[tokio::test]
@@ -1579,6 +2070,7 @@ mod tests {
             &config,
             TransferHookValidationFlow::DelayedSigning,
             None,
+            false,
         )
         .await
         .unwrap();
@@ -2117,12 +2609,47 @@ mod tests {
             &mocked_rpc_client,
             &config,
             None,
+            false,
         )
         .await
         .unwrap();
 
         // Should include base fee (5000) + fee payer outflow (100_000)
         assert_eq!(result.total_fee_lamports, 105_000, "Should return base fee + outflow");
+    }
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_includes_lighthouse_assertion_fee() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let fee_payer = Keypair::new();
+        let recipient = Pubkey::new_unique();
+        let message = create_legacy_message(
+            &fee_payer.pubkey(),
+            &[
+                ComputeBudgetInstruction::set_compute_unit_price(25_000),
+                transfer(&fee_payer.pubkey(), &recipient, 100_000),
+            ],
+        );
+        let config = get_config().unwrap();
+
+        for (appends_assertion, expected) in [(false, 105_000), (true, 110_000)] {
+            let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(5000).build();
+            let mut resolved_transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message.clone())
+                    .unwrap();
+            let result = FeeConfigUtil::estimate_transaction_fee(
+                &mut resolved_transaction,
+                &fee_payer.pubkey(),
+                false,
+                &mocked_rpc_client,
+                &config,
+                None,
+                appends_assertion,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.total_fee_lamports, expected);
+        }
     }
 
     #[tokio::test]
@@ -2149,6 +2676,7 @@ mod tests {
             &mocked_rpc_client,
             &config,
             None,
+            false,
         )
         .await
         .unwrap();
@@ -2188,6 +2716,7 @@ mod tests {
             &mocked_rpc_client,
             &config,
             None,
+            false,
         )
         .await
         .unwrap();
@@ -2325,6 +2854,49 @@ mod tests {
     }
 
     #[test]
+    fn test_get_lighthouse_assertion_fee() {
+        let payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let resolve = |message| {
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        let price_only = resolve(create_legacy_message(
+            &payer,
+            &[
+                ComputeBudgetInstruction::set_compute_unit_price(25_000),
+                transfer(&payer, &recipient, 1_000),
+            ],
+        ));
+        assert_eq!(
+            TransactionFeeUtil::get_lighthouse_assertion_fee(&price_only, true),
+            5_000,
+            "The appended assertion raises the default limit by one instruction"
+        );
+        assert_eq!(TransactionFeeUtil::get_lighthouse_assertion_fee(&price_only, false), 0);
+
+        let mut capped_instructions =
+            vec![ComputeBudgetInstruction::set_compute_unit_price(25_000)];
+        capped_instructions.extend((0..7).map(|_| transfer(&payer, &recipient, 1_000)));
+        let capped_estimate = resolve(create_legacy_message(&payer, &capped_instructions));
+        assert_eq!(
+            TransactionFeeUtil::get_lighthouse_assertion_fee(&capped_estimate, true),
+            5_000,
+            "Builtins get a lower runtime allocation, so a capped estimate still owes the assertion"
+        );
+
+        let explicit_limit = resolve(create_legacy_message(
+            &payer,
+            &[
+                ComputeBudgetInstruction::set_compute_unit_limit(300_000),
+                ComputeBudgetInstruction::set_compute_unit_price(25_000),
+                transfer(&payer, &recipient, 1_000),
+            ],
+        ));
+        assert_eq!(TransactionFeeUtil::get_lighthouse_assertion_fee(&explicit_limit, true), 0);
+    }
+
+    #[test]
     fn test_get_requested_priority_fee_legacy_price_and_limit() {
         let payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
@@ -2336,6 +2908,23 @@ mod tests {
                 transfer(&payer, &recipient, 1_000),
             ],
         );
+
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
+            7_500
+        );
+    }
+
+    #[test]
+    fn test_get_requested_priority_fee_reads_instructions_with_trailing_bytes() {
+        let payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let mut limit = ComputeBudgetInstruction::set_compute_unit_limit(300_000);
+        limit.data.push(0);
+        let mut price = ComputeBudgetInstruction::set_compute_unit_price(25_000);
+        price.data.push(0);
+        let message =
+            create_legacy_message(&payer, &[limit, price, transfer(&payer, &recipient, 1_000)]);
 
         assert_eq!(
             TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
@@ -2374,11 +2963,32 @@ mod tests {
             ],
         );
 
-        // The lone transfer defaults to 200_000 CU, so 2_000 micro-lamports over it = 400 lamports.
-        // Billing the 1.4M protocol maximum instead would overstate this sevenfold.
+        // The transfer defaults to 200_000 CU and the price instruction is a builtin allocated
+        // 3_000 CU, so 2_000 micro-lamports over 203_000 CU = 406 lamports. Billing the 1.4M
+        // protocol maximum instead would overstate this sevenfold.
         assert_eq!(
             TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
-            400
+            406
+        );
+    }
+
+    #[test]
+    fn test_get_requested_priority_fee_counts_every_compute_budget_builtin_allocation() {
+        let payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let message = create_legacy_message(
+            &payer,
+            &[
+                ComputeBudgetInstruction::set_compute_unit_price(1_000_000),
+                ComputeBudgetInstruction::request_heap_frame(64 * 1024),
+                ComputeBudgetInstruction::set_loaded_accounts_data_size_limit(64 * 1024),
+                transfer(&payer, &recipient, 1_000),
+            ],
+        );
+
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
+            209_000
         );
     }
 

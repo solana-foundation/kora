@@ -175,7 +175,8 @@ impl ConfigValidator {
     ///
     /// Two tiers:
     /// 1. **High-risk native programs** (Vote, Stake) — these can directly control funds
-    ///    without routing through inner System/SPL instructions, so a targeted warning is
+    ///    without routing through inner System/SPL instructions. The fee payer is barred from
+    ///    them outright, but their instruction data is not parsed, so a targeted warning is
     ///    emitted.
     /// 2. **Any other unrecognised program** — custom programs always use inner instructions
     ///    (System, SPL Token, Token-2022, ALT, Loader-v4) for actual fund movement, so only
@@ -194,9 +195,10 @@ impl ConfigValidator {
             if allowed_programs.contains(program_id) {
                 warnings.push(format!(
                     "{program_name} ({program_id}) is in allowed_programs but has no \
-                    fee-payer instruction parser. Instructions for this program involving \
-                    the fee payer will not be subject to any policy enforcement. Only add \
-                    this program if you understand and accept the risk."
+                    instruction parser. Instructions for this program that reference the fee \
+                    payer are always rejected, but authorities carried in instruction data are \
+                    not checked against disallowed_accounts. Only add this program if you \
+                    understand and accept the risk."
                 ));
             }
         }

@@ -39,15 +39,30 @@ afterwards: `signTransaction` and `signBundle`.
 `validator/config_validator/transactions.rs` warns when lighthouse is enabled alongside those
 methods. It is a warning, not an error; the node still starts unprotected.
 
-### Two drain guards are not flag-gated
+### Some drain guards are not flag-gated
 
-Do not go looking for a `fee_payer_policy` flag for these. They are `deny_fee_payer!` calls with no
-`unless` clause:
+Do not go looking for a `fee_payer_policy` flag for these. They are rejected regardless of policy:
 
 - BPF Loader Upgradeable `Close` (`transaction_validator/bpf_loader_upgradeable.rs`): a fee-payer
-  authority paired with a foreign recipient is always rejected.
+  authority paired with a foreign recipient is always rejected, and so is closing the fee payer
+  itself to a foreign recipient, with or without an authority.
+- System `CreateAccount*` (`transaction_validator/system.rs`): the fee payer can never be the
+  account being created. `CreateAccountAllowPrefund` with zero lamports would otherwise retype it.
+- System `Assign` (`transaction_validator/system.rs`): the fee payer account can never be reassigned
+  to an owner other than the System program, so it cannot be retyped and closed by another program.
+- System `InitializeNonceAccount` (`transaction_validator/system.rs`): the fee payer account can
+  never be the nonce account. Initialization needs no signature, so after an `Allocate` a caller
+  could otherwise put the fee payer's whole balance under a nonce authority of their choice.
+- BPF Loader Upgradeable `Upgrade` (`transaction_validator/bpf_loader_upgradeable.rs`): when the fee
+  payer is the upgrade authority, the spill must also be the fee payer.
+- ALT `CloseLookupTable` (`transaction_validator/alt.rs`): when the fee payer is the authority, the
+  recipient must also be the fee payer.
 - Loader v4 `SetProgramLength` (`transaction_validator/loader_v4.rs`): when the fee payer is the
   authority, the recipient must also be the fee payer.
+- Stake and Vote (`validate_stake_vote_fee_payer_usage` in `transaction_validator.rs`): any
+  instruction for either program that references the fee payer in any account position is rejected.
+  Simulation returns inner Stake and Vote instructions without accounts, so a CPI into either
+  program is also rejected when its top-level instruction references the fee payer.
 
 ### Fee payer policy must fail closed
 

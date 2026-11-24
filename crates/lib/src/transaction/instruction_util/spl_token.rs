@@ -57,8 +57,11 @@ pub enum ParsedSPLInstructionData {
         is_2022: bool,
     },
     SplTokenBurn {
+        amount: u64,
         owner: Pubkey,
         multisig_signers: Vec<Pubkey>,
+        mint: Option<Pubkey>,
+        source_address: Pubkey,
         is_2022: bool,
     },
     SplTokenCloseAccount {
@@ -69,8 +72,11 @@ pub enum ParsedSPLInstructionData {
         is_2022: bool,
     },
     SplTokenApprove {
+        amount: u64,
         owner: Pubkey,
         multisig_signers: Vec<Pubkey>,
+        mint: Option<Pubkey>,
+        source_address: Pubkey,
         is_2022: bool,
     },
     SplTokenRevoke {
@@ -79,8 +85,10 @@ pub enum ParsedSPLInstructionData {
         is_2022: bool,
     },
     SplTokenSetAuthority {
+        account: Pubkey,
         authority: Pubkey,
         new_authority: Option<Pubkey>,
+        is_token_account_control: bool,
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
     },
@@ -145,11 +153,16 @@ pub enum ParsedSPLInstructionData {
     },
     // WithdrawExcessLamports (both spl and spl 2022)
     SplTokenWithdrawExcessLamports {
+        source: Pubkey,
+        destination: Pubkey,
         owner: Pubkey,
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
     },
     SplTokenUnwrapLamports {
+        source: Pubkey,
+        destination: Pubkey,
+        amount: Option<u64>,
         owner: Pubkey,
         multisig_signers: Vec<Pubkey>,
         is_2022: bool,
@@ -182,6 +195,55 @@ instruction_type!(ParsedSPLInstructionData => ParsedSPLInstructionType {
     SplTokenUnwrapLamports,
     SplTokenUnknownExtension,
 });
+
+pub struct TokenMovement<'a> {
+    pub amount: u64,
+    pub owner: Pubkey,
+    pub multisig_signers: &'a [Pubkey],
+    pub mint: Option<Pubkey>,
+    pub source_address: Pubkey,
+    pub is_2022: bool,
+}
+
+impl ParsedSPLInstructionData {
+    pub fn token_movement(&self) -> Option<TokenMovement<'_>> {
+        match self {
+            Self::SplTokenTransfer {
+                amount,
+                owner,
+                multisig_signers,
+                mint,
+                source_address,
+                is_2022,
+                ..
+            }
+            | Self::SplTokenBurn {
+                amount,
+                owner,
+                multisig_signers,
+                mint,
+                source_address,
+                is_2022,
+            }
+            | Self::SplTokenApprove {
+                amount,
+                owner,
+                multisig_signers,
+                mint,
+                source_address,
+                is_2022,
+            } => Some(TokenMovement {
+                amount: *amount,
+                owner: *owner,
+                multisig_signers,
+                mint: *mint,
+                source_address: *source_address,
+                is_2022: *is_2022,
+            }),
+            _ => None,
+        }
+    }
+}
 
 /// Emits the instruction arms spl-token and Token-2022 share. `TokenInstruction` resolves at
 /// the call site, so each program matches against its own interface crate.
@@ -226,25 +288,33 @@ macro_rules! match_shared_token_instruction {
                     $is_2022,
                 );
             }
-            TokenInstruction::Burn { .. } => {
-                let owner = Self::parse_burn_owner_with_mint_fallback($instruction)?;
+            TokenInstruction::Burn { amount } => {
+                let (owner, mint) = Self::parse_burn_owner_with_mint_fallback($instruction)?;
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenBurn {
+                        amount,
                         owner,
                         multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        mint,
+                        source_address: $instruction.accounts
+                            [instruction_indexes::spl_token_burn::SOURCE_INDEX]
+                            .pubkey,
                         is_2022: $is_2022,
                     },
                 );
             }
-            TokenInstruction::BurnChecked { .. } => {
+            TokenInstruction::BurnChecked { amount, .. } => {
                 use instruction_indexes::spl_token_burn as ix;
                 validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenBurn {
+                        amount,
                         owner: $instruction.accounts[ix::OWNER_INDEX].pubkey,
                         multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        mint: Some($instruction.accounts[ix::MINT_INDEX].pubkey),
+                        source_address: $instruction.accounts[ix::SOURCE_INDEX].pubkey,
                         is_2022: $is_2022,
                     },
                 );
@@ -263,26 +333,32 @@ macro_rules! match_shared_token_instruction {
                     },
                 );
             }
-            TokenInstruction::Approve { .. } => {
+            TokenInstruction::Approve { amount } => {
                 use instruction_indexes::spl_token_approve as ix;
                 validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenApprove {
+                        amount,
                         owner: $instruction.accounts[ix::OWNER_INDEX].pubkey,
                         multisig_signers: Self::extract_multisig_signers($instruction, 3),
+                        mint: None,
+                        source_address: $instruction.accounts[ix::SOURCE_INDEX].pubkey,
                         is_2022: $is_2022,
                     },
                 );
             }
-            TokenInstruction::ApproveChecked { .. } => {
+            TokenInstruction::ApproveChecked { amount, .. } => {
                 use instruction_indexes::spl_token_approve_checked as ix;
                 validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenApprove {
+                        amount,
                         owner: $instruction.accounts[ix::OWNER_INDEX].pubkey,
                         multisig_signers: Self::extract_multisig_signers($instruction, 4),
+                        mint: Some($instruction.accounts[ix::MINT_INDEX].pubkey),
+                        source_address: $instruction.accounts[ix::SOURCE_INDEX].pubkey,
                         is_2022: $is_2022,
                     },
                 );
@@ -299,14 +375,19 @@ macro_rules! match_shared_token_instruction {
                     },
                 );
             }
-            TokenInstruction::SetAuthority { new_authority, .. } => {
+            TokenInstruction::SetAuthority { authority_type, new_authority } => {
                 use instruction_indexes::spl_token_set_authority as ix;
                 validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenSetAuthority {
+                        account: $instruction.accounts[ix::ACCOUNT_INDEX].pubkey,
                         authority: $instruction.accounts[ix::CURRENT_AUTHORITY_INDEX].pubkey,
                         new_authority: new_authority.into(),
+                        is_token_account_control: matches!(
+                            authority_type,
+                            AuthorityType::AccountOwner | AuthorityType::CloseAccount
+                        ),
                         multisig_signers: Self::extract_multisig_signers($instruction, 2),
                         is_2022: $is_2022,
                     },
@@ -446,6 +527,8 @@ macro_rules! match_shared_token_instruction {
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenWithdrawExcessLamports {
+                        source: $instruction.accounts[ix::SOURCE_INDEX].pubkey,
+                        destination: $instruction.accounts[ix::DESTINATION_INDEX].pubkey,
                         owner: $instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
                         multisig_signers: Self::extract_multisig_signers(
                             $instruction,
@@ -455,12 +538,15 @@ macro_rules! match_shared_token_instruction {
                     },
                 );
             }
-            TokenInstruction::UnwrapLamports { .. } => {
+            TokenInstruction::UnwrapLamports { amount } => {
                 use instruction_indexes::spl_token_unwrap_lamports as ix;
                 validate_number_accounts!($instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 Self::push_parsed_spl_instruction(
                     &mut $parsed,
                     ParsedSPLInstructionData::SplTokenUnwrapLamports {
+                        source: $instruction.accounts[ix::SOURCE_INDEX].pubkey,
+                        destination: $instruction.accounts[ix::DESTINATION_INDEX].pubkey,
+                        amount: amount.into(),
                         owner: $instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
                         multisig_signers: Self::extract_multisig_signers(
                             $instruction,
@@ -476,23 +562,25 @@ macro_rules! match_shared_token_instruction {
 }
 
 impl IxUtils {
-    fn parse_burn_owner_with_mint_fallback(instruction: &Instruction) -> Result<Pubkey, KoraError> {
+    fn parse_burn_owner_with_mint_fallback(
+        instruction: &Instruction,
+    ) -> Result<(Pubkey, Option<Pubkey>), KoraError> {
+        use instruction_indexes::spl_token_burn as ix;
         // Standard Burn has 3 accounts: [source, mint, authority]
         // Reconstructed from parsed RPC data may have only 2: [source, authority]
         // (Solana RPC doesn't include mint in parsed "burn" non-checked JSON)
-        if instruction.accounts.len()
-            >= instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
-        {
-            return Ok(
-                instruction.accounts[instruction_indexes::spl_token_burn::OWNER_INDEX].pubkey
-            );
+        if instruction.accounts.len() >= ix::REQUIRED_NUMBER_OF_ACCOUNTS {
+            return Ok((
+                instruction.accounts[ix::OWNER_INDEX].pubkey,
+                Some(instruction.accounts[ix::MINT_INDEX].pubkey),
+            ));
         }
 
         if instruction.accounts.len() == 2 {
             log::debug!(
                 "Burn instruction has 2 accounts (reconstructed without mint), using index 1 as authority"
             );
-            return Ok(instruction.accounts[1].pubkey);
+            return Ok((instruction.accounts[1].pubkey, None));
         }
 
         log::error!("Burn instruction has less than 2 accounts: {:?}", instruction);
@@ -672,7 +760,7 @@ impl IxUtils {
             let program_id = instruction.program_id;
 
             if program_id == spl_token_interface::ID {
-                use spl_token_interface::instruction::TokenInstruction;
+                use spl_token_interface::instruction::{AuthorityType, TokenInstruction};
 
                 let Ok(spl_ix) = TokenInstruction::unpack(&instruction.data) else {
                     continue;
@@ -692,7 +780,7 @@ impl IxUtils {
                             TransferHookInstruction, UpdateInstructionData as TransferHookUpdate,
                         },
                     },
-                    instruction::{decode_instruction_data, TokenInstruction},
+                    instruction::{decode_instruction_data, AuthorityType, TokenInstruction},
                 };
 
                 let spl_ix = match TokenInstruction::unpack(&instruction.data) {

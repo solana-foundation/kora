@@ -1,6 +1,7 @@
 use crate::{
     config::Config,
     error::KoraError,
+    sanitize_error,
     token::{
         interface::TokenMint,
         spl_token::TokenProgram,
@@ -8,7 +9,8 @@ use crate::{
         TokenInterface,
     },
     transaction::{
-        ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionResolved,
+        ParsedSPLInstructionData, ParsedSPLInstructionType, Token2022SecurityParser,
+        VersionedTransactionResolved,
     },
     CacheUtil,
 };
@@ -47,7 +49,7 @@ impl TokenUtil {
                 let epoch = rpc_client
                     .get_epoch_info()
                     .await
-                    .map_err(|e| KoraError::RpcError(e.to_string()))?
+                    .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?
                     .epoch;
                 *cached_epoch = Some(epoch);
                 epoch
@@ -253,6 +255,17 @@ impl TokenUtil {
                     continue;
                 }
 
+                if let (None, Some((_, source_mint, _)), Some((_, destination_mint, _))) =
+                    (mint, &source_account_info, &destination_account_info)
+                {
+                    if source_mint != destination_mint {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "Transfer source mint {source_mint} does not match destination mint \
+                             {destination_mint}"
+                        )));
+                    }
+                }
+
                 let token_mint = mint
                     .or(source_account_info.as_ref().map(|(_, token_mint, _)| *token_mint))
                     .or(destination_account_info.as_ref().map(|(_, token_mint, _)| *token_mint))
@@ -380,6 +393,78 @@ impl TokenUtil {
             });
         }
 
+        let all_instructions = bundle_instructions
+            .map(|instructions| instructions.to_vec())
+            .unwrap_or_else(|| transaction_resolved.all_instructions().to_vec());
+        for instruction in transaction_resolved
+            .get_or_parse_spl_instructions()?
+            .get(&ParsedSPLInstructionType::SplTokenBurn)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenBurn {
+                amount,
+                mint,
+                source_address,
+                is_2022,
+                ..
+            } = instruction
+            {
+                let token_program: Box<dyn TokenInterface> = if *is_2022 {
+                    Box::new(Token2022Program::new())
+                } else {
+                    Box::new(TokenProgram::new())
+                };
+                let Some((owner, source_mint, _)) = Self::resolve_token_account_owner_and_mint(
+                    config,
+                    rpc_client,
+                    token_program.as_ref(),
+                    source_address,
+                    &all_instructions,
+                )
+                .await?
+                else {
+                    continue;
+                };
+                if owner != *expected_destination_owner {
+                    continue;
+                }
+                let token_mint = mint.unwrap_or(source_mint);
+                if !config.validation.supports_token(&token_mint.to_string()) {
+                    continue;
+                }
+
+                payment_mints.insert(token_mint);
+                valid_transfers.push(ValidTransfer {
+                    is_inflow: false,
+                    is_outflow: true,
+                    token_mint,
+                    inflow_amount: 0,
+                    amount: *amount,
+                });
+            }
+        }
+
+        for source in all_instructions
+            .iter()
+            .filter(|instruction| instruction.program_id == spl_token_2022_interface::id())
+            .filter_map(Token2022SecurityParser::permissioned_burn_source)
+        {
+            let source_owner = Self::resolve_token_account_owner_and_mint(
+                config,
+                rpc_client,
+                &Token2022Program::new(),
+                &source,
+                &all_instructions,
+            )
+            .await?
+            .map(|(owner, _, _)| owner);
+            if source_owner == Some(*expected_destination_owner) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Permissioned burn from Kora token account {source} is not supported"
+                )));
+            }
+        }
+
         if payment_mints.is_empty() {
             return Ok(totals);
         }
@@ -391,7 +476,7 @@ impl TokenUtil {
         for transfer in valid_transfers {
             let ValidTransfer { is_inflow, is_outflow, token_mint, inflow_amount, amount } =
                 transfer;
-            let decimals = *mint_decimals.get(&token_mint).ok_or_else(|| {
+            let (decimals, ui_scale) = *mint_decimals.get(&token_mint).ok_or_else(|| {
                 KoraError::RpcError(format!("No decimals data for mint {token_mint}"))
             })?;
             let price = prices.get(&token_mint.to_string()).ok_or_else(|| {
@@ -401,7 +486,7 @@ impl TokenUtil {
             let inflow_lamports = if is_inflow {
                 Self::calculate_token_value_in_lamports_from_price(
                     inflow_amount,
-                    price.price,
+                    Self::scaled_price(price.price, ui_scale.lower)?,
                     decimals,
                 )?
             } else {
@@ -409,7 +494,11 @@ impl TokenUtil {
             };
 
             let outflow_lamports = if is_outflow {
-                Self::calculate_token_value_in_lamports_from_price(amount, price.price, decimals)?
+                Self::calculate_token_value_in_lamports_from_price(
+                    amount,
+                    Self::scaled_price(price.price, ui_scale.upper)?,
+                    decimals,
+                )?
             } else {
                 0
             };

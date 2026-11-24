@@ -69,6 +69,23 @@ impl ConfigValidator {
                     token_str
                 ));
             }
+
+            let has_amount_multiplier = mint_with_extensions
+                .get_extension::<spl_token_2022_interface::extension::scaled_ui_amount::ScaledUiAmountConfig>()
+                .is_ok()
+                || mint_with_extensions
+                    .get_extension::<spl_token_2022_interface::extension::interest_bearing_mint::InterestBearingConfig>()
+                    .is_ok();
+            if has_amount_multiplier {
+                warnings.push(format!(
+                    "⚠️  SECURITY: Token {} has a ScaledUiAmount or InterestBearingConfig extension. \
+                    Risk: price sources differ on whether they quote this token per UI token or per raw token, so Kora \
+                    values payments in it at the lower of the two and fee payer outflows at the higher, which can \
+                    overcharge users, and the mint authority can move its value by changing the multiplier. \
+                    Consider removing this token from allowed_tokens or blocking the extension in [validation.token_2022].",
+                    token_str
+                ));
+            }
         }
     }
 

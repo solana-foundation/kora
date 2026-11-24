@@ -1,4 +1,4 @@
-use super::{assert_role_gated_iff_flag_off, role_and_flags, DrainRole};
+use super::{assert_role_gated_iff_flag_off, role_and_flags, validate, DrainRole};
 use crate::{
     config::FeePayerPolicy,
     constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR,
@@ -23,15 +23,14 @@ enum SystemRole {
     TransferWithSeed,
     Assign,
     AssignWithSeed,
+    AssignWithSeedDecoy,
     Allocate,
     AllocateWithSeed,
+    AllocateWithSeedDecoy,
     CreateAccountPayer,
-    CreateAccountNewAccount,
     CreateAccountWithSeedPayer,
-    CreateAccountWithSeedNewAccount,
     CreateAccountWithSeedBase,
     CreateAccountAllowPrefundPayer,
-    CreateAccountAllowPrefundNewAccount,
     NonceInitialize,
     NonceAdvance,
     NonceAuthorize,
@@ -44,15 +43,14 @@ impl DrainRole for SystemRole {
         Self::TransferWithSeed,
         Self::Assign,
         Self::AssignWithSeed,
+        Self::AssignWithSeedDecoy,
         Self::Allocate,
         Self::AllocateWithSeed,
+        Self::AllocateWithSeedDecoy,
         Self::CreateAccountPayer,
-        Self::CreateAccountNewAccount,
         Self::CreateAccountWithSeedPayer,
-        Self::CreateAccountWithSeedNewAccount,
         Self::CreateAccountWithSeedBase,
         Self::CreateAccountAllowPrefundPayer,
-        Self::CreateAccountAllowPrefundNewAccount,
         Self::NonceInitialize,
         Self::NonceAdvance,
         Self::NonceAuthorize,
@@ -60,21 +58,22 @@ impl DrainRole for SystemRole {
     ];
 
     fn allowed_programs() -> Vec<String> {
-        vec![SYSTEM_PROGRAM_ID.to_string()]
+        vec![SYSTEM_PROGRAM_ID.to_string(), spl_token_interface::id().to_string()]
     }
 
     fn flag(self, policy: &mut FeePayerPolicy) -> &mut bool {
         match self {
             Self::Transfer | Self::TransferWithSeed => &mut policy.system.allow_transfer,
-            Self::Assign | Self::AssignWithSeed => &mut policy.system.allow_assign,
-            Self::Allocate | Self::AllocateWithSeed => &mut policy.system.allow_allocate,
+            Self::Assign | Self::AssignWithSeed | Self::AssignWithSeedDecoy => {
+                &mut policy.system.allow_assign
+            }
+            Self::Allocate | Self::AllocateWithSeed | Self::AllocateWithSeedDecoy => {
+                &mut policy.system.allow_allocate
+            }
             Self::CreateAccountPayer
-            | Self::CreateAccountNewAccount
             | Self::CreateAccountWithSeedPayer
-            | Self::CreateAccountWithSeedNewAccount
             | Self::CreateAccountWithSeedBase
-            | Self::CreateAccountAllowPrefundPayer
-            | Self::CreateAccountAllowPrefundNewAccount => &mut policy.system.allow_create_account,
+            | Self::CreateAccountAllowPrefundPayer => &mut policy.system.allow_create_account,
             Self::NonceInitialize => &mut policy.system.nonce.allow_initialize,
             Self::NonceAdvance => &mut policy.system.nonce.allow_advance,
             Self::NonceAuthorize => &mut policy.system.nonce.allow_authorize,
@@ -97,28 +96,24 @@ impl DrainRole for SystemRole {
             Self::AssignWithSeed => {
                 assign_with_seed(&Pubkey::new_unique(), actor, "seed", &SYSTEM_PROGRAM_ID)
             }
+            Self::AssignWithSeedDecoy => with_decoy_at_base_meta(
+                assign_with_seed(&Pubkey::new_unique(), actor, "seed", &SYSTEM_PROGRAM_ID),
+                actor,
+            ),
             Self::Allocate => allocate(actor, 8),
             Self::AllocateWithSeed => {
                 allocate_with_seed(&Pubkey::new_unique(), actor, "seed", 8, &SYSTEM_PROGRAM_ID)
             }
+            Self::AllocateWithSeedDecoy => with_decoy_at_base_meta(
+                allocate_with_seed(&Pubkey::new_unique(), actor, "seed", 8, &SYSTEM_PROGRAM_ID),
+                actor,
+            ),
             Self::CreateAccountPayer => {
                 create_account(actor, &Pubkey::new_unique(), 1_000, 8, &SYSTEM_PROGRAM_ID)
-            }
-            Self::CreateAccountNewAccount => {
-                create_account(&Pubkey::new_unique(), actor, 1_000, 8, &SYSTEM_PROGRAM_ID)
             }
             Self::CreateAccountWithSeedPayer => create_account_with_seed(
                 actor,
                 &Pubkey::new_unique(),
-                &Pubkey::new_unique(),
-                "seed",
-                1_000,
-                8,
-                &SYSTEM_PROGRAM_ID,
-            ),
-            Self::CreateAccountWithSeedNewAccount => create_account_with_seed(
-                &Pubkey::new_unique(),
-                actor,
                 &Pubkey::new_unique(),
                 "seed",
                 1_000,
@@ -137,9 +132,6 @@ impl DrainRole for SystemRole {
             Self::CreateAccountAllowPrefundPayer => {
                 create_account_allow_prefund(&Pubkey::new_unique(), actor)
             }
-            Self::CreateAccountAllowPrefundNewAccount => {
-                create_account_allow_prefund(actor, &Pubkey::new_unique())
-            }
             Self::NonceInitialize => {
                 create_nonce_account(&Pubkey::new_unique(), &Pubkey::new_unique(), actor, 1_000_000)
                     .swap_remove(1)
@@ -153,6 +145,12 @@ impl DrainRole for SystemRole {
             }
         }
     }
+}
+
+fn with_decoy_at_base_meta(mut instruction: Instruction, base: &Pubkey) -> Instruction {
+    instruction.accounts[1] = AccountMeta::new_readonly(Pubkey::new_unique(), true);
+    instruction.accounts.push(AccountMeta::new_readonly(*base, true));
+    instruction
 }
 
 fn create_account_allow_prefund(new_account: &Pubkey, funder: &Pubkey) -> Instruction {
@@ -171,5 +169,77 @@ proptest! {
         (role_idx, actor_is_fee_payer, flags) in role_and_flags::<SystemRole>(),
     ) {
         assert_role_gated_iff_flag_off::<SystemRole>(role_idx, actor_is_fee_payer, &flags)?;
+    }
+}
+
+fn fee_payer_as_created_account(fee_payer: &Pubkey) -> [Instruction; 3] {
+    [
+        create_account(&Pubkey::new_unique(), fee_payer, 1_000, 8, &SYSTEM_PROGRAM_ID),
+        create_account_with_seed(
+            &Pubkey::new_unique(),
+            fee_payer,
+            &Pubkey::new_unique(),
+            "seed",
+            1_000,
+            8,
+            &SYSTEM_PROGRAM_ID,
+        ),
+        create_account_allow_prefund(fee_payer, &Pubkey::new_unique()),
+    ]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn fee_payer_as_created_account_always_denied(
+        flags in prop::collection::vec(any::<bool>(), SystemRole::ROLES.len()),
+    ) {
+        let mut policy = FeePayerPolicy::default();
+        for (role, allowed) in SystemRole::ROLES.iter().zip(&flags) {
+            *role.flag(&mut policy) = *allowed;
+        }
+        let fee_payer = Pubkey::new_unique();
+        for ix in fee_payer_as_created_account(&fee_payer) {
+            let result = validate::<SystemRole>(policy.clone(), fee_payer, ix);
+            prop_assert!(result.is_err(), "fee payer as created account must be denied");
+        }
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn fee_payer_assigned_to_foreign_owner_always_denied(
+        flags in prop::collection::vec(any::<bool>(), SystemRole::ROLES.len()),
+    ) {
+        let mut policy = FeePayerPolicy::default();
+        for (role, allowed) in SystemRole::ROLES.iter().zip(&flags) {
+            *role.flag(&mut policy) = *allowed;
+        }
+        let fee_payer = Pubkey::new_unique();
+        let ix = assign(&fee_payer, &spl_token_interface::id());
+        let result = validate::<SystemRole>(policy, fee_payer, ix);
+        prop_assert!(result.is_err(), "fee payer reassigned to a foreign owner must be denied");
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn fee_payer_as_nonce_account_always_denied(
+        flags in prop::collection::vec(any::<bool>(), SystemRole::ROLES.len()),
+    ) {
+        let mut policy = FeePayerPolicy::default();
+        for (role, allowed) in SystemRole::ROLES.iter().zip(&flags) {
+            *role.flag(&mut policy) = *allowed;
+        }
+        let fee_payer = Pubkey::new_unique();
+        let ix = create_nonce_account(&Pubkey::new_unique(), &fee_payer, &fee_payer, 1_000_000)
+            .swap_remove(1);
+        let result = validate::<SystemRole>(policy, fee_payer, ix);
+        prop_assert!(result.is_err(), "fee payer initialized as a nonce account must be denied");
     }
 }

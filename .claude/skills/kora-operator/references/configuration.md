@@ -94,15 +94,15 @@ window_seconds = 3600                    # 100 transactions per hour
 # Instruction-level limit (specific program + instruction)
 [[kora.usage_limit.rules]]
 type = "instruction"
-program = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-instruction = "Transfer"
+program = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+instruction = "CreateIdempotent"
 max = 10
-window_seconds = 3600                    # 10 token transfers per hour
+window_seconds = 3600                    # 10 Kora-funded ATA creations per hour
 ```
 
 **Rule types**:
 - `transaction`: Limits total transactions per user within the time window
-- `instruction`: Limits specific program instruction usage per user within the time window
+- `instruction`: Limits specific program instruction usage per user within the time window. Only instructions Kora funds are countable: System `CreateAccount`/`CreateAccountWithSeed`, ATA `Create`/`CreateIdempotent`, and Loader-v4 and BPF Loader Upgradeable instructions where Kora is the authority or payer. Any other program/instruction pair is rejected at startup.
 
 Requires `user_id` parameter in signing requests when enabled with `free` pricing.
 
@@ -402,8 +402,8 @@ window_seconds = 3600
 
 [[kora.usage_limit.rules]]
 type = "instruction"
-program = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-instruction = "Transfer"
+program = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+instruction = "CreateIdempotent"
 max = 50
 window_seconds = 3600
 

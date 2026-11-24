@@ -43,15 +43,18 @@ pub enum ParsedSystemInstructionData {
         nonce_account: Pubkey,
         nonce_authority: Pubkey,
         recipient: Pubkey,
+        extra_signers: Vec<Pubkey>,
     },
     // Includes assign and assign with seed
     SystemAssign {
+        account: Pubkey,
         authority: Pubkey,
         owner: Pubkey,
     },
     // Includes allocate and allocate with seed
     SystemAllocate {
         account: Pubkey,
+        owner: Option<Pubkey>,
     },
     SystemInitializeNonceAccount {
         nonce_account: Pubkey,
@@ -60,11 +63,13 @@ pub enum ParsedSystemInstructionData {
     SystemAdvanceNonceAccount {
         nonce_account: Pubkey,
         nonce_authority: Pubkey,
+        extra_signers: Vec<Pubkey>,
     },
     SystemAuthorizeNonceAccount {
         nonce_account: Pubkey,
         nonce_authority: Pubkey,
         new_authority: Pubkey,
+        extra_signers: Vec<Pubkey>,
     },
     // Note: SystemUpgradeNonceAccount not included - no authority parameter
 }
@@ -156,33 +161,42 @@ impl IxUtils {
                     nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
                     nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
                     recipient: key(ix::RECIPIENT_INDEX),
+                    extra_signers: Self::extract_multisig_signers(
+                        instruction,
+                        ix::REQUIRED_NUMBER_OF_ACCOUNTS,
+                    ),
                 }
             }
             Ok(SystemInstruction::Assign { owner }) => {
                 use instruction_indexes::system_assign as ix;
                 validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 ParsedSystemInstructionData::SystemAssign {
+                    account: key(ix::ACCOUNT_INDEX),
                     authority: key(ix::AUTHORITY_INDEX),
                     owner,
                 }
             }
-            Ok(SystemInstruction::AssignWithSeed { owner, .. }) => {
+            Ok(SystemInstruction::AssignWithSeed { base, owner, .. }) => {
                 use instruction_indexes::system_assign_with_seed as ix;
                 validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
                 ParsedSystemInstructionData::SystemAssign {
-                    authority: key(ix::AUTHORITY_INDEX),
+                    account: key(ix::ACCOUNT_INDEX),
+                    authority: base,
                     owner,
                 }
             }
             Ok(SystemInstruction::Allocate { .. }) => {
                 use instruction_indexes::system_allocate as ix;
                 validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                ParsedSystemInstructionData::SystemAllocate { account: key(ix::ACCOUNT_INDEX) }
+                ParsedSystemInstructionData::SystemAllocate {
+                    account: key(ix::ACCOUNT_INDEX),
+                    owner: None,
+                }
             }
-            Ok(SystemInstruction::AllocateWithSeed { .. }) => {
+            Ok(SystemInstruction::AllocateWithSeed { base, owner, .. }) => {
                 use instruction_indexes::system_allocate_with_seed as ix;
                 validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
-                ParsedSystemInstructionData::SystemAllocate { account: key(ix::ACCOUNT_INDEX) }
+                ParsedSystemInstructionData::SystemAllocate { account: base, owner: Some(owner) }
             }
             Ok(SystemInstruction::InitializeNonceAccount(nonce_authority)) => {
                 use instruction_indexes::system_initialize_nonce_account as ix;
@@ -198,6 +212,10 @@ impl IxUtils {
                 ParsedSystemInstructionData::SystemAdvanceNonceAccount {
                     nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
                     nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
+                    extra_signers: Self::extract_multisig_signers(
+                        instruction,
+                        ix::REQUIRED_NUMBER_OF_ACCOUNTS,
+                    ),
                 }
             }
             Ok(SystemInstruction::AuthorizeNonceAccount(new_authority)) => {
@@ -207,6 +225,10 @@ impl IxUtils {
                     nonce_account: key(ix::NONCE_ACCOUNT_INDEX),
                     nonce_authority: key(ix::NONCE_AUTHORITY_INDEX),
                     new_authority,
+                    extra_signers: Self::extract_multisig_signers(
+                        instruction,
+                        ix::REQUIRED_NUMBER_OF_ACCOUNTS,
+                    ),
                 }
             }
             // UpgradeNonceAccount: Not parsed - no authority parameter, cannot validate fee payer involvement

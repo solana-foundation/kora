@@ -246,6 +246,9 @@ pub struct ValidationConfig {
     pub max_priority_fee_lamports: Option<u64>,
     pub max_signatures: u64,
     pub allowed_programs: ProgramsConfig,
+    /// Token mints the node supports. Token transfers, burns, approvals and account handoffs
+    /// out of the fee payer are only allowed for these mints; tokens the client owns are not
+    /// filtered.
     pub allowed_tokens: Vec<String>,
     pub allowed_spl_paid_tokens: SplTokenConfig,
     pub disallowed_accounts: Vec<String>,
@@ -280,7 +283,7 @@ pub struct ValidationConfig {
     /// for operators who want to keep their mint addresses private.
     #[serde(default)]
     pub cross_cluster_check: bool,
-    #[serde(default = "default_cross_cluster_endpoints")]
+    #[serde(default = "default_cross_cluster_endpoints", skip_serializing)]
     pub cross_cluster_endpoints: Vec<String>,
 }
 
@@ -322,12 +325,15 @@ pub struct FeePayerPolicy {
 pub struct SystemInstructionPolicy {
     /// Allow fee payer to be the sender in System Transfer/TransferWithSeed instructions
     pub allow_transfer: bool,
-    /// Allow fee payer to be the authority in System Assign/AssignWithSeed instructions
+    /// Allow fee payer to be the authority in System Assign/AssignWithSeed instructions. The fee
+    /// payer account itself can never be reassigned to a program other than the System program.
     pub allow_assign: bool,
-    /// Allow fee payer to be the funder, the seeded base signer, or the account being created, in
-    /// System CreateAccount/CreateAccountWithSeed/CreateAccountAllowPrefund instructions
+    /// Allow fee payer to be the funder or the seeded base signer in System
+    /// CreateAccount/CreateAccountWithSeed/CreateAccountAllowPrefund instructions. The fee payer
+    /// can never be the account being created.
     pub allow_create_account: bool,
-    /// Allow fee payer to be the account in System Allocate/AllocateWithSeed instructions
+    /// Allow fee payer to be the account in System Allocate, or the seeded base signer in
+    /// AllocateWithSeed instructions
     pub allow_allocate: bool,
     /// Nested policy for nonce account operations
     pub nonce: NonceInstructionPolicy,
@@ -353,15 +359,19 @@ pub struct NonceInstructionPolicy {
 pub struct SplTokenInstructionPolicy {
     /// Allow fee payer to be the owner in SPL Token Transfer/TransferChecked instructions
     pub allow_transfer: bool,
-    /// Allow fee payer to be the owner in SPL Token Burn/BurnChecked instructions
+    /// Allow fee payer to be the owner in SPL Token Burn/BurnChecked instructions. Burned tokens are
+    /// priced and counted against `max_allowed_lamports`, so the mint needs a price.
     pub allow_burn: bool,
     /// Allow fee payer to be the owner in SPL Token CloseAccount instructions
     pub allow_close_account: bool,
-    /// Allow fee payer to be the owner in SPL Token Approve/ApproveChecked instructions
+    /// Allow fee payer to be the owner in SPL Token Approve/ApproveChecked instructions. The approved
+    /// amount is priced and counted against `max_allowed_lamports`, so the mint needs a price.
     pub allow_approve: bool,
     /// Allow fee payer to be the owner in SPL Token Revoke instructions
     pub allow_revoke: bool,
     /// Allow fee payer to be the current or the new authority in SPL Token SetAuthority instructions
+    /// When the fee payer hands a token account's owner or close authority to someone else, the
+    /// account's lamports and token balance count against max_allowed_lamports.
     pub allow_set_authority: bool,
     /// Allow fee payer to be the mint authority in SPL Token MintTo/MintToChecked instructions
     pub allow_mint_to: bool,
@@ -388,15 +398,19 @@ pub struct SplTokenInstructionPolicy {
 pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be the owner in Token2022 Transfer/TransferChecked instructions
     pub allow_transfer: bool,
-    /// Allow fee payer to be the owner in Token2022 Burn/BurnChecked instructions
+    /// Allow fee payer to be the owner in Token2022 Burn/BurnChecked instructions. Burned tokens are
+    /// priced and counted against `max_allowed_lamports`, so the mint needs a price.
     pub allow_burn: bool,
     /// Allow fee payer to be the owner in Token2022 CloseAccount instructions
     pub allow_close_account: bool,
-    /// Allow fee payer to be the owner in Token2022 Approve/ApproveChecked instructions
+    /// Allow fee payer to be the owner in Token2022 Approve/ApproveChecked instructions. The approved
+    /// amount is priced and counted against `max_allowed_lamports`, so the mint needs a price.
     pub allow_approve: bool,
     /// Allow fee payer to be the owner in Token2022 Revoke instructions
     pub allow_revoke: bool,
     /// Allow fee payer to be the current or the new authority in Token2022 SetAuthority instructions
+    /// When the fee payer hands a token account's owner or close authority to someone else, the
+    /// account's lamports and token balance count against max_allowed_lamports.
     pub allow_set_authority: bool,
     /// Allow fee payer to be the mint authority in Token2022 MintTo/MintToChecked instructions
     pub allow_mint_to: bool,
@@ -412,6 +426,15 @@ pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be used as the current authority for Token2022 extension update/admin
     /// instructions.
     pub allow_update_extension_authority: bool,
+    /// Allow fee payer to be the mint authority that signs Token2022 TokenMetadata Initialize,
+    /// TokenGroup InitializeGroup and TokenGroup InitializeMember instructions, or the group
+    /// update authority in InitializeMember. The caller chooses the resulting update authority
+    /// or group.
+    pub allow_initialize_interface_extension: bool,
+    /// Allow fee payer to be the withdraw-withheld authority in Token2022
+    /// WithdrawWithheldTokensFromMint/WithdrawWithheldTokensFromAccounts instructions. The
+    /// withdrawn fees go to a destination the caller chooses.
+    pub allow_withdraw_withheld_tokens: bool,
     /// Allow fee payer to be the freeze authority in Token2022 FreezeAccount instructions
     pub allow_freeze_account: bool,
     /// Allow fee payer to be the freeze authority in Token2022 ThawAccount instructions
@@ -440,7 +463,8 @@ pub struct AltInstructionPolicy {
     pub allow_freeze: bool,
     /// Allow fee payer to be authority in ALT DeactivateLookupTable instructions
     pub allow_deactivate: bool,
-    /// Allow fee payer to be authority in ALT CloseLookupTable instructions
+    /// Allow fee payer to be authority in ALT CloseLookupTable instructions. The recipient must
+    /// always be the fee payer, regardless of this flag.
     pub allow_close: bool,
 }
 
@@ -1026,6 +1050,29 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn test_example_configs_ship_no_auth_secrets() {
+        let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let mut pending = vec![examples];
+        let mut checked = 0;
+        while let Some(dir) = pending.pop() {
+            for entry in fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    if path.file_name().is_some_and(|name| name != "node_modules") {
+                        pending.push(path);
+                    }
+                } else if path.file_name().is_some_and(|name| name == "kora.toml") {
+                    let config = Config::load_config(&path).unwrap();
+                    assert!(config.kora.auth.api_keys.is_none(), "{}", path.display());
+                    assert!(config.kora.auth.hmac_secret.is_none(), "{}", path.display());
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 0);
+    }
 
     #[test]
     fn test_is_valid_cors_origin_table() {

@@ -4,6 +4,7 @@ use std::any::Any;
 pub trait TokenState: Any + Send + Sync {
     fn mint(&self) -> Pubkey;
     fn owner(&self) -> Pubkey;
+    fn amount(&self) -> u64;
 
     fn as_any(&self) -> &dyn Any;
 }

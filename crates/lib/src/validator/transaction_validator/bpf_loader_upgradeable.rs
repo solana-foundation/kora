@@ -45,6 +45,12 @@ impl TransactionValidator {
             unless self.fee_payer_policy.bpf_loader_upgradeable.allow_upgrade,
             "Fee payer cannot be used for 'BPF Loader Upgradeable Upgrade'");
 
+        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::Upgrade,
+            ParsedBpfLoaderUpgradeableInstructionData::Upgrade { upgrade_authority, spill, .. } =>
+            *upgrade_authority == self.fee_payer_pubkey && *spill != self.fee_payer_pubkey,
+            "BPF Loader Upgradeable Upgrade: when fee payer is the upgrade authority, \
+             spill must also be the fee payer (drainage guard)");
+
         deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::SetAuthority,
             ParsedBpfLoaderUpgradeableInstructionData::SetAuthority {
                 current_authority, new_authority, ..
@@ -80,6 +86,11 @@ impl TransactionValidator {
                 && *recipient != self.fee_payer_pubkey,
             "BPF Loader Upgradeable Close: when fee payer is the authority, \
              recipient must also be the fee payer (drainage guard)");
+
+        deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::Close,
+            ParsedBpfLoaderUpgradeableInstructionData::Close { target, recipient, .. } =>
+            *target == self.fee_payer_pubkey && *recipient != self.fee_payer_pubkey,
+            "BPF Loader Upgradeable Close: closing the fee payer account must refund the fee payer");
 
         deny_fee_payer!(bpf_v3_instructions, ParsedBpfLoaderUpgradeableInstructionType::ExtendProgram,
             ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram { payer, .. } =>

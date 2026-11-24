@@ -1,6 +1,7 @@
 use crate::{
     config::Config,
     error::KoraError,
+    sanitize_error,
     state::{get_request_signer_with_signer_key, get_signer_pool},
     token::token::TokenType,
     transaction::TransactionUtil,
@@ -174,10 +175,9 @@ async fn create_atas_for_signer(
 
         chunk_instructions.extend_from_slice(chunk);
 
-        let blockhash = rpc_client
-            .get_latest_blockhash()
-            .await
-            .map_err(|e| KoraError::RpcError(format!("Failed to get blockhash: {e}")))?;
+        let blockhash = rpc_client.get_latest_blockhash().await.map_err(|e| {
+            KoraError::RpcError(format!("Failed to get blockhash: {}", sanitize_error!(e)))
+        })?;
 
         let fee_payer_pubkey = fee_payer.pubkey();
         let message = VersionedMessage::Legacy(Message::new_with_blockhash(

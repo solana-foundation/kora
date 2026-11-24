@@ -5,7 +5,7 @@ use crate::{
     token::token::{TokenUtil, TransferHookValidationFlow},
     transaction::{
         ParsedSPLInstructionData, ParsedSPLInstructionType, Token2022AccountUsagePolicy,
-        VersionedTransactionResolved,
+        Token2022AuthorityKind, VersionedTransactionResolved,
     },
 };
 use std::collections::HashMap;
@@ -99,8 +99,19 @@ impl TransactionValidator {
                 }
             }
 
+            let current_authority_allowed = match instruction.authority_kind {
+                Token2022AuthorityKind::ExtensionUpdate => {
+                    self.fee_payer_policy.token_2022.allow_update_extension_authority
+                }
+                Token2022AuthorityKind::InterfaceInitialize => {
+                    self.fee_payer_policy.token_2022.allow_initialize_interface_extension
+                }
+                Token2022AuthorityKind::WithdrawWithheld => {
+                    self.fee_payer_policy.token_2022.allow_withdraw_withheld_tokens
+                }
+            };
             if instruction.uses_fee_payer_as_current_extension_authority(&self.fee_payer_pubkey)
-                && !self.fee_payer_policy.token_2022.allow_update_extension_authority
+                && !current_authority_allowed
             {
                 return Err(KoraError::InvalidTransaction(format!(
                     "Fee payer cannot be used as the current Token2022 extension authority for '{}'",

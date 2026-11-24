@@ -1,13 +1,11 @@
 services:
   redis:
     image: redis:8-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
       - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
     restart: unless-stopped
-    command: redis-server /usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf --requirepass "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"
 
   kora:
     build:
@@ -21,6 +19,7 @@ services:
       - ./.env:/app/.env:ro
     environment:
       - RUST_LOG=info
+      - KORA_REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379
     env_file:
       - .env
     command:

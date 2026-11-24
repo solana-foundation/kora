@@ -542,6 +542,36 @@ mod tests_token {
     }
 
     #[tokio::test]
+    async fn test_calculate_spl_transfers_value_in_lamports_counts_fee_payer_as_multisig_signer() {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let config = get_config().unwrap();
+
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let spl_transfers = vec![ParsedSPLInstructionData::SplTokenTransfer {
+            amount: 100_000_000,
+            owner: Pubkey::new_unique(),
+            multisig_signers: vec![fee_payer],
+            mint: Some(mint),
+            source_address: Pubkey::new_unique(),
+            destination_address: Pubkey::new_unique(),
+            is_2022: false,
+        }];
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+
+        let spl_outflow_value = TokenUtil::calculate_spl_transfers_value_in_lamports(
+            &spl_transfers,
+            &fee_payer,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(spl_outflow_value, 750_000_000);
+    }
+
+    #[tokio::test]
     async fn test_calculate_spl_transfers_value_in_lamports_token2022_outflow_remains_gross() {
         let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let config = get_config().unwrap();
@@ -742,6 +772,160 @@ mod tests_token {
         .await;
 
         assert!(result.is_ok());
+    }
+
+    async fn validate_fee_payer_transfer_against_blocked_transfer_fee_mint(
+        blocked_mint_extensions: Vec<String>,
+        fee_payer_is_owner: bool,
+        with_fee: bool,
+    ) -> Result<(), KoraError> {
+        validate_fee_payer_token_use_against_blocked_transfer_fee_mint(
+            blocked_mint_extensions,
+            fee_payer_is_owner,
+            |source, mint, owner| {
+                let program_id = spl_token_2022_interface::id();
+                let destination = Pubkey::new_unique();
+                if with_fee {
+                    spl_token_2022_interface::extension::transfer_fee::instruction::transfer_checked_with_fee(
+                        &program_id, source, mint, &destination, owner, &[], 1_000, 6, 0,
+                    )
+                } else {
+                    spl_token_2022_interface::instruction::transfer_checked(
+                        &program_id, source, mint, &destination, owner, &[], 1_000, 6,
+                    )
+                }
+                .unwrap()
+            },
+        )
+        .await
+    }
+
+    async fn validate_fee_payer_token_use_against_blocked_transfer_fee_mint(
+        blocked_mint_extensions: Vec<String>,
+        fee_payer_is_owner: bool,
+        build_instruction: impl Fn(&Pubkey, &Pubkey, &Pubkey) -> Instruction,
+    ) -> Result<(), KoraError> {
+        let _lock = ConfigMockBuilder::new()
+            .with_cache_enabled(false)
+            .with_blocked_token2022_mint_extensions(blocked_mint_extensions)
+            .build_and_setup();
+
+        let fee_payer = Pubkey::new_unique();
+        let owner = if fee_payer_is_owner { fee_payer } else { Pubkey::new_unique() };
+        let mint = Pubkey::new_unique();
+        let instruction = build_instruction(&Pubkey::new_unique(), &mint, &owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction_resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(ExtensionType::TransferFeeConfig)
+            .build_token2022();
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![&mint_account]);
+
+        let config = get_config().unwrap();
+        TokenUtil::validate_fee_payer_token2022_transfer_mints(
+            &config,
+            &mut transaction_resolved,
+            &rpc_client,
+            &fee_payer,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_fee_payer_token2022_transfer_rejects_blocked_mint_extension() {
+        for with_fee in [false, true] {
+            let result = validate_fee_payer_transfer_against_blocked_transfer_fee_mint(
+                vec!["transfer_fee_config".to_string()],
+                true,
+                with_fee,
+            )
+            .await;
+            assert!(
+                matches!(result, Err(KoraError::ValidationError(ref msg)) if msg.contains("Blocked mint extension")),
+                "with_fee={with_fee}: expected blocked mint rejection, got {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fee_payer_token2022_burn_and_approve_reject_blocked_mint_extension() {
+        let program_id = spl_token_2022_interface::id();
+        let burn = |source: &Pubkey, mint: &Pubkey, owner: &Pubkey| {
+            spl_token_2022_interface::instruction::burn_checked(
+                &program_id,
+                source,
+                mint,
+                owner,
+                &[],
+                1_000,
+                6,
+            )
+            .unwrap()
+        };
+        let approve = |source: &Pubkey, mint: &Pubkey, owner: &Pubkey| {
+            spl_token_2022_interface::instruction::approve_checked(
+                &program_id,
+                source,
+                mint,
+                &Pubkey::new_unique(),
+                owner,
+                &[],
+                1_000,
+                6,
+            )
+            .unwrap()
+        };
+        let blocked = || vec!["transfer_fee_config".to_string()];
+
+        for (name, fee_payer_is_owner, rejected) in
+            [("fee payer owner", true, true), ("foreign owner", false, false)]
+        {
+            let results = [
+                validate_fee_payer_token_use_against_blocked_transfer_fee_mint(
+                    blocked(),
+                    fee_payer_is_owner,
+                    burn,
+                )
+                .await,
+                validate_fee_payer_token_use_against_blocked_transfer_fee_mint(
+                    blocked(),
+                    fee_payer_is_owner,
+                    approve,
+                )
+                .await,
+            ];
+            for result in results {
+                assert_eq!(
+                    matches!(&result, Err(KoraError::ValidationError(msg)) if msg.contains("Blocked mint extension")),
+                    rejected,
+                    "{name}: {result:?}"
+                );
+                assert_eq!(result.is_ok(), !rejected, "{name}: {result:?}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fee_payer_token2022_transfer_allows_unblocked_or_foreign_owner() {
+        for with_fee in [false, true] {
+            assert!(validate_fee_payer_transfer_against_blocked_transfer_fee_mint(
+                vec![],
+                true,
+                with_fee
+            )
+            .await
+            .is_ok());
+            assert!(validate_fee_payer_transfer_against_blocked_transfer_fee_mint(
+                vec!["transfer_fee_config".to_string()],
+                false,
+                with_fee
+            )
+            .await
+            .is_ok());
+        }
     }
 
     #[tokio::test]
@@ -1356,5 +1540,217 @@ mod tests_token {
         let totals = result.unwrap();
         assert_eq!(totals.inflow, 3_000_000_000);
         assert_eq!(totals.outflow, 0);
+    }
+
+    #[tokio::test]
+    async fn test_calculate_payment_lamport_totals_rejects_permissioned_burn_from_payment_account()
+    {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let kora_owner = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let permissioned_burn = |source: &Pubkey| {
+            spl_token_2022_interface::extension::permissioned_burn::instruction::burn_checked(
+                &spl_token_2022_interface::id(),
+                source,
+                &mint,
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &[],
+                1_000_000,
+                6,
+            )
+            .unwrap()
+        };
+
+        for (source_owner, rejected) in [(kora_owner, true), (Pubkey::new_unique(), false)] {
+            let source_address = Pubkey::new_unique();
+            let source_account = TokenAccountMockBuilder::new()
+                .with_mint(&mint)
+                .with_owner(&source_owner)
+                .build_token2022();
+            let message = VersionedMessage::Legacy(Message::new(
+                &[permissioned_burn(&source_address)],
+                Some(&kora_owner),
+            ));
+            let mut transaction_resolved =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let rpc_client =
+                RpcMockBuilder::new().build_with_sequential_accounts(vec![&source_account]);
+
+            let mut config = get_config().unwrap();
+            config.kora.cache.enabled = false;
+            let result = TokenUtil::calculate_payment_lamport_totals(
+                &config,
+                &mut transaction_resolved,
+                &rpc_client,
+                &kora_owner,
+                None,
+            )
+            .await;
+
+            assert_eq!(
+                matches!(&result, Err(KoraError::InvalidTransaction(message)) if message.contains("Permissioned burn")),
+                rejected,
+                "{result:?}"
+            );
+            assert_eq!(result.is_ok(), !rejected, "{result:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_calculate_payment_lamport_totals_counts_burn_from_payment_account_as_outflow() {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let expected_destination_owner = Pubkey::new_unique();
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let burner = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+
+        let source_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&Pubkey::new_unique())
+            .build();
+        let destination_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&expected_destination_owner)
+            .build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+
+        let payment = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::id(),
+            &source_address,
+            &mint,
+            &destination_address,
+            &Pubkey::new_unique(),
+            &[],
+            1_000_000,
+            6,
+        )
+        .unwrap();
+        let burn = spl_token_interface::instruction::burn_checked(
+            &spl_token_interface::id(),
+            &destination_address,
+            &mint,
+            &burner,
+            &[],
+            1_000_000,
+            6,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[payment, burn],
+            Some(&expected_destination_owner),
+        ));
+        let mut transaction_resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &source_account,
+            &destination_account,
+            &destination_account,
+            &mint_account,
+        ]);
+
+        let mut mock_oracle = crate::oracle::MockPriceOracle::new();
+        mock_oracle.expect_get_prices().times(1).returning(|_, mint_addresses| {
+            let mut result = HashMap::new();
+            for mint in mint_addresses {
+                result.insert(
+                    mint.clone(),
+                    TokenPrice {
+                        price: Decimal::from(1),
+                        confidence: 1.0,
+                        source: PriceSource::Mock,
+                        block_id: None,
+                    },
+                );
+            }
+            Ok(result)
+        });
+
+        let shared_mock_oracle = Arc::new(mock_oracle);
+        TEST_ORACLE.with(|o| {
+            *o.borrow_mut() = Some(shared_mock_oracle.clone());
+        });
+
+        struct OracleGuard;
+        impl Drop for OracleGuard {
+            fn drop(&mut self) {
+                TEST_ORACLE.with(|o| {
+                    *o.borrow_mut() = None;
+                });
+            }
+        }
+        let _guard = OracleGuard;
+
+        let mut config = get_config().unwrap();
+        config.kora.cache.enabled = false;
+        let totals = TokenUtil::calculate_payment_lamport_totals(
+            &config,
+            &mut transaction_resolved,
+            &rpc_client,
+            &expected_destination_owner,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(totals.inflow, 1_000_000_000);
+        assert_eq!(totals.outflow, totals.inflow);
+    }
+
+    #[tokio::test]
+    async fn test_calculate_payment_lamport_totals_rejects_unchecked_transfer_mint_mismatch() {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let expected_destination_owner = Pubkey::new_unique();
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let allowed_mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let worthless_mint = Pubkey::new_unique();
+
+        let source_account = TokenAccountMockBuilder::new()
+            .with_mint(&allowed_mint)
+            .with_owner(&Pubkey::new_unique())
+            .build();
+        let destination_account = TokenAccountMockBuilder::new()
+            .with_mint(&worthless_mint)
+            .with_owner(&expected_destination_owner)
+            .build();
+
+        let payment = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &source_address,
+            &destination_address,
+            &Pubkey::new_unique(),
+            &[],
+            1_000_000,
+        )
+        .unwrap();
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[payment], Some(&expected_destination_owner)));
+        let mut transaction_resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_account, &destination_account]);
+
+        let mut config = get_config().unwrap();
+        config.kora.cache.enabled = false;
+        let err = TokenUtil::calculate_payment_lamport_totals(
+            &config,
+            &mut transaction_resolved,
+            &rpc_client,
+            &expected_destination_owner,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.to_string().contains("does not match destination mint"), "{err}");
     }
 }

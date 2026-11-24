@@ -21,7 +21,7 @@ static HTTP_URL_PATH_QUERY_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     // HTTP(S) URLs where the secret lives in the path or query string rather than
     // userinfo (e.g. Helius `?api-key=`, QuickNode/Alchemy path tokens). Keeps the
     // scheme+host for debugging context and redacts everything after it.
-    Regex::new(r#"(https?://[^/?\s]+)[/?][^\s)'".,;!\]]*"#)
+    Regex::new(r#"(https?://[^/?\s]+)[/?](?:[^\s)'"\]]*[^\s)'".,;!\]])?"#)
         .expect("Failed to create http url path/query regex pattern")
 });
 
@@ -133,6 +133,21 @@ mod tests {
         let sanitized = sanitize_message(msg);
         assert!(!sanitized.contains("/secret"));
         assert!(sanitized.contains("https://node.example.com[REDACTED_PATH], please retry"));
+    }
+
+    #[test]
+    fn test_sanitize_url_with_dotted_path_and_query() {
+        for msg in [
+            "error for url (https://rpc.example.com/v1.0?api-key=QUERYSECRET)",
+            "error for url (https://rpc.example.com/v1.0/x.y?api-key=QUERYSECRET)",
+            "error for url (https://rpc.example.com/path.jwt.QUERYSECRET)",
+            "error for url (https://rpc.example.com/?api-key=abc.QUERYSECRET)",
+        ] {
+            let sanitized = sanitize_message(msg);
+            assert!(!sanitized.contains("QUERYSECRET"), "leaked in {sanitized}");
+            assert!(!sanitized.contains("api-key"), "leaked in {sanitized}");
+            assert_eq!(sanitized, "error for url (https://rpc.example.com[REDACTED_PATH])");
+        }
     }
 
     #[test]

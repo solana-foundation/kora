@@ -28,7 +28,7 @@ impl ConfigValidator {
                 "Users can make the fee payer transfer arbitrary SOL amounts. This can drain your fee payer account";
 
             system, allow_assign, "System Assign instructions",
-                "Users can make the fee payer reassign ownership of its accounts. This can compromise account control";
+                "Users can make the fee payer reassign ownership of accounts it signs for. This can compromise account control";
 
             system, allow_create_account, "System CreateAccount instructions",
                 "Users can make the fee payer pay for arbitrary account creations. This can drain your fee payer account";
@@ -126,6 +126,12 @@ impl ConfigValidator {
             token_2022, allow_unwrap_lamports, "Token2022 UnwrapLamports instructions",
                 "Users can make the fee payer unwrap lamports from its native token accounts to arbitrary recipients. This can drain SOL";
 
+            token_2022, allow_initialize_interface_extension, "Token2022 TokenMetadata Initialize, TokenGroup InitializeGroup and TokenGroup InitializeMember instructions",
+                "Users can make the fee payer sign as mint authority to initialize metadata, a group or a group member on its mints, with an update authority or group they choose";
+
+            token_2022, allow_withdraw_withheld_tokens, "Token2022 WithdrawWithheldTokens instructions",
+                "Users can make the fee payer withdraw withheld transfer fees from mints and accounts where it is the withdraw-withheld authority, to a destination they choose";
+
             token_2022, allow_reallocate, "Token2022 Reallocate instructions",
                 "Users can make the fee payer the payer, owner, or a multisig signer of Reallocate on token accounts. As payer, the fee payer funds the rent for growing accounts it does not own through a System Transfer CPI, which also requires system.allow_transfer and counts toward max_allowed_lamports. This can drain SOL";
 
@@ -142,13 +148,13 @@ impl ConfigValidator {
                 "Users can deactivate lookup tables controlled by the fee payer. This can disrupt systems that depend on those tables";
 
             alt, allow_close, "ALT CloseLookupTable instructions",
-                "Users can close lookup tables controlled by the fee payer and redirect lamports to arbitrary recipients";
+                "Users can close lookup tables controlled by the fee payer. The rent is always refunded to the fee payer";
 
             loader_v4, allow_write, "Loader-v4 Write instructions",
                 "Users can make the fee payer write arbitrary bytes into program accounts it is the authority for";
 
             loader_v4, allow_copy, "Loader-v4 Copy instructions",
-                "Users can make the fee payer copy data between program accounts it is the authority for";
+                "Users can make the fee payer copy bytes from any program into program accounts it is the authority for, which is as powerful as allow_write";
 
             loader_v4, allow_set_program_length, "Loader-v4 SetProgramLength instructions",
                 "Users can make the fee payer resize program accounts. A drainage guard keeps refunds flowing back to the fee payer, but enabling this still lets users force-grow accounts and consume fee-payer rent";

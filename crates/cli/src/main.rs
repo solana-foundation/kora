@@ -168,12 +168,12 @@ async fn main() -> Result<(), KoraError> {
                     });
                 }
 
-                if let Err(e) = CacheUtil::init().await {
+                let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
+
+                if let Err(e) = CacheUtil::init(&rpc_client).await {
                     print_error(&format!("Failed to initialize cache: {e}"));
                     std::process::exit(1);
                 }
-
-                let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
 
                 let kora_rpc = KoraRpc::new(rpc_client);
 
@@ -201,7 +201,7 @@ async fn main() -> Result<(), KoraError> {
                     std::process::exit(1);
                 }
 
-                if let Err(e) = CacheUtil::init().await {
+                if let Err(e) = CacheUtil::init(&rpc_client).await {
                     print_error(&format!("Failed to initialize cache: {e}"));
                     std::process::exit(1);
                 }

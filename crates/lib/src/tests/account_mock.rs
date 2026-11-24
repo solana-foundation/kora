@@ -147,6 +147,11 @@ impl TokenAccountMockBuilder {
         self
     }
 
+    pub fn with_lamports(mut self, lamports: u64) -> Self {
+        self.lamports = lamports;
+        self
+    }
+
     pub fn with_delegate(mut self, delegate: Option<Pubkey>) -> Self {
         self.delegate = match delegate {
             Some(key) => COption::Some(key),
@@ -463,6 +468,16 @@ impl MintAccountMockBuilder {
                         transfer_hook.program_id =
                             MaybeNull::try_from(self.transfer_hook_program_id)
                                 .map_err(|e| e.to_string())?;
+                    }
+                    ExtensionType::ScaledUiAmount => {
+                        state.init_extension::<extension::scaled_ui_amount::ScaledUiAmountConfig>(
+                            true,
+                        )?;
+                    }
+                    ExtensionType::InterestBearingConfig => {
+                        state.init_extension::<extension::interest_bearing_mint::InterestBearingConfig>(
+                            true,
+                        )?;
                     }
                     // Add other extension types as needed
                     _ => {}

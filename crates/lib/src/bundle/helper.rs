@@ -25,12 +25,12 @@ pub struct BundleProcessor {
     pub total_required_lamports: u64,
     pub total_cost_lamports: u64,
     pub total_payment_lamports: u64,
-    pub total_solana_estimated_fee: u64,
-}
-
-pub enum BundleProcessingMode<'a> {
-    CheckUsage(Option<&'a str>),
-    SkipUsage,
+    /// Solana fees of members `0..=i`, so member `i` can assert the fee payer balance it must
+    /// keep when it lands on its own.
+    pub cumulative_solana_fees: Vec<u64>,
+    /// Fee-payer lamport outflow of members `0..=i`, which member `i`'s balance floor must
+    /// leave room for. All zero when no Lighthouse assertion is appended.
+    pub cumulative_lamport_outflows: Vec<u64>,
 }
 
 fn transfer_hook_validation_flow_for_bundle(
@@ -92,7 +92,7 @@ impl BundleProcessor {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn process_bundle<'a>(
+    pub async fn process_bundle(
         encoded_txs: &[String],
         fee_payer: Pubkey,
         payment_destination: &Pubkey,
@@ -100,7 +100,6 @@ impl BundleProcessor {
         rpc_client: &Arc<RpcClient>,
         sig_verify: bool,
         plugin_context: Option<PluginExecutionContext>,
-        processing_mode: BundleProcessingMode<'a>,
     ) -> Result<Self, KoraError> {
         let validator = TransactionValidator::new(config, fee_payer)?;
         let plugin_runner = TransactionPluginRunner::from_config(config);
@@ -111,6 +110,7 @@ impl BundleProcessor {
         let mut total_cost_lamports = 0u64;
         let mut all_bundle_instructions: Vec<Instruction> = Vec::new();
         let mut txs_missing_payment_count = 0u64;
+        let mut total_transfer_outflow = 0u64;
 
         let mut alt_cache: HashMap<Pubkey, Vec<Pubkey>> = HashMap::new();
 
@@ -126,18 +126,22 @@ impl BundleProcessor {
             )
             .await?;
 
-            if let BundleProcessingMode::CheckUsage(user_id) = processing_mode {
-                UsageTracker::check_transaction_usage_limit(
-                    config,
-                    &mut resolved_tx,
-                    user_id,
-                    &fee_payer,
-                    rpc_client,
-                )
-                .await?;
-            }
-
             validator.validate_transaction(config, &mut resolved_tx, rpc_client).await?;
+            if matches!(plugin_context, Some(PluginExecutionContext::SignAndSendBundle)) {
+                resolved_tx.require_verified_signatures_except(&fee_payer)?;
+            }
+            let outflow =
+                validator.calculate_total_outflow(config, &mut resolved_tx, rpc_client).await?;
+            total_transfer_outflow =
+                total_transfer_outflow.checked_add(outflow).ok_or_else(|| {
+                    KoraError::ValidationError("Bundle outflow calculation overflow".to_string())
+                })?;
+            if total_transfer_outflow > config.validation.max_allowed_lamports {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Total bundle transfer amount {} exceeds maximum allowed {}",
+                    total_transfer_outflow, config.validation.max_allowed_lamports
+                )));
+            }
             validator.validate_token2022_transfer_hook_signing_policies(
                 config,
                 &mut resolved_tx,
@@ -150,6 +154,9 @@ impl BundleProcessor {
             resolved_transactions.push(resolved_tx);
         }
 
+        let appends_lighthouse_assertion = config.kora.lighthouse.enabled
+            && !matches!(plugin_context, Some(PluginExecutionContext::SignAndSendBundle));
+
         for resolved_tx in resolved_transactions.iter_mut() {
             let fee_calc = FeeConfigUtil::estimate_kora_fee(
                 resolved_tx,
@@ -159,6 +166,7 @@ impl BundleProcessor {
                 config,
                 transfer_hook_validation_flow,
                 Some(&all_bundle_instructions),
+                appends_lighthouse_assertion,
             )
             .await?;
 
@@ -201,6 +209,9 @@ impl BundleProcessor {
 
         let mut bundle_payment_totals = PaymentLamportTotals::default();
         let mut total_solana_estimated_fee = 0u64;
+        let mut cumulative_solana_fees = Vec::with_capacity(resolved_transactions.len());
+        let mut total_lamport_outflow = 0u64;
+        let mut cumulative_lamport_outflows = Vec::with_capacity(resolved_transactions.len());
         for resolved in resolved_transactions.iter_mut() {
             let payment_totals = TokenUtil::calculate_payment_lamport_totals(
                 config,
@@ -213,12 +224,33 @@ impl BundleProcessor {
             bundle_payment_totals.checked_add_assign(payment_totals)?;
 
             let fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, resolved).await?;
-            total_solana_estimated_fee =
-                total_solana_estimated_fee.checked_add(fee).ok_or_else(|| {
+            let assertion_fee = TransactionFeeUtil::get_lighthouse_assertion_fee(
+                resolved,
+                appends_lighthouse_assertion,
+            );
+            total_solana_estimated_fee = total_solana_estimated_fee
+                .checked_add(fee)
+                .and_then(|total| total.checked_add(assertion_fee))
+                .ok_or_else(|| {
                     KoraError::ValidationError("Bundle Solana fee calculation overflow".to_string())
                 })?;
 
             validator.validate_lamport_fee(total_solana_estimated_fee)?;
+            cumulative_solana_fees.push(total_solana_estimated_fee);
+
+            if appends_lighthouse_assertion {
+                let outflow = FeeConfigUtil::calculate_fee_payer_lamport_outflow(
+                    &fee_payer, resolved, rpc_client, config,
+                )
+                .await?;
+                total_lamport_outflow =
+                    total_lamport_outflow.checked_add(outflow).ok_or_else(|| {
+                        KoraError::ValidationError(
+                            "Bundle lamport outflow calculation overflow".to_string(),
+                        )
+                    })?;
+            }
+            cumulative_lamport_outflows.push(total_lamport_outflow);
         }
 
         let total_payment_lamports = bundle_payment_totals.net_payment();
@@ -228,8 +260,29 @@ impl BundleProcessor {
             total_required_lamports,
             total_cost_lamports,
             total_payment_lamports,
-            total_solana_estimated_fee,
+            cumulative_solana_fees,
+            cumulative_lamport_outflows,
         })
+    }
+
+    async fn check_usage_limit(
+        &mut self,
+        config: &Config,
+        user_id: Option<&str>,
+        fee_payer: &Pubkey,
+        rpc_client: &RpcClient,
+    ) -> Result<(), KoraError> {
+        for resolved_tx in self.resolved_transactions.iter_mut() {
+            UsageTracker::check_transaction_usage_limit(
+                config,
+                resolved_tx,
+                user_id,
+                fee_payer,
+                rpc_client,
+            )
+            .await?;
+        }
+        Ok(())
     }
 
     fn validate_payment(&self) -> Result<(), KoraError> {
@@ -250,6 +303,7 @@ impl BundleProcessor {
         rpc_client: &RpcClient,
         config: &Config,
         will_send: bool,
+        user_id: Option<&str>,
     ) -> Result<Vec<VersionedTransactionResolved>, KoraError> {
         TransactionValidator::validate_strict_pricing(
             config,
@@ -258,10 +312,38 @@ impl BundleProcessor {
         )?;
         self.validate_payment()?;
 
-        let mut blockhash = None;
-        let tx_count = self.resolved_transactions.len();
+        let mut asserted_transactions = Vec::new();
+        if config.kora.lighthouse.enabled && !will_send {
+            let balance = LighthouseUtil::fetch_fee_payer_balance(rpc_client, fee_payer).await?;
+            for ((resolved, cumulative_fee), cumulative_outflow) in self
+                .resolved_transactions
+                .iter()
+                .zip(&self.cumulative_solana_fees)
+                .zip(&self.cumulative_lamport_outflows)
+            {
+                let mut transaction = resolved.transaction.clone();
+                LighthouseUtil::add_fee_payer_assertion_for_balance(
+                    &mut transaction,
+                    fee_payer,
+                    balance,
+                    *cumulative_fee,
+                    *cumulative_outflow,
+                    &config.kora.lighthouse,
+                )?;
+                asserted_transactions.push(transaction);
+            }
+        }
 
-        for (i, resolved) in self.resolved_transactions.iter_mut().enumerate() {
+        self.check_usage_limit(config, user_id, fee_payer, rpc_client).await?;
+
+        for (resolved, transaction) in
+            self.resolved_transactions.iter_mut().zip(asserted_transactions)
+        {
+            resolved.transaction = transaction;
+        }
+
+        let mut blockhash = None;
+        for resolved in self.resolved_transactions.iter_mut() {
             if blockhash.is_none() && resolved.transaction.signatures.is_empty() {
                 blockhash = Some(
                     rpc_client
@@ -269,18 +351,6 @@ impl BundleProcessor {
                         .await?
                         .0,
                 );
-            }
-
-            if i == tx_count - 1 {
-                LighthouseUtil::add_fee_payer_assertion(
-                    &mut resolved.transaction,
-                    rpc_client,
-                    fee_payer,
-                    self.total_solana_estimated_fee,
-                    &config.kora.lighthouse,
-                    will_send,
-                )
-                .await?;
             }
 
             BundleSigner::sign_transaction_for_bundle(
@@ -363,7 +433,8 @@ mod tests {
             total_required_lamports,
             total_cost_lamports,
             total_payment_lamports: total_required_lamports,
-            total_solana_estimated_fee: 0,
+            cumulative_solana_fees: vec![],
+            cumulative_lamport_outflows: vec![],
         }
     }
 
@@ -376,7 +447,7 @@ mod tests {
             Arc::new(solana_keychain::Signer::from_memory(&keypair.to_base58_string()).unwrap());
         let rpc_client = crate::tests::rpc_mock::RpcMockBuilder::new().build();
         let fee_payer = solana_sdk::signer::Signer::pubkey(&keypair);
-        processor.sign_all(&signer, &fee_payer, &rpc_client, config, false).await
+        processor.sign_all(&signer, &fee_payer, &rpc_client, config, false, None).await
     }
 
     #[tokio::test]
@@ -415,7 +486,8 @@ mod tests {
             total_required_lamports: 1000,
             total_cost_lamports: 0,
             total_payment_lamports: 1500,
-            total_solana_estimated_fee: 1000,
+            cumulative_solana_fees: vec![1000],
+            cumulative_lamport_outflows: vec![0],
         };
 
         assert!(processor.validate_payment().is_ok());
@@ -428,7 +500,8 @@ mod tests {
             total_required_lamports: 1000,
             total_cost_lamports: 0,
             total_payment_lamports: 1000,
-            total_solana_estimated_fee: 1000,
+            cumulative_solana_fees: vec![1000],
+            cumulative_lamport_outflows: vec![0],
         };
 
         assert!(processor.validate_payment().is_ok());
@@ -441,7 +514,8 @@ mod tests {
             total_required_lamports: 2000,
             total_cost_lamports: 0,
             total_payment_lamports: 1000,
-            total_solana_estimated_fee: 1000,
+            cumulative_solana_fees: vec![1000],
+            cumulative_lamport_outflows: vec![0],
         };
 
         let result = processor.validate_payment();
@@ -462,7 +536,8 @@ mod tests {
             total_required_lamports: 0,
             total_cost_lamports: 0,
             total_payment_lamports: 0,
-            total_solana_estimated_fee: 1000,
+            cumulative_solana_fees: vec![1000],
+            cumulative_lamport_outflows: vec![0],
         };
 
         assert!(processor.validate_payment().is_ok());
@@ -475,7 +550,8 @@ mod tests {
             total_required_lamports: u64::MAX,
             total_cost_lamports: 0,
             total_payment_lamports: u64::MAX,
-            total_solana_estimated_fee: 1000,
+            cumulative_solana_fees: vec![1000],
+            cumulative_lamport_outflows: vec![0],
         };
 
         assert!(processor.validate_payment().is_ok());
@@ -488,7 +564,8 @@ mod tests {
             total_required_lamports: 1001,
             total_cost_lamports: 0,
             total_payment_lamports: 1000,
-            total_solana_estimated_fee: 500,
+            cumulative_solana_fees: vec![500],
+            cumulative_lamport_outflows: vec![0],
         };
 
         let result = processor.validate_payment();
@@ -504,12 +581,13 @@ mod tests {
             total_required_lamports: 5000,
             total_cost_lamports: 0,
             total_payment_lamports: 6000,
-            total_solana_estimated_fee: 2500,
+            cumulative_solana_fees: vec![2500],
+            cumulative_lamport_outflows: vec![0],
         };
 
         assert_eq!(processor.total_required_lamports, 5000);
         assert_eq!(processor.total_payment_lamports, 6000);
-        assert_eq!(processor.total_solana_estimated_fee, 2500);
+        assert_eq!(processor.cumulative_solana_fees, vec![2500]);
         assert!(processor.resolved_transactions.is_empty());
     }
 

@@ -262,3 +262,38 @@ async fn test_bundle_fails_fast_on_limit_exceeded() {
     let err = result.expect_err("Expected error for bundle exceeding windowed limit");
     err.assert_contains_message("Usage limit exceeded");
 }
+
+/// A bundle rejected on a later member must not consume quota for the earlier ones
+/// Config: windowed=4/30s
+#[tokio::test]
+async fn test_rejected_bundle_does_not_consume_quota() {
+    let ctx = crate::ctx().await;
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+
+    crate::window::within_one_window("a rejected bundle and four sends", || async {
+        let sender = create_funded_wallet(&ctx).await;
+        let user_id = sender.pubkey().to_string();
+
+        let valid = ctx
+            .transaction_builder()
+            .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
+            .with_transfer(&sender.pubkey(), &recipient, 1000)
+            .with_signer(&sender)
+            .build()
+            .await
+            .expect("Failed to build transaction");
+        let rejected = crate::window::build_rejected_transaction(&ctx, &sender).await;
+
+        let err = ctx
+            .rpc_call::<serde_json::Value, _>(
+                "signBundle",
+                rpc_params![vec![valid, rejected], None::<String>, false, user_id.clone()],
+            )
+            .await
+            .expect_err("Expected a bundle moving fee-payer SOL past the cap to be rejected");
+        err.assert_contains_message("Invalid transaction");
+
+        crate::window::fill_windowed_limit(&ctx, &sender, &user_id).await;
+    })
+    .await;
+}

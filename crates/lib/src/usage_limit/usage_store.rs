@@ -42,10 +42,14 @@ pub trait UsageStore: Send + Sync {
 }
 
 /// Atomically checks the limit and increments — sets TTL only on first
-/// increment. ARGV[3] = 0 is the sentinel for "no expiry".
+/// increment. ARGV[3] = 0 is the sentinel for "no expiry"; an expiry at or before the
+/// Redis clock is denied, since EXPIREAT would delete the key it just counted.
 static CHECK_AND_INCREMENT_SCRIPT: Lazy<redis::Script> = Lazy::new(|| {
     redis::Script::new(
         r"
+            if ARGV[3] ~= '0' and tonumber(ARGV[3]) <= tonumber(redis.call('TIME')[1]) then
+                return 0
+            end
             local current = redis.call('GET', KEYS[1])
             local count = current and tonumber(current) or 0
             if count + tonumber(ARGV[1]) > tonumber(ARGV[2]) then return 0 end
@@ -58,12 +62,16 @@ static CHECK_AND_INCREMENT_SCRIPT: Lazy<redis::Script> = Lazy::new(|| {
     )
 });
 
-/// Atomically checks limits for multiple rules and increments only if all pass.
+/// Atomically checks limits for multiple rules and increments only if all pass. Denies when
+/// any expiry is at or before the Redis clock, for the same reason as the single-key script.
 static CHECK_AND_INCREMENT_MANY_SCRIPT: Lazy<redis::Script> = Lazy::new(|| {
     redis::Script::new(
         r"
             local num_keys = #KEYS
+            local now = tonumber(redis.call('TIME')[1])
             for i = 1, num_keys do
+                local expiry = ARGV[(i - 1) * 3 + 3]
+                if expiry ~= '0' and tonumber(expiry) <= now then return 0 end
                 local current = redis.call('GET', KEYS[i])
                 local count = current and tonumber(current) or 0
                 local delta = tonumber(ARGV[(i - 1) * 3 + 1])
@@ -239,6 +247,9 @@ impl UsageStore for InMemoryUsageStore {
         let mut data = self.lock()?;
 
         let now = Self::current_timestamp();
+        if expiry.is_some_and(|e| now >= e) {
+            return Ok(false);
+        }
         let entry = data.entry(key.to_string()).or_insert(UsageEntry { count: 0, expiry: None });
 
         if let Some(e) = entry.expiry {
@@ -269,6 +280,9 @@ impl UsageStore for InMemoryUsageStore {
         let mut data = self.lock()?;
 
         let now = Self::current_timestamp();
+        if entries.iter().any(|(_, _, _, expiry)| expiry.is_some_and(|e| now >= e)) {
+            return Ok(false);
+        }
 
         for (key, delta, max, _expiry) in entries {
             let current_count = if let Some(entry) = data.get(key) {
@@ -434,5 +448,41 @@ mod tests {
         assert_eq!(store.get(key2).await.unwrap(), 1);
 
         let _: () = conn.del(&[key1, key2]).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_denies_already_expired_bucket() {
+        let store = InMemoryUsageStore::new();
+        let past = InMemoryUsageStore::current_timestamp() - 1;
+        let entries = vec![("expired:key".to_string(), 1, 1, Some(past))];
+
+        assert!(!store.check_and_increment_many(&entries).await.unwrap());
+        assert!(!store.check_and_increment_many(&entries).await.unwrap());
+        assert!(!store.check_and_increment("expired:single", 1, 1, Some(past)).await.unwrap());
+        assert!(store.lock().unwrap().is_empty());
+    }
+
+    // Run with: KORA_REDIS_URL="redis://127.0.0.1:6379" cargo test -p kora-lib test_redis -- --include-ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_redis_denies_already_expired_bucket() {
+        let redis_url = env::var("KORA_REDIS_URL")
+            .expect("KORA_REDIS_URL must be set to run Redis integration tests");
+
+        let cfg = Config::from_url(redis_url);
+        let pool = cfg.create_pool(Some(Runtime::Tokio1)).unwrap();
+        let live = "test_redis_denies_already_expired_bucket:live";
+        let expired = "test_redis_denies_already_expired_bucket:expired";
+        let mut conn = pool.get().await.unwrap();
+        let _: () = conn.del(&[live, expired]).await.unwrap();
+        let store = RedisUsageStore::new(pool);
+        let past = InMemoryUsageStore::current_timestamp() - 1;
+
+        let entries = vec![(live.to_string(), 1, 5, None), (expired.to_string(), 1, 1, Some(past))];
+        assert!(!store.check_and_increment_many(&entries).await.unwrap());
+        assert!(!store.check_and_increment(expired, 1, 1, Some(past)).await.unwrap());
+        assert_eq!(store.get(live).await.unwrap(), 0);
+
+        let _: () = conn.del(&[live, expired]).await.unwrap();
     }
 }

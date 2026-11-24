@@ -6,6 +6,12 @@ This sample code will help you get started with Jito Bundles with Kora.
 
 A full demo of Kora is available [here](https://launch.solana.com/docs/kora/guides/jito-demo).
 
+The server and client both read the API key from `KORA_API_KEY`. Export the same random secret in both shells before starting them:
+
+```bash
+export KORA_API_KEY=$(openssl rand -hex 32)
+```
+
 ## Sample Output
 
 ```bash

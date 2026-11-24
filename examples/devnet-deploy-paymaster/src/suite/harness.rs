@@ -137,7 +137,7 @@ impl Harness {
             WRITE_CHUNK_SIZE,
             0,
         ) {
-            self.send(&ixs, &[]).await?;
+            self.send(&ixs, &[&buffer]).await?;
         }
         Ok(buffer)
     }
@@ -163,7 +163,12 @@ impl Harness {
             program_lamports,
             bytes.len(),
         )?;
-        let mut signers: Vec<&Keypair> = vec![&program];
+        for meta in ixs.iter_mut().flat_map(|ix| ix.accounts.iter_mut()) {
+            if meta.pubkey == buffer.pubkey() {
+                meta.is_signer = true;
+            }
+        }
+        let mut signers: Vec<&Keypair> = vec![&program, &buffer];
         if let Some(owner) = owner {
             ixs.push(kora_deploy::register_ix(
                 &kora_deploy::DEFAULT_REGISTRY_PROGRAM,

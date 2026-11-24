@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use crate::{constant::DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE, error::KoraError};
 
-use super::rules::{InstructionRule, TransactionRule, UsageRule};
+use super::rules::{InstructionIdentifier, InstructionRule, TransactionRule, UsageRule};
 
 /// Unified usage limit configuration
 #[derive(Clone, Serialize, Deserialize)]
@@ -61,8 +61,8 @@ impl UsageLimitConfig {
 ///
 /// [[kora.usage_limit.rules]]
 /// type = "instruction"
-/// program = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-/// instruction = "Transfer"
+/// program = "11111111111111111111111111111111"
+/// instruction = "CreateAccount"
 /// max = 10
 /// ```
 #[derive(Clone, Serialize, Deserialize)]
@@ -78,9 +78,9 @@ pub enum UsageLimitRuleConfig {
     },
     /// Instruction-level limit - counts specific instruction types
     Instruction {
-        /// Program ID (e.g., "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+        /// Program ID: System, ATA, Loader-v4 or BPF Loader Upgradeable
         program: String,
-        /// Instruction type (e.g., "Transfer", "Burn")
+        /// Instruction type (e.g., "CreateAccount", "CreateIdempotent")
         instruction: String,
         /// Maximum allowed
         max: u64,
@@ -104,6 +104,14 @@ impl UsageLimitRuleConfig {
                         program, e
                     ))
                 })?;
+                if !InstructionIdentifier::is_supported(&program_pubkey, instruction) {
+                    return Err(KoraError::InternalServerError(format!(
+                        "Usage limit rule '{}' on program {} can never be counted: only System \
+                         CreateAccount/CreateAccountWithSeed, ATA Create/CreateIdempotent, \
+                         Loader-v4 and BPF Loader Upgradeable instructions are supported",
+                        instruction, program
+                    )));
+                }
                 Ok(UsageRule::Instruction(InstructionRule::new(
                     program_pubkey,
                     instruction.clone(),
@@ -313,8 +321,8 @@ mod tests {
     #[test]
     fn test_build_instruction_rule() {
         let config = UsageLimitRuleConfig::Instruction {
-            program: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
-            instruction: "Transfer".to_string(),
+            program: "11111111111111111111111111111111".to_string(),
+            instruction: "CreateAccount".to_string(),
             max: 10,
             window_seconds: None,
         };
@@ -323,6 +331,42 @@ mod tests {
         assert_eq!(rule.rule_type(), "instruction");
         assert_eq!(rule.max(), 10);
         assert_eq!(rule.window_seconds(), None);
+    }
+
+    #[test]
+    fn test_build_instruction_rule_rejects_uncountable_pairs() {
+        let uncountable = [
+            ("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "Transfer"),
+            ("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", "Transfer"),
+            ("11111111111111111111111111111111", "Transfer"),
+            ("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4", "Route"),
+        ];
+        for (program, instruction) in uncountable {
+            let config = UsageLimitRuleConfig::Instruction {
+                program: program.to_string(),
+                instruction: instruction.to_string(),
+                max: 10,
+                window_seconds: None,
+            };
+            let err = config.build().expect_err("uncountable rule must be rejected");
+            assert!(err.to_string().contains("can never be counted"), "{err}");
+        }
+
+        let countable = [
+            ("11111111111111111111111111111111", "createAccountWithSeed"),
+            ("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", "Create"),
+            ("LoaderV411111111111111111111111111111111111", "Deploy"),
+            ("BPFLoaderUpgradeab1e11111111111111111111111", "Upgrade"),
+        ];
+        for (program, instruction) in countable {
+            let config = UsageLimitRuleConfig::Instruction {
+                program: program.to_string(),
+                instruction: instruction.to_string(),
+                max: 10,
+                window_seconds: None,
+            };
+            assert!(config.build().is_ok(), "{program} {instruction}");
+        }
     }
 
     #[test]
@@ -345,8 +389,8 @@ mod tests {
             rules: vec![
                 UsageLimitRuleConfig::Transaction { max: 100, window_seconds: None },
                 UsageLimitRuleConfig::Instruction {
-                    program: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
-                    instruction: "Transfer".to_string(),
+                    program: "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL".to_string(),
+                    instruction: "CreateIdempotent".to_string(),
                     max: 10,
                     window_seconds: Some(86400),
                 },

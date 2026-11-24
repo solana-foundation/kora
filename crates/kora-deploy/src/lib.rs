@@ -90,12 +90,13 @@ macro_rules! cleanup_buffer {
     ($force:expr, $msg:expr, $err_log:expr, $ctx:expr, $buffer:expr, $kora_pubkey:expr) => {
         if $force || $ctx.cfg.cleanup_on_failure {
             log::warn!("{}, attempting to close buffer for cleanup...", $msg);
-            let close_ix = loader_v3::close_any(
+            let mut close_ix = loader_v3::close_any(
                 &$buffer.pubkey(),
                 $kora_pubkey,
                 Some($kora_pubkey),
                 None,
             );
+            mark_signer(&mut close_ix, &$buffer.pubkey());
             match submit_returning_signature(
                 $ctx.http,
                 $ctx.cfg.kora_url,
@@ -103,7 +104,7 @@ macro_rules! cleanup_buffer {
                 $ctx.rpc,
                 $kora_pubkey,
                 &[close_ix],
-                &[],
+                &[$buffer],
             )
             .await
             {
@@ -373,8 +374,16 @@ async fn write_chunks(
         *written_chunks,
     );
     for ixs in batches {
-        match submit(ctx.http, ctx.cfg.kora_url, &ctx.cfg.user_id, ctx.rpc, kora_pubkey, &ixs, &[])
-            .await
+        match submit(
+            ctx.http,
+            ctx.cfg.kora_url,
+            &ctx.cfg.user_id,
+            ctx.rpc,
+            kora_pubkey,
+            &ixs,
+            &[buffer],
+        )
+        .await
         {
             Ok(_) => {
                 *written_chunks += ixs.len();
@@ -440,7 +449,10 @@ async fn finalize_deploy(
         program_lamports,
         bytes.len(),
     )?;
-    let mut deploy_signers: Vec<&Keypair> = vec![program];
+    for ix in &mut deploy_ixs {
+        mark_signer(ix, &buffer.pubkey());
+    }
+    let mut deploy_signers: Vec<&Keypair> = vec![program, buffer];
     if let Some(wallet) = ctx.cfg.wallet {
         deploy_ixs.push(register_ix(
             &DEFAULT_REGISTRY_PROGRAM,
@@ -551,7 +563,7 @@ pub async fn upgrade(cfg: &UpgradeConfig<'_>) -> Result<Signature> {
     for ixs in
         write_instruction_batches(&buffer.pubkey(), &kora_pubkey, &bytes, WRITE_CHUNK_SIZE, 0)
     {
-        submit(&http, cfg.kora_url, &cfg.user_id, &rpc, &kora_pubkey, &ixs, &[]).await?;
+        submit(&http, cfg.kora_url, &cfg.user_id, &rpc, &kora_pubkey, &ixs, &[&buffer]).await?;
         written_chunks += ixs.len();
         if written_chunks % 25 < ixs.len() || written_chunks == chunk_count {
             log::info!("wrote chunk {}/{}", written_chunks, chunk_count);
@@ -560,6 +572,7 @@ pub async fn upgrade(cfg: &UpgradeConfig<'_>) -> Result<Signature> {
 
     let mut upgrade_ix =
         loader_v3::upgrade(&cfg.program, &buffer.pubkey(), &kora_pubkey, &kora_pubkey);
+    mark_signer(&mut upgrade_ix, &buffer.pubkey());
     upgrade_ix.accounts.push(AccountMeta::new_readonly(cfg.wallet.pubkey(), true));
     submit_returning_signature(
         &http,
@@ -568,9 +581,15 @@ pub async fn upgrade(cfg: &UpgradeConfig<'_>) -> Result<Signature> {
         &rpc,
         &kora_pubkey,
         &[upgrade_ix],
-        &[cfg.wallet],
+        &[cfg.wallet, &buffer],
     )
     .await
+}
+
+fn mark_signer(instruction: &mut Instruction, signer: &Pubkey) {
+    for meta in instruction.accounts.iter_mut().filter(|meta| meta.pubkey == *signer) {
+        meta.is_signer = true;
+    }
 }
 
 /// A program is live when its programdata account exists; the reaper's close removes it
@@ -585,7 +604,8 @@ pub async fn program_is_live(rpc_url: &str, program: &Pubkey) -> Result<bool> {
         .is_some())
 }
 
-/// Buffer writes from chunk `first_chunk` on, grouped `WRITES_PER_TX` to a transaction.
+/// Buffer writes from chunk `first_chunk` on, grouped `WRITES_PER_TX` to a transaction. The
+/// buffer signs each write so Kora can tell the writer created the buffer.
 pub fn write_instruction_batches(
     buffer: &Pubkey,
     authority: &Pubkey,
@@ -598,7 +618,10 @@ pub fn write_instruction_batches(
         .enumerate()
         .skip(first_chunk)
         .map(|(i, chunk)| {
-            loader_v3::write(buffer, authority, (i * chunk_size) as u32, chunk.to_vec())
+            let mut ix =
+                loader_v3::write(buffer, authority, (i * chunk_size) as u32, chunk.to_vec());
+            mark_signer(&mut ix, buffer);
+            ix
         })
         .collect();
     writes.chunks(WRITES_PER_TX).map(<[Instruction]>::to_vec).collect()
@@ -923,8 +946,14 @@ mod inline_tests {
         );
         assert_eq!(batches.len(), 1);
         let ixs = &batches[0];
-        let tx = build_tx(&kora.pubkey(), ixs, &[], Hash::new_unique(), resource_config(ixs.len()))
-            .unwrap();
+        let tx = build_tx(
+            &kora.pubkey(),
+            ixs,
+            &[&buffer],
+            Hash::new_unique(),
+            resource_config(ixs.len()),
+        )
+        .unwrap();
 
         let serialized = wincode::serialize(&tx).unwrap();
         assert!(

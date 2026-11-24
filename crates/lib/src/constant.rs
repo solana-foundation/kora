@@ -96,12 +96,13 @@ pub mod instruction_indexes {
 
     pub mod system_assign {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 1;
+        pub const ACCOUNT_INDEX: usize = 0;
         pub const AUTHORITY_INDEX: usize = 0;
     }
 
     pub mod system_assign_with_seed {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
-        pub const AUTHORITY_INDEX: usize = 1;
+        pub const ACCOUNT_INDEX: usize = 0;
     }
 
     pub mod system_allocate {
@@ -111,7 +112,6 @@ pub mod instruction_indexes {
 
     pub mod system_allocate_with_seed {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
-        pub const ACCOUNT_INDEX: usize = 1;
     }
 
     pub mod system_initialize_nonce_account {
@@ -151,6 +151,8 @@ pub mod instruction_indexes {
 
     pub mod spl_token_burn {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const SOURCE_INDEX: usize = 0;
+        pub const MINT_INDEX: usize = 1;
         pub const OWNER_INDEX: usize = 2;
     }
 
@@ -163,11 +165,14 @@ pub mod instruction_indexes {
 
     pub mod spl_token_approve {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const SOURCE_INDEX: usize = 0;
         pub const OWNER_INDEX: usize = 2;
     }
 
     pub mod spl_token_approve_checked {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 4;
+        pub const SOURCE_INDEX: usize = 0;
+        pub const MINT_INDEX: usize = 1;
         pub const OWNER_INDEX: usize = 3;
     }
 
@@ -178,6 +183,7 @@ pub mod instruction_indexes {
 
     pub mod spl_token_set_authority {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const ACCOUNT_INDEX: usize = 0;
         pub const CURRENT_AUTHORITY_INDEX: usize = 1;
     }
 
@@ -246,12 +252,16 @@ pub mod instruction_indexes {
 
     pub mod spl_token_withdraw_excess_lamports {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const SOURCE_INDEX: usize = 0;
+        pub const DESTINATION_INDEX: usize = 1;
         pub const AUTHORITY_INDEX: usize = 2;
         pub const MULTISIG_SIGNERS_START_INDEX: usize = 3;
     }
 
     pub mod spl_token_unwrap_lamports {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const SOURCE_INDEX: usize = 0;
+        pub const DESTINATION_INDEX: usize = 1;
         pub const AUTHORITY_INDEX: usize = 2;
         pub const MULTISIG_SIGNERS_START_INDEX: usize = 3;
     }

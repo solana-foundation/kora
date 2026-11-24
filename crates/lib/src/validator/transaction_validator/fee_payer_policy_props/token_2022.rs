@@ -205,9 +205,10 @@ impl DrainRole for Token2022Role {
             | Self::InitializePausableAuthority => {
                 &mut policy.token_2022.allow_initialize_extension_authority
             }
+            Self::WithdrawWithheldTokensFromMint | Self::WithdrawWithheldTokensFromAccounts => {
+                &mut policy.token_2022.allow_withdraw_withheld_tokens
+            }
             Self::SetTransferFee
-            | Self::WithdrawWithheldTokensFromMint
-            | Self::WithdrawWithheldTokensFromAccounts
             | Self::UpdateInterestBearingRate
             | Self::UpdateMetadataPointer
             | Self::UpdateMetadataPointerMultisigSigner

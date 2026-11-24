@@ -266,7 +266,7 @@ export interface ValidationConfig {
     allowed_programs: 'All' | string[];
     /** List of SPL tokens accepted for paid transactions */
     allowed_spl_paid_tokens: string[];
-    /** List of allowed token mint addresses for fee payment */
+    /** Token mints the node supports; fee payer token outflows are limited to these mints */
     allowed_tokens: string[];
     /** Transaction message versions the node accepts */
     allowed_transaction_versions?: ('legacy' | 0 | 1)[];
@@ -440,6 +440,8 @@ export interface Token2022InstructionPolicy {
     allow_initialize_account: boolean;
     /** Allow fee payer to be planted as a future Token2022 extension authority or delegate during extension initialization */
     allow_initialize_extension_authority: boolean;
+    /** Allow fee payer to sign as mint authority in Token2022 TokenMetadata Initialize and TokenGroup InitializeGroup instructions */
+    allow_initialize_interface_extension: boolean;
     /** Allow fee payer to initialize Token2022 mints */
     allow_initialize_mint: boolean;
     /** Allow fee payer to initialize Token2022 multisig accounts */
@@ -462,6 +464,8 @@ export interface Token2022InstructionPolicy {
     allow_update_extension_authority: boolean;
     /** Allow fee payer to be the authority in Token2022 WithdrawExcessLamports instructions */
     allow_withdraw_excess_lamports: boolean;
+    /** Allow fee payer to be the withdraw-withheld authority in Token2022 WithdrawWithheldTokens instructions */
+    allow_withdraw_withheld_tokens: boolean;
 }
 
 /**

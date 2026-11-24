@@ -87,9 +87,14 @@ impl SignerWithMetadata {
         self.last_used.store(now, Ordering::Relaxed);
     }
 
-    /// Records a successful signature creation, resetting consecutive failures to 0
-    pub(crate) fn record_success(&self) {
+    /// Records a successful signature creation, resetting consecutive failures to 0. A success
+    /// from a request admitted before the signer was marked unhealthy is not proof of recovery
+    /// and must not clear the probe lock.
+    pub(crate) fn record_success(&self, admitted_at: std::time::Instant) {
         let mut health = self.health.lock();
+        if !health.is_healthy && health.last_failed_at.is_some_and(|failed| admitted_at < failed) {
+            return;
+        }
         *health = HealthState::default();
     }
 
@@ -313,8 +318,10 @@ impl SignerPool {
     }
 
     /// Records a successful signature creation, resetting consecutive failures to 0
-    pub fn record_signing_success(&self, signer: &Arc<Signer>) {
-        self.with_signer_metadata(signer, "record_signing_success", |meta| meta.record_success());
+    pub fn record_signing_success(&self, signer: &Arc<Signer>, admitted_at: std::time::Instant) {
+        self.with_signer_metadata(signer, "record_signing_success", |meta| {
+            meta.record_success(admitted_at)
+        });
     }
 
     /// Records a failed signature attempt, potentially degrading the signer's health
@@ -689,7 +696,7 @@ mod tests {
         meta.record_failure();
         assert!(!meta.is_healthy());
 
-        meta.record_success();
+        meta.record_success(std::time::Instant::now());
         assert!(meta.is_healthy());
     }
 
@@ -768,7 +775,7 @@ mod tests {
         let pinned_signer = pool.get_signer_by_pubkey(&meta.signer.pubkey().to_string());
         assert!(pinned_signer.is_ok());
 
-        meta.record_success();
+        meta.record_success(std::time::Instant::now());
         assert!(meta.is_healthy());
     }
 
@@ -827,6 +834,28 @@ mod tests {
         let second = pool.get_signer_by_pubkey(&pubkey);
         assert!(second.is_err());
         assert!(matches!(second.err().unwrap(), KoraError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_stale_success_does_not_clear_newer_probe_lock() {
+        let pool = create_test_pool();
+        let meta = &pool.signers[0];
+        let pubkey = meta.signer.pubkey().to_string();
+        let now = std::time::Instant::now();
+        let admitted_before_failure = now - std::time::Duration::from_secs(40);
+
+        meta.record_failure();
+        meta.record_failure();
+        meta.record_failure();
+        meta.health.lock().last_failed_at = Some(now - std::time::Duration::from_secs(31));
+        assert!(pool.get_signer_by_pubkey(&pubkey).is_ok());
+
+        meta.record_success(admitted_before_failure);
+        assert!(!meta.is_healthy());
+        assert!(pool.get_signer_by_pubkey(&pubkey).is_err());
+
+        meta.record_success(std::time::Instant::now());
+        assert!(meta.is_healthy());
     }
 
     #[test]

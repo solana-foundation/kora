@@ -9,10 +9,7 @@ use solana_keychain::{Signer, SolanaSigner};
 use solana_message::{
     compiled_instruction::CompiledInstruction, v0::MessageAddressTableLookup, VersionedMessage,
 };
-use solana_sdk::{
-    instruction::Instruction, pubkey::Pubkey, signature::Signature,
-    transaction::VersionedTransaction,
-};
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
 use std::{
     collections::{HashMap, HashSet},
     ops::Deref,
@@ -37,6 +34,7 @@ use crate::{
         ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
         Token2022SecurityInstruction, Token2022SecurityParser, TransactionUtil,
     },
+    usage_limit::UsageTracker,
     validator::transaction_validator::TransactionValidator,
     CacheUtil,
 };
@@ -130,7 +128,7 @@ pub struct VersionedTransactionResolved {
 
     parsed_token2022_security_instructions: OnceLock<Vec<Token2022SecurityInstruction>>,
 
-    fee_payer_outflow: Option<(Pubkey, i128)>,
+    fee_payer_outflow: Option<(Pubkey, (i128, u64))>,
 }
 
 impl Deref for VersionedTransactionResolved {
@@ -173,6 +171,7 @@ pub trait VersionedTransactionOps {
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
         will_send: bool,
+        user_id: Option<&str>,
     ) -> Result<(VersionedTransaction, String, bool), KoraError>;
     async fn sign_and_send_transaction(
         &mut self,
@@ -180,10 +179,28 @@ pub trait VersionedTransactionOps {
         signer: &std::sync::Arc<Signer>,
         rpc_client: &std::sync::Arc<RpcClient>,
         respond_after: RespondAfter,
+        user_id: Option<&str>,
     ) -> Result<(String, String), KoraError>;
 }
 
 impl VersionedTransactionResolved {
+    pub(crate) fn require_verified_signatures_except(
+        &self,
+        fee_payer: &Pubkey,
+    ) -> Result<(), KoraError> {
+        let verified_signers = self.verified_signers();
+        if self
+            .signer_pubkeys()
+            .iter()
+            .any(|key| key != fee_payer && !verified_signers.contains(key))
+        {
+            return Err(KoraError::InvalidTransaction(
+                "Transaction is missing or has invalid required signatures".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     pub async fn from_transaction(
         transaction: &VersionedTransaction,
         config: &Config,
@@ -253,13 +270,13 @@ impl VersionedTransactionResolved {
         }
     }
 
-    pub(crate) fn cached_fee_payer_outflow(&self, fee_payer: &Pubkey) -> Option<i128> {
+    pub(crate) fn cached_fee_payer_outflow(&self, fee_payer: &Pubkey) -> Option<(i128, u64)> {
         self.fee_payer_outflow
             .filter(|(cached_fee_payer, _)| cached_fee_payer == fee_payer)
             .map(|(_, outflow)| outflow)
     }
 
-    pub(crate) fn cache_fee_payer_outflow(&mut self, fee_payer: Pubkey, outflow: i128) {
+    pub(crate) fn cache_fee_payer_outflow(&mut self, fee_payer: Pubkey, outflow: (i128, u64)) {
         self.fee_payer_outflow = Some((fee_payer, outflow));
     }
 
@@ -459,11 +476,16 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         selected_signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
         will_send: bool,
+        user_id: Option<&str>,
     ) -> Result<(VersionedTransaction, String, bool), KoraError> {
         let fee_payer = selected_signer.pubkey();
         let validator = TransactionValidator::new(config, fee_payer)?;
 
         validator.validate_transaction(config, self, rpc_client).await?;
+
+        if will_send {
+            self.require_verified_signatures_except(&fee_payer)?;
+        }
 
         let plugin_context = if will_send {
             PluginExecutionContext::SignAndSendTransaction
@@ -484,6 +506,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             self,
             transfer_hook_validation_flow,
         )?;
+        let appends_lighthouse_assertion = config.kora.lighthouse.enabled && !will_send;
         let fee_calculation = FeeConfigUtil::estimate_kora_fee(
             self,
             &fee_payer,
@@ -492,6 +515,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             config,
             transfer_hook_validation_flow,
             None,
+            appends_lighthouse_assertion,
         )
         .await?;
 
@@ -524,18 +548,34 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             transaction.message.set_recent_blockhash(blockhash.0);
         }
 
-        let estimated_fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, self).await?;
+        let estimated_fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, self)
+            .await?
+            .checked_add(TransactionFeeUtil::get_lighthouse_assertion_fee(
+                self,
+                appends_lighthouse_assertion,
+            ))
+            .ok_or_else(|| KoraError::ValidationError("Estimated fee overflow".to_string()))?;
         validator.validate_lamport_fee(estimated_fee)?;
 
+        let permitted_lamport_outflow = if appends_lighthouse_assertion {
+            FeeConfigUtil::calculate_fee_payer_lamport_outflow(&fee_payer, self, rpc_client, config)
+                .await?
+        } else {
+            0
+        };
         let lighthouse_assertion_added = LighthouseUtil::add_fee_payer_assertion(
             &mut transaction,
             rpc_client,
             &fee_payer,
             estimated_fee,
+            permitted_lamport_outflow,
             &config.kora.lighthouse,
             will_send,
         )
         .await?;
+
+        UsageTracker::check_transaction_usage_limit(config, self, user_id, &fee_payer, rpc_client)
+            .await?;
 
         let signature = sign_with_signer_pool(
             config,
@@ -561,31 +601,17 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         signer: &std::sync::Arc<Signer>,
         rpc_client: &std::sync::Arc<RpcClient>,
         respond_after: RespondAfter,
+        user_id: Option<&str>,
     ) -> Result<(String, String), KoraError> {
         // Payment validation is handled in sign_transaction
         let (transaction, encoded, _lighthouse_assertion_added) =
-            self.sign_transaction(config, signer, rpc_client, true).await?;
+            self.sign_transaction(config, signer, rpc_client, true, user_id).await?;
 
         // Validation already simulated the transaction, so the fast modes skip
         // preflight: a second simulation only delays landing and can fail
         // transiently even though the transaction is valid.
-        //
-        // That simulation ran before Kora signed and used the caller's sig_verify
-        // (default false), so it does not cover signature validity — only the
-        // explicit guard below does.
         let skip_preflight_config =
             RpcSendTransactionConfig { skip_preflight: true, ..Default::default() };
-
-        // Skipping preflight also skips the RPC node's signature verification, so a
-        // transaction with an unfilled co-signer slot (possible when validation ran
-        // with sig_verify off) would be accepted by the RPC but dropped silently by
-        // validators. Reject it here so the caller gets an error instead of a
-        // signature for a transaction that can never land.
-        if transaction.signatures.iter().any(|s| *s == Signature::default()) {
-            return Err(KoraError::InvalidTransaction(
-                "Transaction is missing required signatures".to_string(),
-            ));
-        }
 
         match respond_after {
             RespondAfter::Confirmed => {
@@ -922,6 +948,42 @@ mod tests {
             transaction.signer_pubkeys(),
             &[keypair1.pubkey(), keypair2.pubkey(), keypair3.pubkey()]
         );
+    }
+
+    #[test]
+    fn test_require_verified_signatures_rejects_forged_or_missing_co_signer() {
+        let fee_payer = Keypair::new();
+        let co_signer = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new_readonly(co_signer.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer.pubkey())));
+        let resolve = |co_signature: solana_sdk::signature::Signature| {
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction(message.clone());
+            transaction.signatures[1] = co_signature;
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap()
+        };
+
+        let unsigned = TransactionUtil::new_unsigned_versioned_transaction(message.clone());
+        let valid = resolve(co_signer.sign_message(&unsigned.message.serialize()));
+        assert!(valid.require_verified_signatures_except(&fee_payer.pubkey()).is_ok());
+
+        for co_signature in [
+            solana_sdk::signature::Signature::from([0xA5; 64]),
+            solana_sdk::signature::Signature::default(),
+        ] {
+            let err = resolve(co_signature)
+                .require_verified_signatures_except(&fee_payer.pubkey())
+                .expect_err("unverifiable co-signer slot must be rejected");
+            assert!(
+                err.to_string().contains("missing or has invalid required signatures"),
+                "unexpected error: {err}"
+            );
+        }
     }
 
     #[test]

@@ -52,6 +52,7 @@ const BPF_LOADER_EXTEND_PROGRAM_CHECKED: &str = "extendprogramchecked";
 /// - System: CreateAccount / CreateAccountWithSeed
 /// - ATA: CreateIdempotent / Create
 /// - Loader-v4: Write / Copy / SetProgramLength / Deploy / Retract / TransferAuthority / Finalize
+/// - BPF Loader Upgradeable: every instruction, counted when Kora is the authority or payer
 #[derive(Debug)]
 pub struct InstructionRule {
     program: Pubkey,
@@ -226,10 +227,12 @@ impl InstructionRule {
                             let kora_is_authority_or_payer = if instr_type
                                 == BPF_LOADER_INITIALIZE_BUFFER
                                 || instr_type == BPF_LOADER_WRITE
-                                || instr_type == BPF_LOADER_SET_AUTHORITY
-                                || instr_type == BPF_LOADER_SET_AUTHORITY_CHECKED
                             {
                                 kora_at(1)
+                            } else if instr_type == BPF_LOADER_SET_AUTHORITY
+                                || instr_type == BPF_LOADER_SET_AUTHORITY_CHECKED
+                            {
+                                kora_at(1) || kora_at(2)
                             } else if instr_type == BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN {
                                 kora_at(0) || kora_at(7)
                             } else if instr_type == BPF_LOADER_UPGRADE {
@@ -291,65 +294,53 @@ pub struct InstructionIdentifier;
 
 impl InstructionIdentifier {
     pub fn identify(program_id: &Pubkey, data: &[u8]) -> Option<String> {
+        let discriminator = if *program_id == ATA_PROGRAM_ID {
+            data.first().copied().map_or(0, u32::from)
+        } else {
+            // bincode serializes enum variants as a little-endian u32 discriminator.
+            u32::from_le_bytes(data.get(..4)?.try_into().ok()?)
+        };
+        Self::instructions(program_id)
+            .iter()
+            .find(|(value, _)| *value == discriminator)
+            .map(|(_, name)| name.to_string())
+    }
+
+    /// Whether `identify` can ever return `instruction` for `program`, so a rule on the pair
+    /// can be counted.
+    pub fn is_supported(program_id: &Pubkey, instruction: &str) -> bool {
+        let instruction = instruction.to_lowercase();
+        Self::instructions(program_id).iter().any(|(_, name)| *name == instruction)
+    }
+
+    fn instructions(program_id: &Pubkey) -> &'static [(u32, &'static str)] {
         match *program_id {
-            _ if *program_id == SYSTEM_PROGRAM_ID => Self::system(data),
-            _ if *program_id == ATA_PROGRAM_ID => Self::ata(data),
-            _ if *program_id == LOADER_V4_PROGRAM_ID => Self::loader_v4(data),
-            _ if *program_id == BPF_LOADER_UPGRADEABLE_PROGRAM_ID => {
-                Self::bpf_loader_upgradeable(data)
+            _ if *program_id == SYSTEM_PROGRAM_ID => {
+                &[(0, SYSTEM_CREATE_ACCOUNT), (3, SYSTEM_CREATE_ACCOUNT_WITH_SEED)]
             }
-            _ => None,
-        }
-    }
-
-    fn system(data: &[u8]) -> Option<String> {
-        let discriminator = u32::from_le_bytes(data.get(..4)?.try_into().ok()?);
-        match discriminator {
-            0 => Some(SYSTEM_CREATE_ACCOUNT.to_string()),
-            3 => Some(SYSTEM_CREATE_ACCOUNT_WITH_SEED.to_string()),
-            _ => None,
-        }
-    }
-
-    fn ata(data: &[u8]) -> Option<String> {
-        match data.first().copied() {
-            None | Some(0) => Some(ATA_CREATE.to_string()),
-            Some(1) => Some(ATA_CREATE_IDEMPOTENT.to_string()),
-            _ => None,
-        }
-    }
-
-    fn loader_v4(data: &[u8]) -> Option<String> {
-        // bincode serializes enum variants as a little-endian u32 discriminator.
-        // Values match `LoaderV4Instruction` declaration order.
-        let discriminator = u32::from_le_bytes(data.get(..4)?.try_into().ok()?);
-        match discriminator {
-            0 => Some(LOADER_V4_WRITE.to_string()),
-            1 => Some(LOADER_V4_COPY.to_string()),
-            2 => Some(LOADER_V4_SET_PROGRAM_LENGTH.to_string()),
-            3 => Some(LOADER_V4_DEPLOY.to_string()),
-            4 => Some(LOADER_V4_RETRACT.to_string()),
-            5 => Some(LOADER_V4_TRANSFER_AUTHORITY.to_string()),
-            6 => Some(LOADER_V4_FINALIZE.to_string()),
-            _ => None,
-        }
-    }
-
-    fn bpf_loader_upgradeable(data: &[u8]) -> Option<String> {
-        // Values match `UpgradeableLoaderInstruction` declaration order.
-        let discriminator = u32::from_le_bytes(data.get(..4)?.try_into().ok()?);
-        match discriminator {
-            0 => Some(BPF_LOADER_INITIALIZE_BUFFER.to_string()),
-            1 => Some(BPF_LOADER_WRITE.to_string()),
-            2 => Some(BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN.to_string()),
-            3 => Some(BPF_LOADER_UPGRADE.to_string()),
-            4 => Some(BPF_LOADER_SET_AUTHORITY.to_string()),
-            5 => Some(BPF_LOADER_CLOSE.to_string()),
-            6 => Some(BPF_LOADER_EXTEND_PROGRAM.to_string()),
-            7 => Some(BPF_LOADER_SET_AUTHORITY_CHECKED.to_string()),
-            8 => Some(BPF_LOADER_MIGRATE.to_string()),
-            9 => Some(BPF_LOADER_EXTEND_PROGRAM_CHECKED.to_string()),
-            _ => None,
+            _ if *program_id == ATA_PROGRAM_ID => &[(0, ATA_CREATE), (1, ATA_CREATE_IDEMPOTENT)],
+            _ if *program_id == LOADER_V4_PROGRAM_ID => &[
+                (0, LOADER_V4_WRITE),
+                (1, LOADER_V4_COPY),
+                (2, LOADER_V4_SET_PROGRAM_LENGTH),
+                (3, LOADER_V4_DEPLOY),
+                (4, LOADER_V4_RETRACT),
+                (5, LOADER_V4_TRANSFER_AUTHORITY),
+                (6, LOADER_V4_FINALIZE),
+            ],
+            _ if *program_id == BPF_LOADER_UPGRADEABLE_PROGRAM_ID => &[
+                (0, BPF_LOADER_INITIALIZE_BUFFER),
+                (1, BPF_LOADER_WRITE),
+                (2, BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN),
+                (3, BPF_LOADER_UPGRADE),
+                (4, BPF_LOADER_SET_AUTHORITY),
+                (5, BPF_LOADER_CLOSE),
+                (6, BPF_LOADER_EXTEND_PROGRAM),
+                (7, BPF_LOADER_SET_AUTHORITY_CHECKED),
+                (8, BPF_LOADER_MIGRATE),
+                (9, BPF_LOADER_EXTEND_PROGRAM_CHECKED),
+            ],
+            _ => &[],
         }
     }
 }
@@ -423,20 +414,22 @@ mod tests {
     #[test]
     fn test_identify_system_instructions() {
         assert_eq!(
-            InstructionIdentifier::system(&[0, 0, 0, 0]),
+            InstructionIdentifier::identify(&SYSTEM_PROGRAM_ID, &[0, 0, 0, 0]),
             Some(SYSTEM_CREATE_ACCOUNT.to_string())
         );
         assert_eq!(
-            InstructionIdentifier::system(&[3, 0, 0, 0]),
+            InstructionIdentifier::identify(&SYSTEM_PROGRAM_ID, &[3, 0, 0, 0]),
             Some(SYSTEM_CREATE_ACCOUNT_WITH_SEED.to_string())
         );
     }
 
     #[test]
     fn test_identify_ata_instructions() {
-        assert_eq!(InstructionIdentifier::ata(&[]), Some(ATA_CREATE.to_string()));
-        assert_eq!(InstructionIdentifier::ata(&[0]), Some(ATA_CREATE.to_string()));
-        assert_eq!(InstructionIdentifier::ata(&[1]), Some(ATA_CREATE_IDEMPOTENT.to_string()));
+        let identify = |data: &[u8]| InstructionIdentifier::identify(&ATA_PROGRAM_ID, data);
+        assert_eq!(identify(&[]), Some(ATA_CREATE.to_string()));
+        assert_eq!(identify(&[0]), Some(ATA_CREATE.to_string()));
+        assert_eq!(identify(&[1]), Some(ATA_CREATE_IDEMPOTENT.to_string()));
+        assert_eq!(identify(&[2]), None);
     }
 
     #[test]
@@ -729,5 +722,68 @@ mod tests {
             timestamp: 0,
         };
         assert_eq!(rule.count_increment(&mut ctx), 0);
+    }
+
+    fn bpf_loader_set_authority_count(
+        ix: solana_sdk::instruction::Instruction,
+        kora: &Pubkey,
+        instr_type: &str,
+    ) -> u64 {
+        use crate::transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::transaction::VersionedTransaction;
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(kora)));
+        let tx = VersionedTransaction { signatures: vec![], message };
+        let mut tx_resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let rule = InstructionRule::lifetime(
+            BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
+            instr_type.to_string(),
+            10,
+        );
+        let mut ctx = LimiterContext {
+            transaction: &mut tx_resolved,
+            user_id: "user".to_string(),
+            kora_signer: Some(*kora),
+            timestamp: 0,
+        };
+        rule.count_increment(&mut ctx)
+    }
+
+    #[test]
+    fn test_bpf_loader_upgradeable_set_authority_counts_when_kora_is_new_authority() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+
+        let kora = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let ix = loader_v3::set_upgrade_authority(&program, &attacker, Some(&kora));
+        assert_eq!(bpf_loader_set_authority_count(ix, &kora, BPF_LOADER_SET_AUTHORITY), 1);
+    }
+
+    #[test]
+    fn test_bpf_loader_upgradeable_set_authority_checked_counts_when_kora_is_new_authority() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+
+        let kora = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let ix = loader_v3::set_upgrade_authority_checked(&program, &attacker, &kora);
+        assert_eq!(bpf_loader_set_authority_count(ix, &kora, BPF_LOADER_SET_AUTHORITY_CHECKED), 1);
+    }
+
+    #[test]
+    fn test_bpf_loader_upgradeable_set_authority_skips_when_kora_not_involved() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+
+        let kora = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let ix = loader_v3::set_upgrade_authority(&program, &attacker, None);
+        assert_eq!(bpf_loader_set_authority_count(ix, &kora, BPF_LOADER_SET_AUTHORITY), 0);
     }
 }

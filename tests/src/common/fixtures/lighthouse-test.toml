@@ -42,6 +42,7 @@ allowed_programs = [
     "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
     "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA", # Custom Transfer Hook Program Example
     "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95",  # Lighthouse Program
+    "ComputeBudget111111111111111111111111111111",  # Compute Budget Program
 ]
 allowed_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
@@ -119,10 +120,12 @@ allow_unwrap_lamports = true
 allow_reallocate = true
 
 [kora.usage_limit]
-enabled = false
-cache_url = "redis://redis:6379"
+enabled = true
 fallback_if_unavailable = false
-rules = []
+
+[[kora.usage_limit.rules]]
+type = "transaction"
+max = 1000000
 
 [kora.bundle]
 enabled = true

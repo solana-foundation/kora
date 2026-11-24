@@ -1,5 +1,5 @@
 use crate::{
-    bundle::{BundleError, BundleProcessingMode, BundleProcessor, JitoError},
+    bundle::{BundleError, BundleProcessor, JitoError},
     config::Config,
     plugin::PluginExecutionContext,
     rpc_server::middleware_utils::default_sig_verify,
@@ -90,7 +90,6 @@ pub(super) async fn sign_bundle_transactions(
         rpc_client,
         sig_verify,
         Some(plugin_context),
-        BundleProcessingMode::CheckUsage(user_id.as_deref()),
     )
     .await?;
 
@@ -115,8 +114,9 @@ pub(super) async fn sign_bundle_transactions(
     }
 
     let will_send = matches!(plugin_context, PluginExecutionContext::SignAndSendBundle);
-    let signed_resolved =
-        processor.sign_all(&signer, &fee_payer, rpc_client, config, will_send).await?;
+    let signed_resolved = processor
+        .sign_all(&signer, &fee_payer, rpc_client, config, will_send, user_id.as_deref())
+        .await?;
 
     let encoded_signed: Vec<String> = signed_resolved
         .iter()
@@ -308,6 +308,103 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_sign_bundle_caps_fee_including_lighthouse_assertion() {
+        let mut validation = ValidationConfigBuilder::new()
+            .with_allowed_programs(vec![
+                "11111111111111111111111111111111".to_string(),
+                solana_compute_budget_interface::id().to_string(),
+            ])
+            .build();
+        validation.max_allowed_lamports = 7_000;
+        validation.price = PriceConfig { model: PriceModel::Free };
+        let mut config = ConfigMockBuilder::new()
+            .with_bundle_enabled(true)
+            .with_usage_limit_enabled(false)
+            .with_validation(validation)
+            .build();
+        config.kora.lighthouse.enabled = true;
+        let _m = setup_config_mock(config);
+        let signer_pubkey = setup_or_get_test_signer();
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let rpc_client = Arc::new(
+            RpcMockBuilder::new()
+                .with_fee_estimate(5000)
+                .with_blockhash()
+                .with_simulation()
+                .build(),
+        );
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[
+                solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(
+                    25_000,
+                ),
+                transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1_000),
+            ],
+            Some(&signer_pubkey),
+        ));
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let encoded_tx = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
+
+        let request = SignBundleRequest {
+            transactions: vec![encoded_tx],
+            signer_key: Some(signer_pubkey.to_string()),
+            sig_verify: true,
+            user_id: None,
+            sign_only_indices: None,
+        };
+
+        let err = sign_bundle(&rpc_client, request).await.unwrap_err().to_string();
+        assert!(err.contains("Fee 10000 exceeds maximum allowed 7000"), "Unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn test_sign_bundle_rejects_aggregate_outflow_above_limit() {
+        let mut validation = ValidationConfigBuilder::new()
+            .with_allowed_programs(vec!["11111111111111111111111111111111".to_string()])
+            .build();
+        validation.max_allowed_lamports = 1_000_000;
+        validation.price = PriceConfig { model: PriceModel::Free };
+        validation.fee_payer_policy.system.allow_transfer = true;
+        let _m = ConfigMockBuilder::new()
+            .with_bundle_enabled(true)
+            .with_usage_limit_enabled(false)
+            .with_validation(validation)
+            .build_and_setup();
+        let signer_pubkey = setup_or_get_test_signer();
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let rpc_client = Arc::new(
+            RpcMockBuilder::new()
+                .with_fee_estimate(5000)
+                .with_blockhash()
+                .with_simulation()
+                .build(),
+        );
+
+        let transactions: Vec<String> = (0..2)
+            .map(|_| {
+                let ix = transfer(&signer_pubkey, &Pubkey::new_unique(), 600_000);
+                let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&signer_pubkey)));
+                let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+                TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
+            })
+            .collect();
+
+        let request = SignBundleRequest {
+            transactions,
+            signer_key: Some(signer_pubkey.to_string()),
+            sig_verify: true,
+            user_id: None,
+            sign_only_indices: None,
+        };
+
+        let err = sign_bundle(&rpc_client, request).await.unwrap_err().to_string();
+        assert!(err.contains("Total bundle transfer amount 1200000"), "Unexpected error: {err}");
+    }
+
+    #[tokio::test]
     async fn test_sign_bundle_single_transaction() {
         let mut validation = ValidationConfigBuilder::new()
             .with_allowed_programs(vec!["11111111111111111111111111111111".to_string()])
@@ -402,7 +499,7 @@ mod tests {
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
-                r#"{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":123},"value":{"summary":"succeeded","transactionResults":[{"err":null,"logs":["Program 11111111111111111111111111111111 invoke [1]"]},{"err":null,"logs":["Program 11111111111111111111111111111111 invoke [1]"],"preExecutionAccounts":[{"lamports":2500000,"owner":"11111111111111111111111111111111","data":["","base64"],"executable":false,"rentEpoch":0}],"postExecutionAccounts":[{"lamports":1000000,"owner":"11111111111111111111111111111111","data":["","base64"],"executable":false,"rentEpoch":0}]},{"err":null,"logs":["Program 11111111111111111111111111111111 invoke [1]"]}]}}}"#,
+                r#"{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":123},"value":{"summary":"succeeded","transactionResults":[{"err":null,"logs":["Program 11111111111111111111111111111111 invoke [1]"],"preExecutionAccounts":[{"lamports":1000000000,"owner":"11111111111111111111111111111111","data":["","base64"],"executable":false,"rentEpoch":0}],"postExecutionAccounts":[{"lamports":1000000000,"owner":"11111111111111111111111111111111","data":["","base64"],"executable":false,"rentEpoch":0}]},{"err":null,"logs":["Program 11111111111111111111111111111111 invoke [1]"],"preExecutionAccounts":[{"lamports":2500000,"owner":"11111111111111111111111111111111","data":["","base64"],"executable":false,"rentEpoch":0}],"postExecutionAccounts":[{"lamports":1000000,"owner":"11111111111111111111111111111111","data":["","base64"],"executable":false,"rentEpoch":0}]},{"err":null,"logs":["Program 11111111111111111111111111111111 invoke [1]"],"preExecutionAccounts":[{"lamports":1000000000,"owner":"11111111111111111111111111111111","data":["","base64"],"executable":false,"rentEpoch":0}],"postExecutionAccounts":[{"lamports":1000000000,"owner":"11111111111111111111111111111111","data":["","base64"],"executable":false,"rentEpoch":0}]}]}}}"#,
             )
             .create();
 
@@ -554,7 +651,6 @@ mod tests {
             &rpc_client,
             false,
             None,
-            BundleProcessingMode::SkipUsage,
         )
         .await
         .unwrap()

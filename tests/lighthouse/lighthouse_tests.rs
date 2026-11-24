@@ -14,15 +14,16 @@
 
 use crate::common::*;
 use jsonrpsee::rpc_params;
-use kora_lib::transaction::TransactionUtil;
+use kora_lib::{fee::fee::TransactionFeeUtil, transaction::TransactionUtil};
 use solana_client::rpc_config::RpcSimulateTransactionConfig;
+use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_sdk::{pubkey::Pubkey, signature::Signer, transaction::VersionedTransaction};
 use std::str::FromStr;
 
 const LIGHTHOUSE_PROGRAM_ID: &str = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
 
 /// Kora builds the assertion from a balance it reads at signing time, asserting
-/// the fee payer keeps at least `balance - estimated_fee`. Another test paying a
+/// the fee payer keeps at least `balance - estimated_fee - permitted outflow`. Another test paying a
 /// fee from the same fee payer in between makes that assertion fail, so the
 /// tests that only read state share this lock while the two that send take it
 /// exclusively.
@@ -135,6 +136,71 @@ async fn test_sign_transaction_with_lighthouse_legacy() {
     );
 }
 
+/// Without a SetComputeUnitLimit, the appended assertion raises the default compute unit
+/// limit and therefore the priority fee. The quote must already include that, so the signed
+/// transaction costs exactly what the client paid and the assertion holds.
+#[tokio::test]
+async fn test_sign_transaction_with_lighthouse_prices_assertion_priority_fee() {
+    let ctx = crate::ctx().await;
+    let _fee_payer_sol = FEE_PAYER_SOL.read().await;
+    let rpc_client = ctx.rpc_client();
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let mut payment = 1;
+    let mut quoted_lamports = 0;
+    let mut base64_transaction = String::new();
+    for _ in 0..2 {
+        base64_transaction = ctx
+            .transaction_builder()
+            .with_fee_payer(fee_payer)
+            .with_signer(&sender)
+            .with_instruction(ComputeBudgetInstruction::set_compute_unit_price(50_000))
+            .with_spl_transfer(&token_mint, &sender.pubkey(), &fee_payer, payment)
+            .with_transfer(&sender.pubkey(), &recipient, 10)
+            .build()
+            .await
+            .expect("Failed to create transaction");
+
+        let estimate: serde_json::Value = ctx
+            .rpc_call(
+                "estimateTransactionFee",
+                rpc_params![base64_transaction.clone(), token_mint.to_string()],
+            )
+            .await
+            .expect("Failed to estimate transaction fee");
+        quoted_lamports = estimate["fee_in_lamports"].as_u64().unwrap();
+        payment = estimate["fee_in_token"].as_u64().unwrap();
+    }
+
+    let response: serde_json::Value = ctx
+        .rpc_call("signTransaction", rpc_params![base64_transaction])
+        .await
+        .expect("Failed to sign transaction");
+    response.assert_success();
+
+    let signed_tx =
+        TransactionUtil::decode_b64_transaction(response["signed_transaction"].as_str().unwrap())
+            .expect("Failed to decode signed transaction");
+    assert!(verify_lighthouse_assertion_added(&signed_tx));
+
+    let signed_fee = TransactionFeeUtil::get_estimate_fee(rpc_client, &signed_tx.message)
+        .await
+        .expect("Failed to get fee for signed message");
+    assert_eq!(quoted_lamports, signed_fee, "The quote must cover the transaction Kora signed");
+
+    let sim_result =
+        rpc_client.simulate_transaction(&signed_tx).await.expect("Failed to simulate transaction");
+    assert!(
+        sim_result.value.err.is_none(),
+        "The assertion must hold once the full fee is charged: {:?}",
+        sim_result.value.err
+    );
+}
+
 #[tokio::test]
 async fn test_sign_transaction_with_lighthouse_v0() {
     let ctx = crate::ctx().await;
@@ -209,6 +275,8 @@ async fn test_sign_transaction_with_lighthouse_v0() {
 #[tokio::test]
 async fn test_sign_bundle_with_lighthouse() {
     let ctx = crate::ctx().await;
+    let _fee_payer_sol = FEE_PAYER_SOL.read().await;
+    let rpc_client = ctx.rpc_client();
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -252,25 +320,23 @@ async fn test_sign_bundle_with_lighthouse() {
         let signed_tx = TransactionUtil::decode_b64_transaction(signed_tx_value.as_str().unwrap())
             .expect("Failed to decode signed transaction");
 
-        let is_last = i == signed_txs.len() - 1;
+        assert_eq!(
+            signed_tx.message.instructions().len(),
+            original_ix_counts[i] + 1,
+            "Bundle member {i} should have a lighthouse assertion added"
+        );
+        assert!(
+            verify_lighthouse_assertion_added(&signed_tx),
+            "Bundle member {i}'s last instruction should be lighthouse program"
+        );
 
-        if is_last {
-            assert_eq!(
-                signed_tx.message.instructions().len(),
-                original_ix_counts[i] + 1,
-                "Last transaction should have lighthouse assertion added"
-            );
-            assert!(
-                verify_lighthouse_assertion_added(&signed_tx),
-                "Last transaction's last instruction should be lighthouse program"
-            );
-        } else {
-            assert_eq!(
-                signed_tx.message.instructions().len(),
-                original_ix_counts[i],
-                "Non-last transactions should not have lighthouse assertion"
-            );
-        }
+        let sim_result =
+            rpc_client.simulate_transaction(&signed_tx).await.expect("Failed to simulate member");
+        assert!(
+            sim_result.value.err.is_none(),
+            "Bundle member {i} should pass its lighthouse assertion: {:?}",
+            sim_result.value.err
+        );
     }
 }
 
@@ -349,6 +415,114 @@ async fn test_lighthouse_end_to_end_with_client_resign() {
         "Transaction simulation should succeed after re-signing. Error: {:?}",
         sim_result.value.err
     );
+}
+
+#[tokio::test]
+async fn test_lighthouse_assertion_permits_allowed_fee_payer_transfer() {
+    let ctx = crate::ctx().await;
+    let _fee_payer_sol = FEE_PAYER_SOL.read().await;
+    let rpc_client = ctx.rpc_client();
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let base64_transaction = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&sender)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc() + 100,
+        )
+        .with_transfer(&fee_payer, &recipient, 1)
+        .build()
+        .await
+        .expect("Failed to create transaction");
+
+    let response: serde_json::Value = ctx
+        .rpc_call("signTransaction", rpc_params![base64_transaction])
+        .await
+        .expect("Failed to sign transaction");
+    response.assert_success();
+
+    let mut signed_tx =
+        TransactionUtil::decode_b64_transaction(response["signed_transaction"].as_str().unwrap())
+            .expect("Failed to decode signed transaction");
+    assert!(verify_lighthouse_assertion_added(&signed_tx), "Expected a lighthouse assertion");
+    resign_transaction(&mut signed_tx, &sender).expect("Failed to re-sign transaction");
+
+    let sim_result = rpc_client
+        .simulate_transaction_with_config(
+            &signed_tx,
+            RpcSimulateTransactionConfig {
+                sig_verify: true,
+                commitment: Some(rpc_client.commitment()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("Failed to simulate transaction");
+    assert!(
+        sim_result.value.err.is_none(),
+        "An allowed fee-payer transfer must pass the assertion: {:?}",
+        sim_result.value.err
+    );
+}
+
+/// Every bundle member's assertion must leave room for the fee-payer transfers up to it
+#[tokio::test]
+async fn test_sign_bundle_lighthouse_permits_allowed_fee_payer_transfers() {
+    let ctx = crate::ctx().await;
+    let _fee_payer_sol = FEE_PAYER_SOL.read().await;
+    let rpc_client = ctx.rpc_client();
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let mut transactions = Vec::new();
+    for _ in 0..2 {
+        transactions.push(
+            ctx.transaction_builder()
+                .with_fee_payer(fee_payer)
+                .with_signer(&sender)
+                .with_spl_transfer(
+                    &token_mint,
+                    &sender.pubkey(),
+                    &fee_payer,
+                    tests::common::helpers::get_fee_for_default_transaction_in_usdc() + 100,
+                )
+                .with_transfer(&fee_payer, &recipient, 1)
+                .build()
+                .await
+                .expect("Failed to create transaction"),
+        );
+    }
+
+    let response: serde_json::Value =
+        ctx.rpc_call("signBundle", rpc_params![transactions]).await.expect("Failed to sign bundle");
+    response.assert_success();
+
+    for (i, signed_tx_value) in
+        response["signed_transactions"].as_array().unwrap().iter().enumerate()
+    {
+        let signed_tx = TransactionUtil::decode_b64_transaction(signed_tx_value.as_str().unwrap())
+            .expect("Failed to decode signed transaction");
+        assert!(verify_lighthouse_assertion_added(&signed_tx), "Member {i} lacks an assertion");
+
+        let sim_result =
+            rpc_client.simulate_transaction(&signed_tx).await.expect("Failed to simulate member");
+        assert!(
+            sim_result.value.err.is_none(),
+            "Bundle member {i} must pass its assertion: {:?}",
+            sim_result.value.err
+        );
+    }
 }
 
 /// V0 version of the end-to-end test

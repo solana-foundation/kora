@@ -107,6 +107,9 @@ fn close_entry(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     if program_data.lamports() != 0 {
         return Err(ProgramError::InvalidAccountData);
     }
+    if program.owner != &BPF_LOADER_UPGRADEABLE && program.lamports() != 0 {
+        return Err(ProgramError::InvalidAccountData);
+    }
 
     let stored_payer =
         Pubkey::try_from(&entry.try_borrow_data()?[ENTRY_PAYER_OFFSET..ENTRY_PAYER_OFFSET + 32])
@@ -120,4 +123,87 @@ fn close_entry(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     **recipient.try_borrow_mut_lamports()? += lamports;
     entry.try_borrow_mut_data()?.fill(0);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LOADER_V4: Pubkey = Pubkey::from_str_const("LoaderV411111111111111111111111111111111111");
+
+    fn close_with_program_account(program_owner: Pubkey, program_lamports: u64) -> ProgramResult {
+        let program_key = Pubkey::new_unique();
+        let payer_key = Pubkey::new_unique();
+        let (entry_key, bump) = entry_address(&program_key);
+        let (program_data_key, _) =
+            Pubkey::find_program_address(&[program_key.as_ref()], &BPF_LOADER_UPGRADEABLE);
+        let system = Pubkey::default();
+
+        let mut entry_data = [0u8; ENTRY_LEN];
+        entry_data[ENTRY_PAYER_OFFSET..ENTRY_PAYER_OFFSET + 32].copy_from_slice(payer_key.as_ref());
+        entry_data[64] = bump;
+        let (mut entry_lamports, mut program_lamports, mut program_data_lamports) =
+            (1_000_000, program_lamports, 0);
+        let mut recipient_lamports = 0;
+        let (mut program_bytes, mut program_data_bytes, mut recipient_bytes) = ([], [], []);
+        let registry = id();
+
+        let accounts = [
+            AccountInfo::new(
+                &entry_key,
+                false,
+                true,
+                &mut entry_lamports,
+                &mut entry_data,
+                &registry,
+                false,
+            ),
+            AccountInfo::new(
+                &program_key,
+                false,
+                false,
+                &mut program_lamports,
+                &mut program_bytes,
+                &program_owner,
+                false,
+            ),
+            AccountInfo::new(
+                &program_data_key,
+                false,
+                false,
+                &mut program_data_lamports,
+                &mut program_data_bytes,
+                &system,
+                false,
+            ),
+            AccountInfo::new(
+                &payer_key,
+                false,
+                true,
+                &mut recipient_lamports,
+                &mut recipient_bytes,
+                &system,
+                false,
+            ),
+        ];
+        process_instruction(&registry, &accounts, &[IX_CLOSE_ENTRY])
+    }
+
+    #[test]
+    fn close_entry_rejects_live_loader_v4_program() {
+        assert_eq!(
+            close_with_program_account(LOADER_V4, 1_000_000),
+            Err(ProgramError::InvalidAccountData)
+        );
+    }
+
+    #[test]
+    fn close_entry_allows_closed_loader_v4_program() {
+        assert_eq!(close_with_program_account(Pubkey::default(), 0), Ok(()));
+    }
+
+    #[test]
+    fn close_entry_allows_loader_v3_program_with_closed_program_data() {
+        assert_eq!(close_with_program_account(BPF_LOADER_UPGRADEABLE, 1_000_000), Ok(()));
+    }
 }

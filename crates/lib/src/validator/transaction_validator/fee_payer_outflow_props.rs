@@ -190,13 +190,12 @@ fn expected_net_outflow(scenario: &Scenario) -> Option<i128> {
             }
             Op::CreateAccount { fee_payer_funds: true, lamports } => net += lamports as i128,
             Op::CreateAccount { fee_payer_funds: false, .. } => {}
-            Op::WithdrawNonce { fee_payer_authority, fee_payer_recipient, lamports } => {
-                match (fee_payer_authority, fee_payer_recipient) {
-                    (true, false) => net += lamports as i128,
-                    (false, true) => net -= lamports as i128,
-                    _ => {}
-                }
-            }
+            Op::WithdrawNonce {
+                fee_payer_authority: true,
+                fee_payer_recipient: false,
+                lamports,
+            } => net += lamports as i128,
+            Op::WithdrawNonce { .. } => {}
             Op::AltClose { fee_payer_authority, fee_payer_recipient } => {
                 match (fee_payer_authority, fee_payer_recipient) {
                     (true, false) => net += closed,
@@ -237,6 +236,7 @@ fn harness(scenario: &Scenario) -> Harness {
     let config = ConfigMockBuilder::new()
         .with_price_source(crate::oracle::PriceSource::Mock)
         .with_max_allowed_lamports(scenario.max_allowed_lamports)
+        .with_allowed_tokens(vec![WSOL_DEVNET_MINT.to_string()])
         .build();
     let fee_payer = Pubkey::new_unique();
     let ata_owners: Vec<Pubkey> = (0..ATA_OWNER_POOL).map(|_| Pubkey::new_unique()).collect();

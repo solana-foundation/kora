@@ -27,6 +27,9 @@ impl TokenState for TokenAccount {
     fn owner(&self) -> Pubkey {
         self.owner
     }
+    fn amount(&self) -> u64 {
+        self.amount
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

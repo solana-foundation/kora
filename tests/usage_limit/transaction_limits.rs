@@ -1,7 +1,11 @@
 use crate::{
     common::*,
-    window::{fill_windowed_limit, send_transfer, transfer_past_windowed_limit, within_one_window},
+    window::{
+        build_rejected_transaction, fill_windowed_limit, send_transfer,
+        transfer_past_windowed_limit, within_one_window,
+    },
 };
+use jsonrpsee::rpc_params;
 use solana_sdk::signature::Signer;
 
 /// Test transaction limit enforcement - 4 succeed (windowed limit), 5th fails
@@ -115,4 +119,28 @@ async fn test_independent_wallet_limits() {
     for response in allowed {
         response.assert_success();
     }
+}
+
+/// Config: windowed=4/30s
+#[tokio::test]
+async fn test_rejected_transaction_does_not_consume_quota() {
+    let ctx = crate::ctx().await;
+
+    within_one_window("a rejected request and four sends", || async {
+        let sender = create_funded_wallet(&ctx).await;
+        let user_id = sender.pubkey().to_string();
+
+        let rejected = build_rejected_transaction(&ctx, &sender).await;
+        let err = ctx
+            .rpc_call::<serde_json::Value, _>(
+                "signTransaction",
+                rpc_params![rejected, None::<String>, false, user_id.clone()],
+            )
+            .await
+            .expect_err("Expected a transaction moving fee-payer SOL past the cap to be rejected");
+        err.assert_contains_message("Invalid transaction");
+
+        fill_windowed_limit(&ctx, &sender, &user_id).await;
+    })
+    .await;
 }

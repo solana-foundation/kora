@@ -64,9 +64,7 @@ impl DrainRole for AltRole {
             ),
             Self::FreezeAuthority => freeze_lookup_table(Pubkey::new_unique(), *actor),
             Self::DeactivateAuthority => deactivate_lookup_table(Pubkey::new_unique(), *actor),
-            Self::CloseAuthority => {
-                close_lookup_table(Pubkey::new_unique(), *actor, Pubkey::new_unique())
-            }
+            Self::CloseAuthority => close_lookup_table(Pubkey::new_unique(), *actor, *actor),
         }
     }
 }

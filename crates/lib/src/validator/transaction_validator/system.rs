@@ -4,6 +4,7 @@ use crate::{
     transaction::{ParsedSystemInstructionData, ParsedSystemInstructionType},
 };
 use solana_sdk::pubkey::Pubkey;
+use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
 use std::collections::HashMap;
 
 impl TransactionValidator {
@@ -40,16 +41,32 @@ impl TransactionValidator {
         for instruction in
             system_instructions.get(&ParsedSystemInstructionType::SystemAssign).unwrap_or(&vec![])
         {
-            if let ParsedSystemInstructionData::SystemAssign { owner, .. } = instruction {
+            if let ParsedSystemInstructionData::SystemAssign { account, owner, .. } = instruction {
+                if *account == self.fee_payer_pubkey && *owner != SYSTEM_PROGRAM_ID {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be reassigned to a program other than the System program"
+                            .to_string(),
+                    ));
+                }
                 self.validate_owner_program("Assign", owner)?;
             }
         }
 
         deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemAllocate,
-            ParsedSystemInstructionData::SystemAllocate { account } =>
+            ParsedSystemInstructionData::SystemAllocate { account, .. } =>
             *account == self.fee_payer_pubkey,
             unless self.fee_payer_policy.system.allow_allocate,
             "Fee payer cannot be used for 'System Allocate'");
+
+        for instruction in
+            system_instructions.get(&ParsedSystemInstructionType::SystemAllocate).unwrap_or(&vec![])
+        {
+            if let ParsedSystemInstructionData::SystemAllocate { owner: Some(owner), .. } =
+                instruction
+            {
+                self.validate_owner_program("AllocateWithSeed", owner)?;
+            }
+        }
 
         // allow_create_account gates Kora participating as the funder (payer), the seeded base
         // signer, or the account being created (prefund brick). The owner allowlist/blocklist
@@ -66,9 +83,15 @@ impl TransactionValidator {
                 ..
             } = instruction
             {
-                let fee_payer_participates = *payer == self.fee_payer_pubkey
-                    || *base == Some(self.fee_payer_pubkey)
-                    || *new_account == self.fee_payer_pubkey;
+                if *new_account == self.fee_payer_pubkey {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be the account created by 'System Create Account'"
+                            .to_string(),
+                    ));
+                }
+
+                let fee_payer_participates =
+                    *payer == self.fee_payer_pubkey || *base == Some(self.fee_payer_pubkey);
                 if fee_payer_participates && !self.fee_payer_policy.system.allow_create_account {
                     return Err(KoraError::InvalidTransaction(
                         "Fee payer cannot be used for 'System Create Account'".to_string(),
@@ -80,28 +103,35 @@ impl TransactionValidator {
         }
 
         deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemInitializeNonceAccount,
+            ParsedSystemInstructionData::SystemInitializeNonceAccount { nonce_account, .. } =>
+            *nonce_account == self.fee_payer_pubkey,
+            "Fee payer account cannot be initialized as a nonce account");
+
+        deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemInitializeNonceAccount,
             ParsedSystemInstructionData::SystemInitializeNonceAccount { nonce_authority, .. } =>
             *nonce_authority == self.fee_payer_pubkey,
             unless self.fee_payer_policy.system.nonce.allow_initialize,
             "Fee payer cannot be used for 'System Initialize Nonce Account'");
 
         deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemAdvanceNonceAccount,
-            ParsedSystemInstructionData::SystemAdvanceNonceAccount { nonce_authority, .. } =>
-            *nonce_authority == self.fee_payer_pubkey,
+            ParsedSystemInstructionData::SystemAdvanceNonceAccount { nonce_authority, extra_signers, .. } =>
+            self.fee_payer_signs(nonce_authority, extra_signers),
             unless self.fee_payer_policy.system.nonce.allow_advance,
             "Fee payer cannot be used for 'System Advance Nonce Account'");
 
         deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemAuthorizeNonceAccount,
-            ParsedSystemInstructionData::SystemAuthorizeNonceAccount { nonce_authority, .. } =>
-            *nonce_authority == self.fee_payer_pubkey,
+            ParsedSystemInstructionData::SystemAuthorizeNonceAccount { nonce_authority, extra_signers, .. } =>
+            self.fee_payer_signs(nonce_authority, extra_signers),
             unless self.fee_payer_policy.system.nonce.allow_authorize,
             "Fee payer cannot be used for 'System Authorize Nonce Account'");
 
         // Note: SystemUpgradeNonceAccount not validated - no authority parameter
 
         deny_fee_payer!(system_instructions, ParsedSystemInstructionType::SystemWithdrawNonceAccount,
-            ParsedSystemInstructionData::SystemWithdrawNonceAccount { nonce_account, nonce_authority, .. } =>
-            *nonce_authority == self.fee_payer_pubkey || *nonce_account == self.fee_payer_pubkey,
+            ParsedSystemInstructionData::SystemWithdrawNonceAccount { nonce_account, nonce_authority, recipient, extra_signers, .. } =>
+            self.fee_payer_signs(nonce_authority, extra_signers)
+                || *nonce_account == self.fee_payer_pubkey
+                || *recipient == self.fee_payer_pubkey,
             unless self.fee_payer_policy.system.nonce.allow_withdraw,
             "Fee payer cannot be used for 'System Withdraw Nonce Account'");
 

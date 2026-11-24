@@ -1,3 +1,4 @@
+use crate::sanitize_error;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::pubkey::Pubkey;
 use std::{str::FromStr, time::Duration};
@@ -106,20 +107,20 @@ pub(crate) fn emit_cluster_warnings(
     warnings: &mut Vec<String>,
 ) {
     for mint_addr in missing {
-        let found_on: Vec<&str> = probe_results
+        let found_on: Vec<String> = probe_results
             .iter()
             .filter_map(|(cluster_name, outcome)| match outcome {
                 ProbeOutcome::Found(mints) if mints.contains(mint_addr) => {
-                    Some(cluster_name.as_str())
+                    Some(sanitize_error!(cluster_name))
                 }
                 _ => None,
             })
             .collect();
 
-        let conclusive: Vec<&str> = probe_results
+        let conclusive: Vec<String> = probe_results
             .iter()
             .filter_map(|(name, outcome)| match outcome {
-                ProbeOutcome::Found(_) | ProbeOutcome::NotFound => Some(name.as_str()),
+                ProbeOutcome::Found(_) | ProbeOutcome::NotFound => Some(sanitize_error!(name)),
                 ProbeOutcome::Failed => None,
             })
             .collect();
@@ -151,6 +152,37 @@ pub(crate) fn emit_cluster_warnings(
 mod tests {
     use super::*;
     use std::slice::from_ref;
+
+    #[cfg(not(feature = "unsafe-debug"))]
+    #[test]
+    fn test_warnings_redact_endpoint_credentials() {
+        let mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string();
+        let cases = [
+            vec![(
+                "http://127.0.0.1:18890/v1/PATHSECRET?api-key=QUERYSECRET".to_string(),
+                ProbeOutcome::Found(vec![mint.clone()]),
+            )],
+            vec![
+                ("https://user:USERSECRET@rpc.example.com".to_string(), ProbeOutcome::NotFound),
+                (
+                    "https://rpc.example.com/v2/PATHSECRET?api-key=QUERYSECRET".to_string(),
+                    ProbeOutcome::NotFound,
+                ),
+            ],
+        ];
+
+        for probe_results in cases {
+            let mut warnings = Vec::new();
+            emit_cluster_warnings(from_ref(&mint), &probe_results, &mut warnings);
+
+            assert_eq!(warnings.len(), 1);
+            let warning = &warnings[0];
+            for secret in ["PATHSECRET", "QUERYSECRET", "USERSECRET"] {
+                assert!(!warning.contains(secret), "{secret} leaked in {warning}");
+            }
+            assert!(warning.contains("[REDACTED_"), "endpoint should stay identifiable: {warning}");
+        }
+    }
 
     #[test]
     fn test_missing_mint_triggers_warning() {

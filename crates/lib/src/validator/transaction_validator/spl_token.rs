@@ -21,7 +21,7 @@ impl TransactionValidator {
             unless token_policy(self.fee_payer_policy, *is_2022).allow_approve, "Approve");
 
         deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenBurn,
-            ParsedSPLInstructionData::SplTokenBurn { owner, multisig_signers, is_2022 } =>
+            ParsedSPLInstructionData::SplTokenBurn { owner, multisig_signers, is_2022, .. } =>
             self.fee_payer_signs(owner, multisig_signers),
             unless token_policy(self.fee_payer_policy, *is_2022).allow_burn, "Burn");
 
@@ -38,7 +38,7 @@ impl TransactionValidator {
 
         deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenSetAuthority,
             ParsedSPLInstructionData::SplTokenSetAuthority {
-                authority, new_authority, multisig_signers, is_2022
+                authority, new_authority, multisig_signers, is_2022, ..
             } => (self.fee_payer_signs(authority, multisig_signers)
                 || *new_authority == Some(self.fee_payer_pubkey)),
             unless token_policy(self.fee_payer_policy, *is_2022).allow_set_authority,
@@ -82,13 +82,13 @@ impl TransactionValidator {
             "ThawAccount");
 
         deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenWithdrawExcessLamports,
-            ParsedSPLInstructionData::SplTokenWithdrawExcessLamports { owner, multisig_signers, is_2022 } =>
+            ParsedSPLInstructionData::SplTokenWithdrawExcessLamports { owner, multisig_signers, is_2022, .. } =>
             self.fee_payer_signs(owner, multisig_signers),
             unless token_policy(self.fee_payer_policy, *is_2022).allow_withdraw_excess_lamports,
             "WithdrawExcessLamports");
 
         deny_fee_payer!(spl_instructions, ParsedSPLInstructionType::SplTokenUnwrapLamports,
-            ParsedSPLInstructionData::SplTokenUnwrapLamports { owner, multisig_signers, is_2022 } =>
+            ParsedSPLInstructionData::SplTokenUnwrapLamports { owner, multisig_signers, is_2022, .. } =>
             self.fee_payer_signs(owner, multisig_signers),
             unless token_policy(self.fee_payer_policy, *is_2022).allow_unwrap_lamports,
             "UnwrapLamports");

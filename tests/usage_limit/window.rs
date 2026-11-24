@@ -58,6 +58,21 @@ pub async fn send_transfer(
         .await
 }
 
+/// A signed transaction Kora must reject after it simulates cleanly: the fee payer
+/// transfers more than `max_allowed_lamports` (10_000_000).
+pub async fn build_rejected_transaction(ctx: &TestContext, sender: &Keypair) -> String {
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    ctx.transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_transfer(&sender.pubkey(), &recipient, 1000)
+        .with_transfer(&fee_payer, &recipient, 10_000_001)
+        .with_signer(sender)
+        .build()
+        .await
+        .expect("Failed to build transaction")
+}
+
 /// Sends the full windowed allowance, asserting every send is accepted.
 pub async fn fill_windowed_limit(ctx: &TestContext, sender: &Keypair, user_id: &str) {
     for i in 1..=WINDOWED_MAX {

@@ -33,8 +33,16 @@ pub struct Token2022SecurityInstruction {
     pub accounts: Vec<Pubkey>,
     pub account_usage_policy: Token2022AccountUsagePolicy,
     pub update_authority: Option<Pubkey>,
+    pub authority_kind: Token2022AuthorityKind,
     pub multisig_signers: Vec<Pubkey>,
     pub data_pubkeys: Vec<Token2022SecurityField>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Token2022AuthorityKind {
+    ExtensionUpdate,
+    InterfaceInitialize,
+    WithdrawWithheld,
 }
 
 impl Token2022SecurityInstruction {
@@ -105,6 +113,7 @@ impl Token2022SecurityParser {
                 TokenInstruction::InitializeMintCloseAuthority { close_authority } => {
                     parsed.push(Token2022SecurityInstruction {
                         instruction_name: "Token2022 InitializeMintCloseAuthority",
+                        authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                         extension_type: Some(ExtensionType::MintCloseAuthority),
                         accounts: Self::instruction_accounts(instruction),
                         account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -122,6 +131,7 @@ impl Token2022SecurityParser {
                 TokenInstruction::InitializePermanentDelegate { delegate } => {
                     parsed.push(Token2022SecurityInstruction {
                         instruction_name: "Token2022 InitializePermanentDelegate",
+                        authority_kind: Token2022AuthorityKind::ExtensionUpdate,
                         extension_type: Some(ExtensionType::PermanentDelegate),
                         accounts: Self::instruction_accounts(instruction),
                         account_usage_policy: Token2022AccountUsagePolicy::Ignore,
@@ -168,9 +178,7 @@ impl Token2022SecurityParser {
                     parsed.push(Self::parse_scaled_ui_amount_extension(instruction)?);
                 }
                 TokenInstruction::PausableExtension => {
-                    if let Some(parsed_instruction) = Self::parse_pausable_extension(instruction)? {
-                        parsed.push(parsed_instruction);
-                    }
+                    parsed.push(Self::parse_pausable_extension(instruction)?);
                 }
                 TokenInstruction::DefaultAccountStateExtension => {
                     parsed.push(Self::unsupported_fee_payer_account_check(
@@ -208,11 +216,7 @@ impl Token2022SecurityParser {
                     ));
                 }
                 TokenInstruction::PermissionedBurnExtension => {
-                    parsed.push(Self::unsupported_fee_payer_account_check(
-                        instruction,
-                        "PermissionedBurn extension instruction",
-                        Some(ExtensionType::PermissionedBurn),
-                    ));
+                    parsed.push(Self::parse_permissioned_burn_extension(instruction)?);
                 }
                 TokenInstruction::ConfidentialTransferExtension
                 | TokenInstruction::ConfidentialTransferFeeExtension
@@ -292,6 +296,7 @@ impl Token2022SecurityParser {
     ) -> Token2022SecurityInstruction {
         Token2022SecurityInstruction {
             instruction_name,
+            authority_kind: Token2022AuthorityKind::ExtensionUpdate,
             extension_type,
             accounts: Self::instruction_accounts(instruction),
             account_usage_policy: Token2022AccountUsagePolicy::RejectIfFeePayerPresent,
@@ -530,7 +535,7 @@ mod tests {
         let instruction = Instruction {
             program_id: spl_token_2022_interface::id(),
             accounts: vec![AccountMeta::new(Pubkey::new_unique(), false)],
-            data: vec![46, 0],
+            data: vec![46, 1],
         };
 
         let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
@@ -540,6 +545,28 @@ mod tests {
             parsed[0].account_usage_policy,
             Token2022AccountUsagePolicy::RejectIfFeePayerPresent
         );
+    }
+
+    #[test]
+    fn test_parse_permissioned_burn_initialize_plants_authority() {
+        let authority = Pubkey::new_unique();
+        let instruction =
+            spl_token_2022_interface::extension::permissioned_burn::instruction::initialize(
+                &spl_token_2022_interface::id(),
+                &Pubkey::new_unique(),
+                &authority,
+            )
+            .unwrap();
+
+        let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(
+            parsed[0].account_usage_policy,
+            Token2022AccountUsagePolicy::RejectIfFeePayerPresent
+        );
+        assert_eq!(parsed[0].data_pubkeys.len(), 1);
+        assert_eq!(parsed[0].data_pubkeys[0].pubkey, authority);
+        assert_eq!(parsed[0].data_pubkeys[0].role, Token2022FieldRole::PlantedAuthority);
     }
 
     #[test]

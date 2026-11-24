@@ -1,16 +1,18 @@
 use crate::{
     config::{Config, FeePayerPolicy, ProgramsConfig},
+    constant::{STAKE_PROGRAM_ID, VOTE_PROGRAM_ID},
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation, TransactionFeeUtil},
     token::token::TokenUtil,
     transaction::{
-        ParsedSPLInstructionData, ParsedSystemInstructionData, VersionedTransactionResolved,
+        InstructionOrigin, ParsedSPLInstructionData, ParsedSystemInstructionData,
+        VersionedTransactionResolved,
     },
     validator::parse_pubkey_set,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
-use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
 use solana_transaction::versioned::TransactionVersion;
 use std::collections::HashSet;
 
@@ -92,9 +94,9 @@ impl TransactionValidator {
         self.validate_programs(transaction_resolved)?;
         self.validate_require_one_of_programs(transaction_resolved)?;
         self.validate_priority_fee(transaction_resolved)?;
-        self.validate_transfer_amounts(config, transaction_resolved, rpc_client).await?;
         self.validate_disallowed_accounts(transaction_resolved)?;
         self.validate_fee_payer_usage(config, transaction_resolved)?;
+        self.validate_transfer_amounts(config, transaction_resolved, rpc_client).await?;
 
         Ok(())
     }
@@ -249,6 +251,7 @@ impl TransactionValidator {
         transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
         self.validate_ata_create_instructions(transaction_resolved)?;
+        self.validate_stake_vote_fee_payer_usage(transaction_resolved)?;
 
         self.validate_system_fee_payer_usage(
             transaction_resolved.get_or_parse_system_instructions()?,
@@ -288,6 +291,33 @@ impl TransactionValidator {
         if has_fee_payer_ata_create {
             return Err(KoraError::InvalidTransaction(
                 "Fee payer cannot fund ATA creation (Create or CreateIdempotent)".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn validate_stake_vote_fee_payer_usage(
+        &self,
+        transaction_resolved: &VersionedTransactionResolved,
+    ) -> Result<(), KoraError> {
+        let instructions: Vec<_> = transaction_resolved.instructions_with_origins().collect();
+        let references_fee_payer =
+            |ix: &Instruction| ix.accounts.iter().any(|meta| meta.pubkey == self.fee_payer_pubkey);
+        let fee_payer_in_stake_or_vote = instructions.iter().any(|(ix, origin)| {
+            if ix.program_id != STAKE_PROGRAM_ID && ix.program_id != VOTE_PROGRAM_ID {
+                return false;
+            }
+            // Simulation returns inner Stake and Vote instructions without their accounts, and
+            // a CPI can only pass on accounts its top-level instruction received.
+            references_fee_payer(ix)
+                || matches!(origin, InstructionOrigin::Inner { parent_index, .. }
+                    if instructions.get(*parent_index).is_some_and(|(parent, _)| references_fee_payer(parent)))
+        });
+
+        if fee_payer_in_stake_or_vote {
+            return Err(KoraError::InvalidTransaction(
+                "Fee payer cannot be used in Stake or Vote program instructions".to_string(),
             ));
         }
 
@@ -424,7 +454,7 @@ impl TransactionValidator {
         self.disallowed_accounts.contains(account)
     }
 
-    async fn calculate_total_outflow(
+    pub(crate) async fn calculate_total_outflow(
         &self,
         config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
@@ -553,11 +583,16 @@ mod tests {
         update_config(config).unwrap();
     }
 
+    fn allowed_mint() -> Pubkey {
+        Pubkey::new_from_array([7; 32])
+    }
+
     fn setup_default_config() {
         let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
+            .with_allowed_tokens(vec![allowed_mint().to_string()])
             .with_fee_payer_policy(FeePayerPolicy::default())
             .build();
         setup_both_configs(config);
@@ -568,6 +603,7 @@ mod tests {
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
+            .with_allowed_tokens(vec![allowed_mint().to_string()])
             .with_fee_payer_policy(policy)
             .build();
         setup_both_configs(config);
@@ -578,6 +614,7 @@ mod tests {
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_interface::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
+            .with_allowed_tokens(vec![allowed_mint().to_string()])
             .with_fee_payer_policy(policy)
             .build();
         setup_both_configs(config);
@@ -588,6 +625,7 @@ mod tests {
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
+            .with_allowed_tokens(vec![allowed_mint().to_string()])
             .with_fee_payer_policy(policy)
             .build();
         setup_both_configs(config);
@@ -598,6 +636,7 @@ mod tests {
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
+            .with_allowed_tokens(vec![allowed_mint().to_string()])
             .with_fee_payer_policy(policy)
             .build();
         config.validation.token_2022.allow_confidential_transfers = true;
@@ -1590,6 +1629,47 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_fee_payer_cannot_be_reassigned_to_token_program() {
+        use solana_system_interface::instruction::{allocate, assign_with_seed};
+
+        let fee_payer = Pubkey::new_unique();
+        let token_program = spl_token_interface::id();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_assign = true;
+        policy.system.allow_allocate = true;
+        setup_config_with_policy_and_disallowed(
+            policy,
+            vec![SYSTEM_PROGRAM_ID.to_string(), token_program.to_string()],
+            vec![],
+        );
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instructions = [allocate(&fee_payer, 165), assign(&fee_payer, &token_program)];
+        let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("Fee payer cannot be reassigned"), "{err}");
+
+        let derived = Pubkey::new_unique();
+        let instruction = assign_with_seed(&derived, &fee_payer, "seed", &token_program);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_assign_rejects_off_policy_owner() {
         use solana_system_interface::instruction::assign_with_seed;
 
@@ -1697,12 +1777,52 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_allocate_with_seed_owner_checked_against_program_policy() {
+        use solana_system_interface::instruction::allocate_with_seed;
+        let fee_payer = Pubkey::new_unique();
+        let base = Pubkey::new_unique();
+        let off_policy_owner = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        let validate = |owner: Pubkey| {
+            let derived = Pubkey::create_with_seed(&base, "seed", &owner).unwrap();
+            let instruction = allocate_with_seed(&derived, &base, "seed", 8, &owner);
+            let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        setup_config_with_policy(FeePayerPolicy::default());
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut validate(SYSTEM_PROGRAM_ID), &rpc_client)
+            .await
+            .is_ok());
+        assert!(validator
+            .validate_transaction(config, &mut validate(off_policy_owner), &rpc_client)
+            .await
+            .is_err());
+
+        setup_config_with_policy_and_disallowed(
+            FeePayerPolicy::default(),
+            vec![SYSTEM_PROGRAM_ID.to_string(), off_policy_owner.to_string()],
+            vec![off_policy_owner.to_string()],
+        );
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut validate(off_policy_owner), &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_spl_transfers() {
         let fee_payer = Pubkey::new_unique();
 
         let fee_payer_token_account = Pubkey::new_unique();
         let recipient_token_account = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
 
         let source_token_account =
             TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
@@ -1788,11 +1908,55 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_fee_payer_transfer_of_mint_outside_allowed_tokens_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_transfer = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let off_list_mint = Pubkey::new_unique();
+        let transfer_from = |owner: &Pubkey| {
+            let ix = spl_token_interface::instruction::transfer_checked(
+                &spl_token_interface::id(),
+                &Pubkey::new_unique(),
+                &off_list_mint,
+                &Pubkey::new_unique(),
+                owner,
+                &[],
+                10,
+                6,
+            )
+            .unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+        let result = validator
+            .validate_transaction(config, &mut transfer_from(&fee_payer), &rpc_client)
+            .await;
+        assert!(
+            matches!(&result, Err(KoraError::InvalidTransaction(message)) if message.contains("not in allowed_tokens")),
+            "{result:?}"
+        );
+
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+        let client = Pubkey::new_unique();
+        assert!(validator
+            .validate_transaction(config, &mut transfer_from(&client), &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_spl_transfer_wrapped_in_batch_is_enforced() {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
         let recipient_token_account = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
 
         let source_token_account =
             TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
@@ -1902,12 +2066,44 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_spl_unwrap_lamports_above_max_allowed_lamports_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_unwrap_lamports = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = spl_token_interface::instruction::unwrap_lamports(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            &fee_payer,
+            &[],
+            Some(2_000_000),
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message))
+                if message.contains("Total transfer amount 2000000 exceeds maximum allowed 1000000")
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_token2022_transfers() {
         let fee_payer = Pubkey::new_unique();
 
         let fee_payer_token_account = Pubkey::new_unique();
         let recipient_token_account = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
 
         let rpc_client = RpcMockBuilder::new()
             .with_mint_account(2) // Mock mint with 2 decimals for SPL outflow calculation
@@ -2252,10 +2448,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_ok());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message))
+                if message.contains("recipient must also be the fee payer")
+        ));
 
         let rpc_client = RpcMockBuilder::new().with_account_info(&alt_account).build();
         let mut policy = FeePayerPolicy::default();
@@ -2285,44 +2483,6 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_validate_transfer_amounts_rejects_alt_close_outflow_above_max_allowed_lamports() {
-        let fee_payer = Pubkey::new_unique();
-        let lookup_table = Pubkey::new_unique();
-        let recipient = Pubkey::new_unique();
-        let alt_account = AccountMockBuilder::new()
-            .with_owner(ADDRESS_LOOKUP_TABLE_PROGRAM_ID)
-            .with_lamports(2_000_000)
-            .build();
-
-        let mut policy = FeePayerPolicy::default();
-        policy.alt.allow_close = true;
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![ADDRESS_LOOKUP_TABLE_PROGRAM_ID.to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(policy)
-            .build();
-        setup_both_configs(config);
-
-        let rpc_client = RpcMockBuilder::new().with_account_info(&alt_account).build();
-        let config = get_config().unwrap();
-        let validator = TransactionValidator::new(config, fee_payer).unwrap();
-
-        let close_ix = alt_instruction::close_lookup_table(lookup_table, fee_payer, recipient);
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
-        let mut transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-
-        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
-        assert!(matches!(
-            result,
-            Err(KoraError::InvalidTransaction(message))
-                if message.contains("Total transfer amount 2000000 exceeds maximum allowed 1000000")
-        ));
     }
 
     #[tokio::test]
@@ -2561,12 +2721,44 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_burn_above_max_allowed_lamports_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_burn = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let burn_ix = spl_token_interface::instruction::burn(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &allowed_mint(),
+            &fee_payer,
+            &[],
+            2_000_000,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message))
+                if message.contains("Total transfer amount 2000000 exceeds maximum allowed 1000000")
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_burn() {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_burn = true;
         setup_spl_config_with_policy(policy);
@@ -2592,7 +2784,7 @@ mod tests {
             .await
             .is_ok());
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_burn = false;
         setup_spl_config_with_policy(policy);
@@ -2702,12 +2894,249 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_approve_above_max_allowed_lamports_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_approve = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let approve_ix = spl_token_interface::instruction::approve_checked(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &allowed_mint(),
+            &Pubkey::new_unique(),
+            &fee_payer,
+            &[],
+            2_000_000,
+            6,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message))
+                if message.contains("Total transfer amount 2000000 exceeds maximum allowed 1000000")
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_set_authority_handoff_counts_token_account_value() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_set_authority = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let set_authority = |new_authority: Option<&Pubkey>, authority_type| {
+            let ix = spl_token_interface::instruction::set_authority(
+                &spl_token_interface::id(),
+                &token_account,
+                new_authority,
+                authority_type,
+                &fee_payer,
+                &[],
+            )
+            .unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+        let handoff = |new_owner: &Pubkey| {
+            set_authority(
+                Some(new_owner),
+                spl_token_interface::instruction::AuthorityType::AccountOwner,
+            )
+        };
+        let clear_close_authority =
+            || set_authority(None, spl_token_interface::instruction::AuthorityType::CloseAccount);
+        let mint = allowed_mint();
+        let funded_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&fee_payer)
+            .with_amount(600_000)
+            .with_lamports(500_000)
+            .build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&funded_account, &mint_account]);
+        let mut transaction = handoff(&Pubkey::new_unique());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(
+                &result,
+                Err(KoraError::InvalidTransaction(message))
+                    if message.contains("Total transfer amount 1100000 exceeds maximum allowed 1000000")
+            ),
+            "{result:?}"
+        );
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut transaction = handoff(&fee_payer);
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let mut transaction = handoff(&Pubkey::new_unique());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            result.is_ok(),
+            "an account created in the same transaction holds nothing yet: {result:?}"
+        );
+
+        let deposit_then_handoff = || {
+            let deposit = spl_token_interface::instruction::transfer_checked(
+                &spl_token_interface::id(),
+                &Pubkey::new_unique(),
+                &mint,
+                &token_account,
+                &Pubkey::new_unique(),
+                &[],
+                1_100_000,
+                6,
+            )
+            .unwrap();
+            let handoff = spl_token_interface::instruction::set_authority(
+                &spl_token_interface::id(),
+                &token_account,
+                Some(&Pubkey::new_unique()),
+                spl_token_interface::instruction::AuthorityType::AccountOwner,
+                &fee_payer,
+                &[],
+            )
+            .unwrap();
+            let message =
+                VersionedMessage::Legacy(Message::new(&[deposit, handoff], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_account_responses(vec![None, Some(&mint_account)]);
+        let mut transaction = deposit_then_handoff();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(
+                &result,
+                Err(KoraError::InvalidTransaction(message))
+                    if message.contains("Total transfer amount 1100000 exceeds maximum allowed 1000000")
+            ),
+            "tokens paid into a new account leave with it when it is handed off: {result:?}"
+        );
+
+        let rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&funded_account]);
+        let mut transaction = clear_close_authority();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            result.is_ok(),
+            "clearing the close authority returns it to the fee payer owner: {result:?}"
+        );
+
+        let foreign_owned_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&Pubkey::new_unique())
+            .with_amount(600_000)
+            .with_lamports(500_000)
+            .build();
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&foreign_owned_account, &mint_account]);
+        let mut transaction = clear_close_authority();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(
+                &result,
+                Err(KoraError::InvalidTransaction(message))
+                    if message.contains("Total transfer amount 1100000 exceeds maximum allowed 1000000")
+            ),
+            "clearing the close authority hands it to a foreign owner: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_set_authority_handoff_counts_each_token_once() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        setup_spl_config_with_policy(FeePayerPolicy::default());
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mint = allowed_mint();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+
+        let transfer_then_handoff = |source: &Pubkey, destination: &Pubkey, amount: u64| {
+            let transfer = spl_token_interface::instruction::transfer_checked(
+                &spl_token_interface::id(),
+                source,
+                &mint,
+                destination,
+                &fee_payer,
+                &[],
+                amount,
+                6,
+            )
+            .unwrap();
+            let handoff = spl_token_interface::instruction::set_authority(
+                &spl_token_interface::id(),
+                &token_account,
+                Some(&Pubkey::new_unique()),
+                spl_token_interface::instruction::AuthorityType::AccountOwner,
+                &fee_payer,
+                &[],
+            )
+            .unwrap();
+            let message =
+                VersionedMessage::Legacy(Message::new(&[transfer, handoff], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_account_responses(vec![None, Some(&mint_account)]);
+        let mut transaction = transfer_then_handoff(&Pubkey::new_unique(), &token_account, 600_000);
+        assert_eq!(
+            validator.calculate_total_outflow(config, &mut transaction, &rpc_client).await.unwrap(),
+            600_000,
+            "a fee payer transfer into the handed off account is already charged as a transfer"
+        );
+
+        let funded_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&fee_payer)
+            .with_amount(600_000)
+            .with_lamports(100_000)
+            .build();
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&funded_account, &mint_account]);
+        let mut transaction = transfer_then_handoff(&token_account, &Pubkey::new_unique(), 400_000);
+        assert_eq!(
+            validator.calculate_total_outflow(config, &mut transaction, &rpc_client).await.unwrap(),
+            700_000,
+            "tokens transferred out before the handoff no longer leave with the account"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_approve() {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
         let delegate = Pubkey::new_unique();
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let mint = allowed_mint();
+        let source_token_account =
+            TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_approve = true;
         setup_spl_config_with_policy(policy);
@@ -2760,7 +3189,6 @@ mod tests {
             .await
             .is_err());
 
-        let mint = Pubkey::new_unique();
         let approve_checked_ix = spl_token_interface::instruction::approve_checked(
             &spl_token_interface::id(),
             &fee_payer_token_account,
@@ -2858,7 +3286,14 @@ mod tests {
         let fee_payer_token_account = Pubkey::new_unique();
         let delegate = Pubkey::new_unique();
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let mint = allowed_mint();
+        let source_token_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&fee_payer)
+            .build_token2022();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build_token2022();
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_approve = true;
         setup_token2022_config_with_policy(policy);
@@ -2911,7 +3346,6 @@ mod tests {
             .await
             .is_err());
 
-        let mint = Pubkey::new_unique();
         let approve_checked_ix = spl_token_2022_interface::instruction::approve_checked(
             &spl_token_2022_interface::id(),
             &fee_payer_token_account,
@@ -3016,7 +3450,13 @@ mod tests {
                 false,
                 false,
             ),
-            ("brick vector, allowed", build_ix(fee_payer, other, 1000, allowed_owner), true, true),
+            ("brick vector, allowed", build_ix(fee_payer, other, 1000, allowed_owner), true, false),
+            (
+                "retype vector no funding, allowed",
+                build_ix(fee_payer, fee_payer, 0, allowed_owner),
+                true,
+                false,
+            ),
             // lamports == 0 omits the funder; fee payer as new account must still be gated.
             (
                 "brick vector no funding, disallowed",
@@ -3324,6 +3764,91 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_stake_and_vote_instructions_reject_fee_payer_account() {
+        let fee_payer = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![STAKE_PROGRAM_ID.to_string(), VOTE_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(10_000_000)
+            .build();
+        update_config(config).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let withdraw = |program_id: Pubkey, authority: Pubkey| {
+            Instruction::new_with_bytes(
+                program_id,
+                &[4, 0, 0, 0, 0, 202, 154, 59, 0, 0, 0, 0],
+                vec![
+                    AccountMeta::new(Pubkey::new_unique(), false),
+                    AccountMeta::new(Pubkey::new_unique(), false),
+                    AccountMeta::new_readonly(authority, true),
+                ],
+            )
+        };
+
+        for program_id in [STAKE_PROGRAM_ID, VOTE_PROGRAM_ID] {
+            let message = VersionedMessage::Legacy(Message::new(
+                &[withdraw(program_id, Pubkey::new_unique())],
+                Some(&fee_payer),
+            ));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let result =
+                validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+            assert!(result.is_ok(), "expected Ok for {program_id}, got {result:?}");
+
+            let message = VersionedMessage::Legacy(Message::new(
+                &[withdraw(program_id, fee_payer)],
+                Some(&fee_payer),
+            ));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let result =
+                validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+            match result {
+                Err(KoraError::InvalidTransaction(msg)) => {
+                    assert!(msg.contains("Stake or Vote"), "{msg}");
+                }
+                other => panic!("expected Stake/Vote fee payer rejection, got {other:?}"),
+            }
+
+            let forwarder = Pubkey::new_unique();
+            let forward = |account: Pubkey| {
+                Instruction::new_with_bytes(
+                    forwarder,
+                    &[0],
+                    vec![AccountMeta::new_readonly(account, true)],
+                )
+            };
+            for (forwarded_account, rejected) in [(Pubkey::new_unique(), false), (fee_payer, true)]
+            {
+                let message = VersionedMessage::Legacy(Message::new(
+                    &[forward(forwarded_account)],
+                    Some(&fee_payer),
+                ));
+                let mut transaction =
+                    TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+                transaction
+                    .push_inner_instruction(
+                        0,
+                        Some(0),
+                        Instruction::new_with_bytes(program_id, &[], vec![]),
+                    )
+                    .unwrap();
+                let result = validator.validate_stake_vote_fee_payer_usage(&transaction);
+                assert_eq!(
+                    result.is_err(),
+                    rejected,
+                    "inner {program_id} call under a top-level instruction holding the fee payer: {result:?}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_ata_create_idempotent() {
         let fee_payer = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
@@ -3503,6 +4028,37 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_allocated_fee_payer_cannot_be_initialized_as_foreign_nonce() {
+        use solana_system_interface::instruction::{allocate, create_nonce_account};
+
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_allocate = true;
+        policy.system.nonce.allow_initialize = true;
+        setup_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let initialize_nonce =
+            create_nonce_account(&attacker, &fee_payer, &attacker, 1_000_000).swap_remove(1);
+        let message = VersionedMessage::Legacy(Message::new(
+            &[allocate(&fee_payer, 80), initialize_nonce],
+            Some(&fee_payer),
+        ));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("cannot be initialized as a nonce account"), "{err}");
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_nonce_advance() {
         use solana_system_interface::instruction::advance_nonce_account;
 
@@ -3642,6 +4198,49 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_nonce_withdraw_to_fee_payer_recipient_is_gated_and_never_an_inflow() {
+        use solana_system_interface::instruction::withdraw_nonce_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let decoy_authority = Pubkey::new_unique();
+        let instructions = vec![
+            withdraw_nonce_account(&Pubkey::new_unique(), &decoy_authority, &fee_payer, 1_000),
+            transfer(&fee_payer, &Pubkey::new_unique(), 900),
+        ];
+
+        for (allow_withdraw, expected) in
+            [(false, "System Withdraw Nonce Account"), (true, "exceeds maximum allowed")]
+        {
+            let rpc_client = RpcMockBuilder::new().build();
+            let mut policy = FeePayerPolicy::default();
+            policy.system.allow_transfer = true;
+            policy.system.nonce.allow_withdraw = allow_withdraw;
+            let config = ConfigMockBuilder::new()
+                .with_price_source(PriceSource::Mock)
+                .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+                .with_max_allowed_lamports(800)
+                .with_fee_payer_policy(policy)
+                .with_allow_durable_transactions(true)
+                .build();
+            update_config(config).unwrap();
+
+            let config = get_config().unwrap();
+            let validator = TransactionValidator::new(config, fee_payer).unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+            match validator.validate_transaction(config, &mut transaction, &rpc_client).await {
+                Err(KoraError::InvalidTransaction(msg)) => assert!(msg.contains(expected), "{msg}"),
+                other => {
+                    panic!("allow_withdraw={allow_withdraw}: expected rejection, got {other:?}")
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_withdraw_from_allocated_fee_payer_is_gated_and_capped() {
         use solana_system_interface::instruction::{allocate, withdraw_nonce_account};
 
@@ -3693,7 +4292,14 @@ mod tests {
         let nonce_account = Pubkey::new_unique();
         let new_authority = Pubkey::new_unique();
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let nonce_with_balance = |lamports: u64| solana_sdk::account::Account {
+            lamports,
+            data: vec![0; 80],
+            owner: SYSTEM_PROGRAM_ID,
+            executable: false,
+            rent_epoch: 0,
+        };
+
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_authorize = true;
         setup_config_with_policy(policy);
@@ -3704,10 +4310,24 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client =
+            RpcMockBuilder::new().with_account_info(&nonce_with_balance(1_000)).build();
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
+
+        let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &new_authority);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client =
+            RpcMockBuilder::new().with_account_info(&nonce_with_balance(2_000_000)).build();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("exceeds"), "got {err}");
 
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
@@ -3724,6 +4344,58 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_nonce_rejects_fee_payer_as_extra_signer() {
+        use solana_system_interface::instruction::{
+            advance_nonce_account, authorize_nonce_account, withdraw_nonce_account,
+        };
+
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+        let decoy = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        let cases = [
+            (
+                advance_nonce_account(&nonce_account, &decoy),
+                "Fee payer cannot be used for 'System Advance Nonce Account'",
+            ),
+            (
+                authorize_nonce_account(&nonce_account, &decoy, &recipient),
+                "Fee payer cannot be used for 'System Authorize Nonce Account'",
+            ),
+            (
+                withdraw_nonce_account(&nonce_account, &decoy, &recipient, 1000),
+                "Fee payer cannot be used for 'System Withdraw Nonce Account'",
+            ),
+        ];
+
+        for (mut instruction, expected) in cases {
+            let config = ConfigMockBuilder::new()
+                .with_price_source(PriceSource::Mock)
+                .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+                .with_max_allowed_lamports(1_000_000)
+                .with_fee_payer_policy(FeePayerPolicy::default())
+                .with_allow_durable_transactions(true)
+                .build();
+            update_config(config).unwrap();
+            let config = get_config().unwrap();
+            let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+            instruction.accounts.push(AccountMeta::new_readonly(fee_payer, true));
+            let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let rpc_client = RpcMockBuilder::new().build();
+            let err = validator
+                .validate_transaction(config, &mut transaction, &rpc_client)
+                .await
+                .unwrap_err();
+            assert!(err.to_string().contains(expected), "{expected}: got {err}");
+        }
     }
 
     #[test]
@@ -4069,7 +4741,10 @@ mod tests {
         let fee_payer_token_account = Pubkey::new_unique();
         let new_authority = Pubkey::new_unique();
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let empty_token_account =
+            TokenAccountMockBuilder::new().with_owner(&fee_payer).with_amount(0).build();
+        let rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&empty_token_account]);
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_set_authority = true;
         setup_spl_config_with_policy(policy);
@@ -4095,7 +4770,8 @@ mod tests {
             .await
             .is_ok());
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&empty_token_account]);
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_set_authority = false;
         setup_spl_config_with_policy(policy);
@@ -4131,7 +4807,10 @@ mod tests {
         let fee_payer_token_account = Pubkey::new_unique();
         let new_authority = Pubkey::new_unique();
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let empty_token_account =
+            TokenAccountMockBuilder::new().with_owner(&fee_payer).with_amount(0).build_token2022();
+        let rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&empty_token_account]);
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_set_authority = true;
         setup_token2022_config_with_policy(policy);
@@ -4157,7 +4836,8 @@ mod tests {
             .await
             .is_ok());
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&empty_token_account]);
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_set_authority = false;
         setup_token2022_config_with_policy(policy);
@@ -4960,6 +5640,15 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let token_account = Pubkey::new_unique();
         let other = Pubkey::new_unique();
+        let withdraw_source_rpc = || {
+            RpcMockBuilder::new()
+                .with_account_info(&AccountMockBuilder::new().with_lamports(2_100_000).build())
+                .with_custom_mock(
+                    solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                    serde_json::json!(2_039_280),
+                )
+                .build()
+        };
 
         let build_withdraw = |destination: &Pubkey, authority: &Pubkey| {
             let ix = spl_token_2022_interface::instruction::withdraw_excess_lamports(
@@ -4974,7 +5663,7 @@ mod tests {
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
         };
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = withdraw_source_rpc();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_withdraw_excess_lamports = false;
         setup_token2022_config_with_policy(policy);
@@ -4994,7 +5683,7 @@ mod tests {
             .await
             .is_ok());
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = withdraw_source_rpc();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_withdraw_excess_lamports = true;
         setup_token2022_config_with_policy(policy);
@@ -5308,6 +5997,48 @@ mod tests {
         );
     }
 
+    async fn validate_permissioned_burn_initialize_with_fee_payer_authority(
+        allow_initialize_extension_authority: bool,
+    ) -> Result<(), KoraError> {
+        let fee_payer = Keypair::new();
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_initialize_extension_authority =
+            allow_initialize_extension_authority;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+        let ix = spl_token_2022_interface::extension::permissioned_burn::instruction::initialize(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+            &fee_payer.pubkey(),
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        validator.validate_transaction(config, &mut transaction, &rpc_client).await
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_permissioned_burn_initialize_rejects_fee_payer_authority_by_default() {
+        let result = validate_permissioned_burn_initialize_with_fee_payer_authority(false).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("Token2022 InitializePermissionedBurn authority")),
+            "Expected rejection when fee payer is assigned as permissioned burn authority, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_permissioned_burn_initialize_allowed_with_extension_authority_opt_in() {
+        let result = validate_permissioned_burn_initialize_with_fee_payer_authority(true).await;
+        assert!(result.is_ok(), "Opt-in should allow the fee payer as authority: {result:?}");
+    }
+
     #[tokio::test]
     #[serial]
     async fn test_token2022_transfer_hook_update_rejected_when_policy_denies() {
@@ -5604,6 +6335,45 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_token2022_withdraw_withheld_needs_its_own_policy_flag() {
+        let fee_payer = Keypair::new();
+        let withdraw = || {
+            let ix = spl_token_2022_interface::extension::transfer_fee::instruction::withdraw_withheld_tokens_from_mint(
+                &spl_token_2022_interface::id(),
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &fee_payer.pubkey(),
+                &[],
+            )
+            .unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_update_extension_authority = true;
+        setup_token2022_config_with_policy(policy.clone());
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = validator.validate_transaction(config, &mut withdraw(), &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("current Token2022 extension authority")),
+            "Extension update opt-in alone must not allow withheld withdrawals, got: {result:?}"
+        );
+
+        policy.token_2022.allow_update_extension_authority = false;
+        policy.token_2022.allow_withdraw_withheld_tokens = true;
+        setup_token2022_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = validator.validate_transaction(config, &mut withdraw(), &rpc_client).await;
+        assert!(result.is_ok(), "Withdraw-withheld opt-in should allow the withdrawal: {result:?}");
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_token2022_initialize_mint_close_authority_rejects_disallowed_new_authority() {
         let fee_payer = Keypair::new();
         let mint = Pubkey::new_unique();
@@ -5704,6 +6474,38 @@ mod tests {
             matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains(&expected)),
             "Expected blocked {expected_extension} rejection, got: {result:?}"
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_pause_and_resume_reject_blocked_pausable_extension() {
+        let mint = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let program_id = spl_token_2022_interface::id();
+        for instruction in [
+            spl_token_2022_interface::extension::pausable::instruction::pause(
+                &program_id,
+                &mint,
+                &authority,
+                &[],
+            )
+            .unwrap(),
+            spl_token_2022_interface::extension::pausable::instruction::resume(
+                &program_id,
+                &mint,
+                &authority,
+                &[],
+            )
+            .unwrap(),
+        ] {
+            assert_blocked_token2022_extension_rejected(
+                instruction,
+                vec![],
+                vec!["pausable".to_string()],
+                "Pausable",
+            )
+            .await;
+        }
     }
 
     #[tokio::test]
@@ -5931,7 +6733,7 @@ mod tests {
     async fn test_fee_payer_policy_mixed_instructions() {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
+        let mint = allowed_mint();
 
         let revoke_ix = spl_token_interface::instruction::revoke(
             &spl_token_interface::id(),
@@ -5951,7 +6753,7 @@ mod tests {
         )
         .unwrap();
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_revoke = true;
         policy.spl_token.allow_burn = true;
@@ -5971,7 +6773,7 @@ mod tests {
             "Both policies true should pass"
         );
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_revoke = true;
         policy.spl_token.allow_burn = false;
@@ -5993,7 +6795,7 @@ mod tests {
             panic!("Expected InvalidTransaction error for burn policy");
         }
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_revoke = false;
         policy.spl_token.allow_burn = true;
@@ -6439,6 +7241,31 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_bpf_v3_authorityless_close_of_fee_payer_to_foreign_recipient_rejected() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.bpf_loader_upgradeable.allow_close = true;
+        setup_bpf_v3_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v3::close_any(&fee_payer, &attacker, None, None);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .expect_err("closing the fee payer to a foreign recipient must be rejected");
+        assert!(err.to_string().contains("must refund the fee payer"), "got: {err}");
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_bpf_v3_close_with_self_recipient_accepted() {
         // Closing back to Kora is fine — Kora reclaims its own rent.
         use solana_loader_v3_interface::instruction as loader_v3;
@@ -6460,6 +7287,33 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_upgrade_with_foreign_spill_blocked_by_drainage_guard() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.bpf_loader_upgradeable.allow_upgrade = true;
+        setup_bpf_v3_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v3::upgrade(&program, &buffer, &fee_payer, &attacker);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .expect_err("foreign spill must be rejected");
+        assert!(err.to_string().contains("drainage guard"), "got: {err}");
     }
 
     #[tokio::test]
@@ -6728,6 +7582,75 @@ mod tests {
             result.is_ok(),
             "allow_update_extension_authority opt-in should allow metadata authority use: {result:?}"
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_interface_initialize_with_fee_payer_mint_authority_needs_own_flag() {
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let foreign_authority = Pubkey::new_unique();
+        let initializers = [
+            spl_token_metadata_interface::instruction::initialize(
+                &spl_token_2022_interface::id(),
+                &mint,
+                &foreign_authority,
+                &mint,
+                &fee_payer,
+                "Token".to_string(),
+                "TKN".to_string(),
+                "https://example.com/token.json".to_string(),
+            ),
+            spl_token_group_interface::instruction::initialize_group(
+                &spl_token_2022_interface::id(),
+                &mint,
+                &mint,
+                &fee_payer,
+                Some(foreign_authority),
+                8,
+            ),
+            spl_token_group_interface::instruction::initialize_member(
+                &spl_token_2022_interface::id(),
+                &mint,
+                &mint,
+                &fee_payer,
+                &Pubkey::new_unique(),
+                &foreign_authority,
+            ),
+        ];
+
+        for instruction in initializers {
+            let mut policy = FeePayerPolicy::default();
+            policy.token_2022.allow_update_extension_authority = true;
+            setup_token2022_config_interface_allowed(policy.clone());
+            let config = get_config().unwrap();
+            let validator = TransactionValidator::new(config, fee_payer).unwrap();
+            let rpc_client = RpcMockBuilder::new().build();
+            let message = VersionedMessage::Legacy(Message::new(
+                std::slice::from_ref(&instruction),
+                Some(&fee_payer),
+            ));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let result =
+                validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+            assert!(
+                matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("current Token2022 extension authority")),
+                "extension update opt-in alone must not allow mint-authority interface init, got: {result:?}"
+            );
+
+            policy.token_2022.allow_update_extension_authority = false;
+            policy.token_2022.allow_initialize_interface_extension = true;
+            setup_token2022_config_interface_allowed(policy);
+            let config = get_config().unwrap();
+            let validator = TransactionValidator::new(config, fee_payer).unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let result =
+                validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+            assert!(result.is_ok(), "interface init opt-in should allow it: {result:?}");
+        }
     }
 
     #[tokio::test]
