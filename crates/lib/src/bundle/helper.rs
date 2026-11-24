@@ -50,7 +50,8 @@ impl BundleProcessor {
         transactions: &[String],
         sign_only_indices: Option<Vec<usize>>,
     ) -> Result<(Vec<String>, HashMap<usize, usize>), KoraError> {
-        let indices = sign_only_indices.unwrap_or_else(|| (0..transactions.len()).collect());
+        let mut indices = sign_only_indices.unwrap_or_else(|| (0..transactions.len()).collect());
+        indices.sort_unstable();
 
         let mut index_to_position: HashMap<usize, usize> = HashMap::with_capacity(indices.len());
         let mut filtered: Vec<String> = Vec::with_capacity(indices.len());
@@ -226,8 +227,9 @@ impl BundleProcessor {
             let fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, resolved).await?;
             let assertion_fee = TransactionFeeUtil::get_lighthouse_assertion_fee(
                 resolved,
+                &fee_payer,
                 appends_lighthouse_assertion,
-            );
+            )?;
             total_solana_estimated_fee = total_solana_estimated_fee
                 .checked_add(fee)
                 .and_then(|total| total.checked_add(assertion_fee))
@@ -610,6 +612,21 @@ mod tests {
             BundleProcessor::extract_transactions_to_process(&txs, Some(vec![0, 2])).unwrap();
         assert_eq!(result, vec!["tx0".to_string(), "tx2".to_string()]);
         assert_eq!(index_to_position.len(), 2);
+        assert_eq!(index_to_position.get(&0), Some(&0));
+        assert_eq!(index_to_position.get(&2), Some(&1));
+    }
+
+    #[test]
+    fn test_extract_transactions_keeps_bundle_order_for_unordered_indices() {
+        let txs = vec!["tx0".to_string(), "tx1".to_string(), "tx2".to_string()];
+        let (result, index_to_position) =
+            BundleProcessor::extract_transactions_to_process(&txs, Some(vec![2, 0])).unwrap();
+        assert_eq!(
+            result,
+            vec!["tx0".to_string(), "tx2".to_string()],
+            "Cumulative Lighthouse allowances are computed in this order, so it must match the \
+             order the bundle executes in"
+        );
         assert_eq!(index_to_position.get(&0), Some(&0));
         assert_eq!(index_to_position.get(&2), Some(&1));
     }
