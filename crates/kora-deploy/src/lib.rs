@@ -245,7 +245,7 @@ async fn deploy_inner(ctx: &DeployCtx<'_>, cfg: &DeployConfig<'_>) -> Result<Dep
             .value
             .is_some();
         if is_already_live {
-            log::info!("Program {} is already live, skipping deployment.", program.pubkey());
+            println!("Program {} is already live, skipping deployment.", program.pubkey());
             remove_state_file_on_success(ctx.state_path, "Deploy");
             return Ok(DeployResult {
                 kora_pubkey,
@@ -380,7 +380,7 @@ async fn load_or_init_deploy_state(
             }
         }
 
-        log::info!("resuming deployment from state file, skipping {} chunks", st.written_chunks);
+        println!("resuming deployment from state file, skipping {} chunks", st.written_chunks);
         Ok((program, buffer, program_data, kora_pubkey, st))
     } else {
         let kora_pubkey = fetch_kora_pubkey(ctx.http, ctx.kora_url).await?;
@@ -573,7 +573,7 @@ async fn load_or_init_upgrade_state(
             .context("invalid buffer keypair in state")?;
         let kora_pubkey =
             Pubkey::from_str(&st.kora_pubkey).context("invalid kora pubkey in state")?;
-        log::info!("resuming upgrade from state file, skipping {} chunks", st.written_chunks);
+        println!("resuming upgrade from state file, skipping {} chunks", st.written_chunks);
         Ok(Some((buffer, kora_pubkey, st)))
     } else {
         let kora_pubkey = fetch_kora_pubkey(ctx.http, ctx.kora_url).await?;
@@ -595,9 +595,7 @@ async fn load_or_init_upgrade_state(
             bytes.len(),
             current_program_hash,
         ) {
-            log::info!(
-                "Program {program} is already up to date with this binary, skipping upgrade."
-            );
+            println!("Program {program} is already up to date with this binary, skipping upgrade.");
             return Ok(None);
         }
 
@@ -608,7 +606,7 @@ async fn load_or_init_upgrade_state(
             let needed = u32::try_from(bytes.len() - max_allowed_len)
                 .context("program binary size growth exceeds u32::MAX")?;
             let additional_bytes = needed.max(10_240);
-            log::info!(
+            println!(
                 "ProgramData account {program_data} capacity ({max_allowed_len} bytes) is smaller \
                  than target binary ({} bytes); extending by {additional_bytes} bytes...",
                 bytes.len()
@@ -886,7 +884,7 @@ async fn check_upgrade_already_landed(
     });
 
     if is_landed {
-        log::info!("Program {program} is already upgraded, skipping upgrade transaction.");
+        println!("Program {program} is already upgraded, skipping upgrade transaction.");
         remove_state_file_on_success(ctx.state_path, "Upgrade");
         Ok(true)
     } else if state.written_chunks == 0 {
