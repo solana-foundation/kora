@@ -1,5 +1,5 @@
 #[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 #[cfg(not(unix))]
 use std::os::windows::fs::OpenOptionsExt;
 use std::{
@@ -74,6 +74,8 @@ fn save_state_file<T: Serialize>(state: &T, path: &Path, type_name: &str) -> Res
         .with_context(|| format!("failed to serialize {type_name}"))?;
 
     let temp_path = temp_path(path);
+    // Remove any stale temporary file so previous open modes / permissions do not persist.
+    let _ = fs::remove_file(&temp_path);
 
     let write_res = (|| -> Result<()> {
         let mut file = {
@@ -98,6 +100,11 @@ fn save_state_file<T: Serialize>(state: &T, path: &Path, type_name: &str) -> Res
         .with_context(|| {
             format!("failed to open temp {type_name} for writing: {}", temp_path.display())
         })?;
+
+        #[cfg(unix)]
+        {
+            let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
+        }
 
         file.write_all(data.as_bytes()).with_context(|| {
             format!("failed to write temp {type_name} to {}", temp_path.display())
@@ -180,7 +187,7 @@ impl ChunkWriterState for UpgradeState {
 }
 
 /// Shared interface for chunk uploading and invariant checks across deploy and upgrade states.
-pub trait ChunkWriterState: Send {
+pub trait ChunkWriterState: Send + Sync {
     fn written_chunks(&self) -> usize;
     fn set_written_chunks(&mut self, count: usize);
     fn program_hash(&self) -> &str;

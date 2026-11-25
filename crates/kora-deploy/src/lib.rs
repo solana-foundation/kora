@@ -1,5 +1,6 @@
 #![allow(deprecated)]
 
+pub mod sanitize;
 pub mod state;
 #[cfg(test)]
 pub mod tests;
@@ -128,7 +129,7 @@ impl<'a> DeployCtx<'a> {
         Self { http, rpc, kora_url, user_id, state_path, cleanup_on_failure, resume }
     }
 
-    fn from_config(
+    fn from_deploy_config(
         cfg: &'a DeployConfig<'_>,
         http: &'a reqwest::Client,
         rpc: &'a Arc<RpcClient>,
@@ -220,7 +221,7 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
         cfg.rpc_url.to_string(),
         CommitmentConfig::confirmed(),
     ));
-    let ctx = DeployCtx::from_config(cfg, &http, &rpc);
+    let ctx = DeployCtx::from_deploy_config(cfg, &http, &rpc);
 
     deploy_inner(&ctx, cfg).await
 }
@@ -405,7 +406,7 @@ async fn load_or_init_deploy_state(
                 "failed to create buffer account",
                 |err| log::warn!(
                     "failed to close buffer: {}; keeping state file for manual recovery",
-                    err
+                    sanitize_error!(err)
                 ),
                 ctx,
                 &buffer,
@@ -474,7 +475,7 @@ async fn handle_state_invariant_violation(
                 "written_chunks exceeds chunk_count (corrupted state or smaller .so file)",
                 |e| log::warn!(
                     "failed to close buffer: {}; keeping state file for manual recovery",
-                    e
+                    sanitize_error!(e)
                 ),
                 ctx,
                 buffer,
@@ -597,15 +598,16 @@ async fn load_or_init_upgrade_state(
             log::info!(
                 "Program {program} is already up to date with this binary, skipping upgrade."
             );
-            remove_state_file_on_success(state_path, "Upgrade");
             return Ok(None);
         }
 
         let max_allowed_len = pdata_account.data.len().saturating_sub(meta_len);
         if bytes.len() > max_allowed_len {
             // Expand ProgramData account capacity before buffer creation so upgrades to larger binaries succeed.
-            let additional_bytes = u32::try_from(bytes.len() - max_allowed_len)
+            // SIMD-0431 requires at least 10 KiB in additional_bytes.
+            let needed = u32::try_from(bytes.len() - max_allowed_len)
                 .context("program binary size growth exceeds u32::MAX")?;
+            let additional_bytes = needed.max(10_240);
             log::info!(
                 "ProgramData account {program_data} capacity ({max_allowed_len} bytes) is smaller \
                  than target binary ({} bytes); extending by {additional_bytes} bytes...",
@@ -675,7 +677,7 @@ async fn load_or_init_upgrade_state(
                 "failed to create buffer account",
                 |err| log::warn!(
                     "failed to close buffer: {}; keeping state file for manual recovery",
-                    err
+                    sanitize_error!(err)
                 ),
                 ctx,
                 &buffer,
@@ -712,7 +714,10 @@ async fn write_chunks<S: ChunkWriterState>(
                     cleanup_buffer!(
                         "failed to save chunk state",
                         |err| {
-                            log::warn!("failed to close buffer: {}; keeping state file for manual recovery", err)
+                            log::warn!(
+                                "failed to close buffer: {}; keeping state file for manual recovery",
+                                sanitize_error!(err)
+                            )
                         },
                         ctx,
                         buffer,
@@ -729,7 +734,7 @@ async fn write_chunks<S: ChunkWriterState>(
                     "chunk write failed",
                     |err| log::warn!(
                         "failed to close buffer: {}; keeping state file for manual recovery",
-                        err
+                        sanitize_error!(err)
                     ),
                     ctx,
                     buffer,
@@ -809,7 +814,7 @@ async fn finalize_deploy(
                 "deploy transaction failed",
                 |err| log::warn!(
                     "failed to close buffer: {}; keeping state file for manual recovery",
-                    err
+                    sanitize_error!(err)
                 ),
                 ctx,
                 buffer,
@@ -858,7 +863,10 @@ async fn check_upgrade_already_landed(
         } else {
             pdata.data.len().saturating_sub(meta_len)
         };
-        if pdata.data.len() < meta_len + expected_len {
+        let Some(end) = meta_len.checked_add(expected_len) else {
+            return false;
+        };
+        if pdata.data.len() < end {
             return false;
         }
         let Ok(UpgradeableLoaderState::ProgramData { slot, .. }) =
@@ -873,7 +881,7 @@ async fn check_upgrade_already_landed(
         // Trailing-zero check is intentionally omitted here: programs previously upgraded to larger binaries
         // retain non-zero leftover bytes past the active length when shrunk, but slot advancement + matching hash
         // proves this specific upgrade landed.
-        let binary_slice = &pdata.data[meta_len..meta_len + expected_len];
+        let binary_slice = &pdata.data[meta_len..end];
         hash(binary_slice).to_string() == state.program_hash
     });
 
@@ -906,6 +914,22 @@ async fn finalize_upgrade(
 ) -> Result<Signature> {
     let state_path = ctx.state_path;
 
+    // The loader rejects upgrades in the same slot the program was deployed or extended.
+    if let Ok(slot) = ctx.rpc.get_slot().await {
+        let pdata_addr = derive_program_data_address(program);
+        if let Ok(pdata_acc) = ctx.rpc.get_account(&pdata_addr).await {
+            let pdata_slot = pdata_acc
+                .data
+                .get(4..12)
+                .and_then(|b| b.try_into().ok())
+                .map(u64::from_le_bytes)
+                .unwrap_or(0);
+            if slot <= pdata_slot {
+                let _ = wait_for_next_slot(ctx.rpc).await;
+            }
+        }
+    }
+
     let mut upgrade_ix = loader_v3::upgrade(program, &buffer.pubkey(), kora_pubkey, kora_pubkey);
     mark_signer(&mut upgrade_ix, &buffer.pubkey());
     // Appends owner wallet as a required signer so Kora's paymaster validator can verify registry ownership.
@@ -930,7 +954,7 @@ async fn finalize_upgrade(
                 "upgrade transaction failed",
                 |err| log::warn!(
                     "failed to close buffer: {}; keeping state file for manual recovery",
-                    err
+                    sanitize_error!(err)
                 ),
                 ctx,
                 buffer,
@@ -1147,7 +1171,6 @@ fn verify_upgrade_authority_account(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn close(
     rpc_url: &str,
     kora_url: &str,
@@ -1330,10 +1353,13 @@ async fn await_tx(rpc: &RpcClient, sig: &Signature) -> Result<()> {
             Err(err) => {
                 // Abort immediately on permanent errors (e.g. bad API key) instead of masking them behind a 60s timeout.
                 if !is_transient_rpc_error(&err) {
-                    return Err(anyhow::Error::from(err)
+                    return Err(anyhow::anyhow!(sanitize_error!(err))
                         .context(format!("RPC error while awaiting confirmation for {sig}")));
                 }
-                log::debug!("transient error confirming {sig}: {err}; retrying...");
+                log::debug!(
+                    "transient error confirming {sig}: {}; retrying...",
+                    sanitize_error!(err)
+                );
             }
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -1352,11 +1378,10 @@ async fn wait_for_next_slot(rpc: &RpcClient) -> Result<()> {
             },
             Err(err) => {
                 if !is_transient_rpc_error(&err) {
-                    return Err(
-                        anyhow::Error::from(err).context("RPC error while waiting for next slot")
-                    );
+                    return Err(anyhow::anyhow!(sanitize_error!(err))
+                        .context("RPC error while waiting for next slot"));
                 }
-                log::debug!("transient error fetching slot: {err}; retrying...");
+                log::debug!("transient error fetching slot: {}; retrying...", sanitize_error!(err));
             }
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -1631,7 +1656,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res = load_or_init_deploy_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", cfg.wallet).await;
         assert!(res.is_ok());
@@ -1677,7 +1702,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res = load_or_init_deploy_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", cfg.wallet).await;
         match res {
@@ -1732,7 +1757,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res = load_or_init_deploy_state(&ctx, &[1, 2, 3, 4, 5], "dummy-hash", cfg.wallet).await;
         match res {
@@ -1768,7 +1793,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let Err(err) = load_or_init_deploy_state(&ctx, &[1, 2, 3], "hash", None).await else {
             panic!("expected error");
@@ -1794,7 +1819,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let Err(err) = load_or_init_deploy_state(&ctx, &[1, 2, 3], "hash", None).await else {
             panic!("expected error");
@@ -1840,7 +1865,7 @@ mod inline_tests {
             cleanup_on_failure: true,
             state_path: state_path.clone(),
         };
-        let ctx_wrong = DeployCtx::from_config(&cfg_wrong, &http, &mock_rpc);
+        let ctx_wrong = DeployCtx::from_deploy_config(&cfg_wrong, &http, &mock_rpc);
         let Err(err) =
             load_or_init_deploy_state(&ctx_wrong, &[1, 2], "hash", cfg_wrong.wallet).await
         else {
@@ -1858,7 +1883,7 @@ mod inline_tests {
             cleanup_on_failure: true,
             state_path: state_path.clone(),
         };
-        let ctx_none = DeployCtx::from_config(&cfg_none, &http, &mock_rpc);
+        let ctx_none = DeployCtx::from_deploy_config(&cfg_none, &http, &mock_rpc);
         let Err(err) = load_or_init_deploy_state(&ctx_none, &[1, 2], "hash", cfg_none.wallet).await
         else {
             panic!("expected error");
@@ -1876,7 +1901,7 @@ mod inline_tests {
             cleanup_on_failure: true,
             state_path: state_path.clone(),
         };
-        let ctx_match = DeployCtx::from_config(&cfg_match, &http, &mock_rpc);
+        let ctx_match = DeployCtx::from_deploy_config(&cfg_match, &http, &mock_rpc);
         let res = load_or_init_deploy_state(&ctx_match, &[1, 2], "hash", cfg_match.wallet).await;
         assert!(res.is_ok());
 
@@ -1958,7 +1983,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res =
             write_chunks(&ctx, &bytes, &buffer, &kora_pubkey, &mut state, WRITE_CHUNK_SIZE, 3)
@@ -2014,7 +2039,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res =
             write_chunks(&ctx, &bytes, &buffer, &kora_pubkey, &mut state, WRITE_CHUNK_SIZE, 4)
@@ -2066,7 +2091,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res =
             write_chunks(&ctx, &bytes, &buffer, &kora_pubkey, &mut state, WRITE_CHUNK_SIZE, 4)
@@ -2133,7 +2158,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res = deploy_inner(&ctx, &cfg).await;
         assert!(res.is_ok());
@@ -2179,7 +2204,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res = finalize_deploy(&ctx, &bytes, &program, &buffer, &kora_pubkey, cfg.wallet).await;
         assert!(res.is_ok());
@@ -2225,7 +2250,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res = finalize_deploy(&ctx, &bytes, &program, &buffer, &kora_pubkey, cfg.wallet).await;
         assert!(res.is_err());
@@ -2271,7 +2296,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res =
             validate_state_invariants(&ctx, &buffer, &kora_pubkey, &state, "new-hash", 5).await;
@@ -2317,7 +2342,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res =
             validate_state_invariants(&ctx, &buffer, &kora_pubkey, &state, "same-hash", 10).await;
@@ -2358,7 +2383,7 @@ mod inline_tests {
             state_path: state_path.clone(),
         };
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res =
             validate_state_invariants(&ctx, &buffer, &kora_pubkey, &state, "same-hash", 10).await;
@@ -2613,7 +2638,7 @@ mod inline_tests {
     }
 
     #[tokio::test]
-    async fn test_upgrade_already_up_to_date_returns_outcome_and_removes_state() {
+    async fn test_upgrade_already_up_to_date_returns_outcome() {
         let program = Pubkey::new_unique();
         let upgrade_authority = Pubkey::new_unique();
         let elf_bytes = vec![0xCA; 200];
@@ -2659,7 +2684,7 @@ mod inline_tests {
         let res = upgrade_inner(&ctx, &cfg).await;
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), UpgradeOutcome::AlreadyUpToDate);
-        assert!(!state_path.exists(), "State file should be cleaned up on already up to date");
+        assert!(!state_path.exists(), "State file must not exist on already up to date");
 
         payer_mock.assert_async().await;
         no_sign_mock.assert_async().await;
@@ -3917,7 +3942,7 @@ mod inline_tests {
         };
 
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res = deploy_inner(&ctx, &cfg).await;
         assert!(res.is_err());
@@ -3967,7 +3992,7 @@ mod inline_tests {
         };
 
         let http = reqwest::Client::new();
-        let ctx = DeployCtx::from_config(&cfg, &http, &mock_rpc);
+        let ctx = DeployCtx::from_deploy_config(&cfg, &http, &mock_rpc);
 
         let res = deploy_inner(&ctx, &cfg).await;
         assert!(res.is_ok());

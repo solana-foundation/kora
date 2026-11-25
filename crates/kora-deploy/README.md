@@ -83,12 +83,11 @@ You can check if the paymaster finalized it manually:
 solana program show <PROGRAM_ID>
 ```
 If it's not live, you can't resume, and automatic cleanup failed,
-the buffer may be stuck. You can manually close it using
-`solana program close`. The state file (`.kora-deploy-state.json` or
-`.kora-upgrade-state.json`) stores the `buffer_keypair` (and `program_keypair`
-for fresh deploys) as raw JSON byte arrays. To use them with the Solana CLI,
-copy the array of numbers (e.g., `[1,2,...]`) into a new file and pass that
-file to the CLI, then delete the state file to start over.
+the buffer may remain on-chain until the paymaster's reaper reclaims it.
+Note that because the paymaster is the on-chain buffer authority (not your local wallet),
+the buffer cannot be closed directly with `solana program close`. You can delete the
+local state file (`.kora-deploy-state.json` or `.kora-upgrade-state.json`)
+to start a fresh deployment.
 
 ## Trade-offs
 
