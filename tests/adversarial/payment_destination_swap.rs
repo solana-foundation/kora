@@ -7,7 +7,9 @@
 // recreate it at the same address with another mint and owner, inside the transaction or between
 // signing and landing. A signature from the fee payer counts as such a closer, since a caller can
 // collect it before the account becomes a payment destination. These tests prove that with these
-// flags only the fee payer's associated token account counts as a payment destination.
+// flags only the fee payer's associated token account counts as a payment destination, and that
+// the fee payer never closes a token account it owns: a wrapped SOL account closes with its
+// balance, which would hand a payment made into it back to the caller.
 
 use crate::common::{assertions::RpcErrorAssertions, *};
 use jsonrpsee::rpc_params;
@@ -287,4 +289,45 @@ async fn test_payment_into_fee_payer_ata_accepted_when_fee_payer_can_close() {
         .await
         .expect("Expected a payment into the fee payer's associated token account to be signed");
     assert!(response["signed_transaction"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_fee_payer_close_of_own_token_account_rejected() {
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
+    let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
+    let creator = create_funded_wallet(&ctx).await;
+    let kora_token_account = create_token_account_at_keypair_address(
+        &ctx,
+        &creator,
+        &setup.usdc_mint.pubkey(),
+        &fee_payer_pubkey,
+        None,
+    )
+    .await;
+
+    let close_ix = token_instruction::close_account(
+        &spl_token_interface::id(),
+        &kora_token_account.pubkey(),
+        &creator.pubkey(),
+        &fee_payer_pubkey,
+        &[],
+    )
+    .expect("Failed to create CloseAccount instruction");
+
+    let malicious_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer_pubkey)
+        .with_instruction(close_ix)
+        .build()
+        .await
+        .expect("Failed to create transaction closing a fee payer token account");
+
+    let result =
+        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![malicious_tx]).await;
+
+    match result {
+        Err(error) => error.assert_contains_message("owned by Kora"),
+        Ok(_) => panic!("Expected the fee payer not to close a token account it owns"),
+    }
 }

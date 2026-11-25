@@ -94,6 +94,8 @@ First stable release since 2.0.5. It includes every 2.1 and 2.2 beta. Audit stat
 
 - a payment counts only into a token account with no close authority, or a separate `payment_address` as close authority. When the payment address is the fee payer and `allow_close_account` or `allow_set_authority` is on for that token program, only the fee payer's associated token account counts (#786)
 
+- the fee payer never closes a token account it owns, or one created in the same transaction, even with `allow_close_account` (#786)
+
 #### deploy_authority plugin and kora-deploy
 
 - upgrade kora-deploy. Loader-v3 buffer writes, deploys, upgrades and buffer closes through the plugin need the buffer keypair's signature, and deploys also need the program keypair's (#782)
