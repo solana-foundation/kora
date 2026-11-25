@@ -1,12 +1,13 @@
 use crate::{
+    cache::CacheUtil,
     config::{Config, FeePayerPolicy, ProgramsConfig},
     constant::{STAKE_PROGRAM_ID, VOTE_PROGRAM_ID},
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation, TransactionFeeUtil},
-    token::token::TokenUtil,
+    token::token::{TokenType, TokenUtil},
     transaction::{
-        InstructionOrigin, ParsedSPLInstructionData, ParsedSystemInstructionData,
-        VersionedTransactionResolved,
+        InstructionOrigin, ParsedSPLInstructionData, ParsedSPLInstructionType,
+        ParsedSystemInstructionData, VersionedTransactionResolved,
     },
     validator::parse_pubkey_set,
 };
@@ -294,6 +295,57 @@ impl TransactionValidator {
             return Err(KoraError::InvalidTransaction(
                 "Fee payer cannot fund ATA creation (Create or CreateIdempotent)".to_string(),
             ));
+        }
+
+        Ok(())
+    }
+
+    /// Rejects a fee payer CloseAccount of a token account the fee payer owns or that is missing
+    /// before the transaction, whatever `allow_close_account` says.
+    async fn validate_fee_payer_token_account_closes(
+        &self,
+        config: &Config,
+        transaction_resolved: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+    ) -> Result<(), KoraError> {
+        let closes: Vec<Pubkey> = transaction_resolved
+            .get_or_parse_spl_instructions()?
+            .get(&ParsedSPLInstructionType::SplTokenCloseAccount)
+            .into_iter()
+            .flatten()
+            .filter_map(|instruction| match instruction {
+                ParsedSPLInstructionData::SplTokenCloseAccount {
+                    owner,
+                    account,
+                    multisig_signers,
+                    ..
+                } if self.fee_payer_signs(owner, multisig_signers) => Some(*account),
+                _ => None,
+            })
+            .collect();
+
+        for account in closes {
+            let account_data =
+                match CacheUtil::get_account(config, rpc_client, &account, true).await {
+                    Ok(account_data) => account_data,
+                    Err(KoraError::AccountNotFound(_)) => {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "Fee payer cannot close token account {account} missing before the \
+                             transaction"
+                        )))
+                    }
+                    Err(e) => return Err(e),
+                };
+            let token_program = TokenType::get_token_program_from_owner(&account_data.owner)?;
+            let owner = token_program
+                .unpack_token_account(&account_data.data)
+                .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token account: {e}")))?
+                .owner();
+            if owner == self.fee_payer_pubkey {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Fee payer cannot close token account {account} owned by the fee payer"
+                )));
+            }
         }
 
         Ok(())
@@ -2906,7 +2958,7 @@ mod tests {
 
     async fn close_token_account_as_fee_payer(
         fee_payer: Pubkey,
-        token_account_owner: Pubkey,
+        token_account_owner: Option<Pubkey>,
     ) -> Result<(), KoraError> {
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_close_account = true;
@@ -2914,13 +2966,19 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
-        let token_account = TokenAccountMockBuilder::new()
-            .with_owner(&token_account_owner)
-            .with_close_authority(Some(fee_payer))
-            .with_amount(0)
-            .with_lamports(5_000)
-            .build();
-        let rpc_client = RpcMockBuilder::new().with_account_info(&token_account).build();
+        let rpc_client = match token_account_owner {
+            Some(owner) => RpcMockBuilder::new()
+                .with_account_info(
+                    &TokenAccountMockBuilder::new()
+                        .with_owner(&owner)
+                        .with_close_authority(Some(fee_payer))
+                        .with_amount(0)
+                        .with_lamports(5_000)
+                        .build(),
+                )
+                .build(),
+            None => RpcMockBuilder::new().with_account_not_found().build(),
+        };
 
         let close_ix = spl_token_interface::instruction::close_account(
             &spl_token_interface::id(),
@@ -2940,41 +2998,21 @@ mod tests {
     #[serial]
     async fn test_fee_payer_cannot_close_token_account_it_owns_even_when_allowed() {
         let fee_payer = Pubkey::new_unique();
-        let result = close_token_account_as_fee_payer(fee_payer, fee_payer).await;
+        let result = close_token_account_as_fee_payer(fee_payer, Some(fee_payer)).await;
         assert!(matches!(
             result,
-            Err(KoraError::InvalidTransaction(message)) if message.contains("owned by Kora")
+            Err(KoraError::InvalidTransaction(message)) if message.contains("owned by the fee payer")
         ));
     }
 
     #[tokio::test]
     #[serial]
-    async fn test_fee_payer_cannot_close_token_account_created_in_the_same_transaction() {
-        let fee_payer = Pubkey::new_unique();
-        let mut policy = FeePayerPolicy::default();
-        policy.spl_token.allow_close_account = true;
-        setup_spl_config_with_policy(policy);
-        let config = get_config().unwrap();
-        let validator = TransactionValidator::new(config, fee_payer).unwrap();
-        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
-
-        let close_ix = spl_token_interface::instruction::close_account(
-            &spl_token_interface::id(),
-            &Pubkey::new_unique(),
-            &fee_payer,
-            &fee_payer,
-            &[],
-        )
-        .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
-        let mut transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-
-        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+    async fn test_fee_payer_cannot_close_token_account_missing_before_the_transaction() {
+        let result = close_token_account_as_fee_payer(Pubkey::new_unique(), None).await;
         assert!(matches!(
             result,
             Err(KoraError::InvalidTransaction(message))
-                if message.contains("created in the same transaction")
+                if message.contains("missing before the transaction")
         ));
     }
 
@@ -2982,7 +3020,8 @@ mod tests {
     #[serial]
     async fn test_fee_payer_can_close_user_token_account_it_is_close_authority_of() {
         let result =
-            close_token_account_as_fee_payer(Pubkey::new_unique(), Pubkey::new_unique()).await;
+            close_token_account_as_fee_payer(Pubkey::new_unique(), Some(Pubkey::new_unique()))
+                .await;
         assert!(result.is_ok(), "{result:?}");
     }
 

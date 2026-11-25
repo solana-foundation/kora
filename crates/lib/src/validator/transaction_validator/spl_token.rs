@@ -1,15 +1,8 @@
 use super::TransactionValidator;
 use crate::{
-    cache::CacheUtil,
-    config::Config,
     error::KoraError,
-    token::token::TokenType,
-    transaction::{
-        ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionResolved,
-    },
+    transaction::{ParsedSPLInstructionData, ParsedSPLInstructionType},
 };
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 
 impl TransactionValidator {
@@ -99,64 +92,6 @@ impl TransactionValidator {
             self.fee_payer_signs(owner, multisig_signers),
             unless token_policy(self.fee_payer_policy, *is_2022).allow_unwrap_lamports,
             "UnwrapLamports");
-
-        Ok(())
-    }
-
-    /// Not flag-gated: `allow_close_account` only covers token accounts the fee payer is the close
-    /// authority of but does not own. A native account closes with its balance, so closing the
-    /// fee payer's wrapped SOL account to the caller would hand back a payment made into it
-    /// earlier in the transaction or bundle, while the close outflow only counts the balance from
-    /// before. An account missing before the transaction is rejected too, since the transaction
-    /// or bundle may create it as the fee payer's associated token account.
-    pub(super) async fn validate_fee_payer_token_account_closes(
-        &self,
-        config: &Config,
-        transaction_resolved: &mut VersionedTransactionResolved,
-        rpc_client: &RpcClient,
-    ) -> Result<(), KoraError> {
-        let closes: Vec<Pubkey> = transaction_resolved
-            .get_or_parse_spl_instructions()?
-            .get(&ParsedSPLInstructionType::SplTokenCloseAccount)
-            .into_iter()
-            .flatten()
-            .filter_map(|instruction| match instruction {
-                ParsedSPLInstructionData::SplTokenCloseAccount {
-                    owner,
-                    account,
-                    multisig_signers,
-                    ..
-                } if self.fee_payer_signs(owner, multisig_signers) => Some(*account),
-                _ => None,
-            })
-            .collect();
-        if closes.is_empty() {
-            return Ok(());
-        }
-
-        for account in closes {
-            let account_data =
-                match CacheUtil::get_account(config, rpc_client, &account, true).await {
-                    Ok(account_data) => account_data,
-                    Err(KoraError::AccountNotFound(_)) => {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "Fee payer cannot close token account {account} created in the same \
-                             transaction"
-                        )))
-                    }
-                    Err(e) => return Err(e),
-                };
-            let token_program = TokenType::get_token_program_from_owner(&account_data.owner)?;
-            let owner = token_program
-                .unpack_token_account(&account_data.data)
-                .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token account: {e}")))?
-                .owner();
-            if owner == self.fee_payer_pubkey {
-                return Err(KoraError::InvalidTransaction(format!(
-                    "Fee payer cannot close token account {account} owned by Kora"
-                )));
-            }
-        }
 
         Ok(())
     }

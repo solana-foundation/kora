@@ -10,6 +10,10 @@ use std::str::FromStr;
 use crate::common::constants::*;
 #[cfg(test)]
 use crate::common::TestContext;
+#[cfg(test)]
+use solana_program_pack::Pack;
+#[cfg(test)]
+use spl_token_interface::instruction::{self as token_instruction, AuthorityType};
 
 /// Default fee for a transaction with 2 signers (5000 lamports each)
 /// This is used for a lot of tests that only has sender and fee payer as signers
@@ -178,8 +182,8 @@ pub async fn create_funded_wallet(ctx: &TestContext) -> Keypair {
     wallet
 }
 
-/// Creates an SPL token account of `mint` at a fresh keypair address, with `owner` as its token
-/// owner and `close_authority` as its close authority.
+/// The creator initializes the account as its own and hands the owner over with SetAuthority, so
+/// any `owner` works without its signature.
 #[cfg(test)]
 pub async fn create_token_account_at_keypair_address(
     ctx: &TestContext,
@@ -188,9 +192,6 @@ pub async fn create_token_account_at_keypair_address(
     owner: &Pubkey,
     close_authority: Option<&Pubkey>,
 ) -> Keypair {
-    use solana_program_pack::Pack;
-    use spl_token_interface::instruction::{self as token_instruction, AuthorityType};
-
     let account = Keypair::new();
     let rent = ctx
         .rpc_client()

@@ -195,14 +195,9 @@ impl TokenUtil {
         }
     }
 
-    /// The destination's mint is read before the transaction, so whoever can close the account
-    /// could recreate it at the same address with another mint and owner, inside the transaction
-    /// or between signing and landing. A signature from the fee payer does not help: a caller can
-    /// collect one for a close or SetAuthority before the account becomes a payment destination
-    /// and land it afterwards. So when the payment address is the fee payer and the policy lets
-    /// the fee payer close or re-authorize token accounts, only its associated token account
-    /// counts, since that address can only ever hold the same mint and owner.
-    #[allow(clippy::too_many_arguments)]
+    /// Whether a payment into `destination` counts: nobody but a separate payment address may be
+    /// able to close it, and a fee payer that may close or re-authorize token accounts only gets
+    /// paid into its associated token account.
     fn is_stable_payment_destination(
         config: &Config,
         destination: &Pubkey,
@@ -210,7 +205,6 @@ impl TokenUtil {
         close_authority: Option<Pubkey>,
         kora_owner: &Pubkey,
         fee_payer: &Pubkey,
-        token_program_id: Pubkey,
         is_2022: bool,
     ) -> bool {
         if kora_owner != fee_payer {
@@ -220,10 +214,18 @@ impl TokenUtil {
             return false;
         }
         let policy = &config.validation.fee_payer_policy;
-        let (can_close, can_set_authority) = if is_2022 {
-            (policy.token_2022.allow_close_account, policy.token_2022.allow_set_authority)
+        let (can_close, can_set_authority, token_program_id) = if is_2022 {
+            (
+                policy.token_2022.allow_close_account,
+                policy.token_2022.allow_set_authority,
+                spl_token_2022_interface::id(),
+            )
         } else {
-            (policy.spl_token.allow_close_account, policy.spl_token.allow_set_authority)
+            (
+                policy.spl_token.allow_close_account,
+                policy.spl_token.allow_set_authority,
+                spl_token_interface::id(),
+            )
         };
         !(can_close || can_set_authority)
             || *destination
@@ -299,13 +301,12 @@ impl TokenUtil {
                             *close_authority,
                             kora_owner,
                             fee_payer,
-                            token_program.program_id(),
                             *is_2022,
                         );
                         if !stable {
                             log::warn!(
-                                "Ignoring payment into {destination_address}: an authority other \
-                                 than the payment address can close it or rewrite it"
+                                "Ignoring payment into {destination_address}: the destination can \
+                                 be closed or re-authorized"
                             );
                         }
                         stable

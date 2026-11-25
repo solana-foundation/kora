@@ -1759,33 +1759,56 @@ mod tests_token {
         assert!(err.to_string().contains("does not match destination mint"), "{err}");
     }
 
+    #[derive(Clone, Copy)]
+    enum FeePayerCan {
+        Nothing,
+        Close,
+        SetAuthority,
+    }
+
     async fn payment_counted(
         payment_address: Pubkey,
         fee_payer: Pubkey,
         destination_address: Pubkey,
         close_authority: Option<Pubkey>,
-        fee_payer_can_close: bool,
+        is_2022: bool,
+        fee_payer_can: FeePayerCan,
     ) -> bool {
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let source_address = Pubkey::new_unique();
-        let source_account = TokenAccountMockBuilder::new()
-            .with_mint(&mint)
-            .with_owner(&Pubkey::new_unique())
-            .build();
+        let source_account =
+            TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&Pubkey::new_unique());
         let destination_account = TokenAccountMockBuilder::new()
             .with_mint(&mint)
             .with_owner(&payment_address)
-            .with_close_authority(close_authority)
-            .build();
+            .with_close_authority(close_authority);
+        let (source_account, destination_account) = if is_2022 {
+            (source_account.build_token2022(), destination_account.build_token2022())
+        } else {
+            (source_account.build(), destination_account.build())
+        };
 
-        let payment = spl_token_interface::instruction::transfer(
-            &spl_token_interface::id(),
-            &source_address,
-            &destination_address,
-            &Pubkey::new_unique(),
-            &[],
-            1_000_000,
-        )
+        let authority = Pubkey::new_unique();
+        #[allow(deprecated)]
+        let payment = if is_2022 {
+            spl_token_2022_interface::instruction::transfer(
+                &spl_token_2022_interface::id(),
+                &source_address,
+                &destination_address,
+                &authority,
+                &[],
+                1_000_000,
+            )
+        } else {
+            spl_token_interface::instruction::transfer(
+                &spl_token_interface::id(),
+                &source_address,
+                &destination_address,
+                &authority,
+                &[],
+                1_000_000,
+            )
+        }
         .unwrap();
         let message = VersionedMessage::Legacy(Message::new(&[payment], Some(&fee_payer)));
         let mut transaction_resolved =
@@ -1795,7 +1818,17 @@ mod tests_token {
 
         let mut config = get_config().unwrap();
         config.kora.cache.enabled = false;
-        config.validation.fee_payer_policy.spl_token.allow_close_account = fee_payer_can_close;
+        let policy = &mut config.validation.fee_payer_policy;
+        let (allow_close_account, allow_set_authority) = if is_2022 {
+            (&mut policy.token_2022.allow_close_account, &mut policy.token_2022.allow_set_authority)
+        } else {
+            (&mut policy.spl_token.allow_close_account, &mut policy.spl_token.allow_set_authority)
+        };
+        match fee_payer_can {
+            FeePayerCan::Nothing => {}
+            FeePayerCan::Close => *allow_close_account = true,
+            FeePayerCan::SetAuthority => *allow_set_authority = true,
+        }
         TokenUtil::find_kora_token_transfers(
             &config,
             &mut transaction_resolved,
@@ -1828,7 +1861,8 @@ mod tests_token {
                     fee_payer,
                     Pubkey::new_unique(),
                     close_authority,
-                    true
+                    false,
+                    FeePayerCan::Nothing,
                 )
                 .await,
                 counted,
@@ -1847,20 +1881,37 @@ mod tests_token {
             &mint,
             &spl_token_interface::id(),
         );
+        let ata_2022 = get_associated_token_address_with_program_id(
+            &fee_payer,
+            &mint,
+            &spl_token_2022_interface::id(),
+        );
+        let non_ata = Pubkey::new_unique();
 
-        for (destination, close_authority, fee_payer_can_close, counted) in [
-            (Pubkey::new_unique(), None, false, true),
-            (Pubkey::new_unique(), None, true, false),
-            (ata, None, true, true),
-            (Pubkey::new_unique(), Some(fee_payer), false, false),
-            (ata, Some(fee_payer), false, false),
+        for (destination, close_authority, is_2022, fee_payer_can, counted) in [
+            (non_ata, None, false, FeePayerCan::Nothing, true),
+            (non_ata, None, false, FeePayerCan::Close, false),
+            (non_ata, None, false, FeePayerCan::SetAuthority, false),
+            (ata, None, false, FeePayerCan::Close, true),
+            (ata, None, false, FeePayerCan::SetAuthority, true),
+            (non_ata, None, true, FeePayerCan::Close, false),
+            (ata_2022, None, true, FeePayerCan::Close, true),
+            (non_ata, Some(fee_payer), false, FeePayerCan::Nothing, false),
+            (ata, Some(fee_payer), false, FeePayerCan::Nothing, false),
         ] {
             assert_eq!(
-                payment_counted(fee_payer, fee_payer, destination, close_authority, fee_payer_can_close)
-                    .await,
+                payment_counted(
+                    fee_payer,
+                    fee_payer,
+                    destination,
+                    close_authority,
+                    is_2022,
+                    fee_payer_can
+                )
+                .await,
                 counted,
-                "ata {}, close authority {close_authority:?}, fee payer can close {fee_payer_can_close}",
-                destination == ata
+                "ata {}, close authority {close_authority:?}, token-2022 {is_2022}",
+                destination == ata || destination == ata_2022
             );
         }
     }
