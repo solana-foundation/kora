@@ -2973,6 +2973,33 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_fee_payer_can_close_token_account_created_in_the_same_transaction() {
+        let fee_payer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_close_account = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &fee_payer,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_can_close_user_token_account_it_is_close_authority_of() {
         let result =
             close_token_account_as_fee_payer(Pubkey::new_unique(), Pubkey::new_unique(), None)

@@ -106,7 +106,9 @@ impl TransactionValidator {
     /// Not flag-gated: `allow_close_account` only covers token accounts Kora is the close
     /// authority of but does not own. Closing an account owned by the fee payer or the payment
     /// address frees its address, and a caller holding that address's keypair can then recreate
-    /// a payment destination Kora already priced with another mint and owner.
+    /// a payment destination Kora already priced with another mint and owner. An account created
+    /// in the same transaction is not checked: Kora has never priced a payment into it, and a
+    /// signed transaction that creates it cannot land once it exists.
     pub(super) async fn validate_fee_payer_token_account_closes(
         &self,
         config: &Config,
@@ -134,7 +136,12 @@ impl TransactionValidator {
 
         let payment_address = config.kora.get_payment_address(&self.fee_payer_pubkey)?;
         for account in closes {
-            let account_data = CacheUtil::get_account(config, rpc_client, &account, true).await?;
+            let account_data =
+                match CacheUtil::get_account(config, rpc_client, &account, true).await {
+                    Ok(account_data) => account_data,
+                    Err(KoraError::AccountNotFound(_)) => continue,
+                    Err(e) => return Err(e),
+                };
             let token_program = TokenType::get_token_program_from_owner(&account_data.owner)?;
             let owner = token_program
                 .unpack_token_account(&account_data.data)
