@@ -1759,64 +1759,108 @@ mod tests_token {
         assert!(err.to_string().contains("does not match destination mint"), "{err}");
     }
 
-    #[tokio::test]
-    async fn test_find_kora_token_transfers_ignores_destination_closable_by_someone_else() {
-        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+    async fn payment_counted(
+        payment_address: Pubkey,
+        fee_payer: Pubkey,
+        destination_address: Pubkey,
+        close_authority: Option<Pubkey>,
+        fee_payer_can_close: bool,
+    ) -> bool {
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let source_address = Pubkey::new_unique();
+        let source_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&Pubkey::new_unique())
+            .build();
+        let destination_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&payment_address)
+            .with_close_authority(close_authority)
+            .build();
 
+        let payment = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &source_address,
+            &destination_address,
+            &Pubkey::new_unique(),
+            &[],
+            1_000_000,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[payment], Some(&fee_payer)));
+        let mut transaction_resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_account, &destination_account]);
+
+        let mut config = get_config().unwrap();
+        config.kora.cache.enabled = false;
+        config.validation.fee_payer_policy.spl_token.allow_close_account = fee_payer_can_close;
+        TokenUtil::find_kora_token_transfers(
+            &config,
+            &mut transaction_resolved,
+            &rpc_client,
+            &payment_address,
+            &fee_payer,
+            None,
+        )
+        .await
+        .unwrap()
+        .iter()
+        .any(|transfer| transfer.is_inflow)
+    }
+
+    #[tokio::test]
+    async fn test_payment_destination_closable_only_by_separate_payment_address_counts() {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let payment_address = Pubkey::new_unique();
         let fee_payer = Pubkey::new_unique();
-        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
 
         for (close_authority, counted) in [
             (None, true),
             (Some(payment_address), true),
-            (Some(fee_payer), true),
+            (Some(fee_payer), false),
             (Some(Pubkey::new_unique()), false),
         ] {
-            let source_address = Pubkey::new_unique();
-            let destination_address = Pubkey::new_unique();
-            let source_account = TokenAccountMockBuilder::new()
-                .with_mint(&mint)
-                .with_owner(&Pubkey::new_unique())
-                .build();
-            let destination_account = TokenAccountMockBuilder::new()
-                .with_mint(&mint)
-                .with_owner(&payment_address)
-                .with_close_authority(close_authority)
-                .build();
-
-            let payment = spl_token_interface::instruction::transfer(
-                &spl_token_interface::id(),
-                &source_address,
-                &destination_address,
-                &Pubkey::new_unique(),
-                &[],
-                1_000_000,
-            )
-            .unwrap();
-            let message = VersionedMessage::Legacy(Message::new(&[payment], Some(&fee_payer)));
-            let mut transaction_resolved =
-                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-            let rpc_client = RpcMockBuilder::new()
-                .build_with_sequential_accounts(vec![&source_account, &destination_account]);
-
-            let mut config = get_config().unwrap();
-            config.kora.cache.enabled = false;
-            let transfers = TokenUtil::find_kora_token_transfers(
-                &config,
-                &mut transaction_resolved,
-                &rpc_client,
-                &payment_address,
-                &fee_payer,
-                None,
-            )
-            .await
-            .unwrap();
-
             assert_eq!(
-                transfers.iter().any(|transfer| transfer.is_inflow),
+                payment_counted(
+                    payment_address,
+                    fee_payer,
+                    Pubkey::new_unique(),
+                    close_authority,
+                    true
+                )
+                .await,
                 counted,
                 "close authority {close_authority:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_payment_destination_owned_by_fee_payer_must_be_ata_when_fee_payer_can_close() {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let ata = get_associated_token_address_with_program_id(
+            &fee_payer,
+            &mint,
+            &spl_token_interface::id(),
+        );
+
+        for (destination, close_authority, fee_payer_can_close, counted) in [
+            (Pubkey::new_unique(), None, false, true),
+            (Pubkey::new_unique(), None, true, false),
+            (ata, None, true, true),
+            (Pubkey::new_unique(), Some(fee_payer), false, false),
+            (ata, Some(fee_payer), false, false),
+        ] {
+            assert_eq!(
+                payment_counted(fee_payer, fee_payer, destination, close_authority, fee_payer_can_close)
+                    .await,
+                counted,
+                "ata {}, close authority {close_authority:?}, fee payer can close {fee_payer_can_close}",
+                destination == ata
             );
         }
     }

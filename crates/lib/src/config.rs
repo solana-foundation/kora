@@ -362,8 +362,7 @@ pub struct SplTokenInstructionPolicy {
     /// Allow fee payer to be the owner in SPL Token Burn/BurnChecked instructions. Burned tokens are
     /// priced and counted against `max_allowed_lamports`, so the mint needs a price.
     pub allow_burn: bool,
-    /// Allow fee payer to be the authority in SPL Token CloseAccount instructions. It never applies to
-    /// a token account owned by the fee payer or the payment address, which is always rejected.
+    /// Allow fee payer to be the owner in SPL Token CloseAccount instructions
     pub allow_close_account: bool,
     /// Allow fee payer to be the owner in SPL Token Approve/ApproveChecked instructions. The approved
     /// amount is priced and counted against `max_allowed_lamports`, so the mint needs a price.
@@ -402,8 +401,7 @@ pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be the owner in Token2022 Burn/BurnChecked instructions. Burned tokens are
     /// priced and counted against `max_allowed_lamports`, so the mint needs a price.
     pub allow_burn: bool,
-    /// Allow fee payer to be the authority in Token2022 CloseAccount instructions. It never applies to
-    /// a token account owned by the fee payer or the payment address, which is always rejected.
+    /// Allow fee payer to be the owner in Token2022 CloseAccount instructions
     pub allow_close_account: bool,
     /// Allow fee payer to be the owner in Token2022 Approve/ApproveChecked instructions. The approved
     /// amount is priced and counted against `max_allowed_lamports`, so the mint needs a price.

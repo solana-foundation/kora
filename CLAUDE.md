@@ -59,21 +59,21 @@ Do not go looking for a `fee_payer_policy` flag for these. They are rejected reg
   recipient must also be the fee payer.
 - Loader v4 `SetProgramLength` (`transaction_validator/loader_v4.rs`): when the fee payer is the
   authority, the recipient must also be the fee payer.
-- SPL Token and Token-2022 `CloseAccount` (`transaction_validator/spl_token.rs`): the fee payer
-  never closes a token account owned by the fee payer or the payment address, even with
-  `allow_close_account`. The caller may hold that address's keypair and recreate it as a payment
-  destination with another mint, after Kora has priced it.
 - Stake and Vote (`validate_stake_vote_fee_payer_usage` in `transaction_validator.rs`): any
   instruction for either program that references the fee payer in any account position is rejected.
   Simulation returns inner Stake and Vote instructions without accounts, so a CPI into either
   program is also rejected when its top-level instruction references the fee payer.
 
-### Payments count only into accounts that only Kora can close
+### Payments count only into destinations that cannot be swapped out
 
 `find_kora_token_transfers` (`token/token/payment.rs`) prices a payment with the destination's mint
-and owner as they are before the transaction. A destination whose close authority is anyone other
-than the payment address or the fee payer is not counted: that party could close it and recreate
-it at the same address with another mint, inside the transaction or between signing and landing.
+and owner as they are before the transaction. Anyone who can close the destination could recreate
+it at the same address with another mint, inside the transaction or between signing and landing,
+and a fee payer signature counts: a caller can collect a close or SetAuthority signed by the fee
+payer before the account becomes a payment destination. `is_stable_payment_destination` therefore
+counts a destination only when its close authority is unset or a separate payment address, and,
+when the payment address is the fee payer and the policy lets the fee payer close or re-authorize
+token accounts, only the fee payer's associated token account.
 
 ### Fee payer policy must fail closed
 

@@ -16,6 +16,7 @@ use crate::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 use std::collections::{HashMap, HashSet};
 
 use super::{PaymentLamportTotals, TokenUtil};
@@ -194,13 +195,48 @@ impl TokenUtil {
         }
     }
 
+    /// The destination's mint is read before the transaction, so whoever can close the account
+    /// could recreate it at the same address with another mint and owner, inside the transaction
+    /// or between signing and landing. A signature from the fee payer does not help: a caller can
+    /// collect one for a close or SetAuthority before the account becomes a payment destination
+    /// and land it afterwards. So when the payment address is the fee payer and the policy lets
+    /// the fee payer close or re-authorize token accounts, only its associated token account
+    /// counts, since that address can only ever hold the same mint and owner.
+    #[allow(clippy::too_many_arguments)]
+    fn is_stable_payment_destination(
+        config: &Config,
+        destination: &Pubkey,
+        destination_mint: &Pubkey,
+        close_authority: Option<Pubkey>,
+        kora_owner: &Pubkey,
+        fee_payer: &Pubkey,
+        token_program_id: Pubkey,
+        is_2022: bool,
+    ) -> bool {
+        if kora_owner != fee_payer {
+            return close_authority.is_none_or(|authority| authority == *kora_owner);
+        }
+        if close_authority.is_some() {
+            return false;
+        }
+        let policy = &config.validation.fee_payer_policy;
+        let (can_close, can_set_authority) = if is_2022 {
+            (policy.token_2022.allow_close_account, policy.token_2022.allow_set_authority)
+        } else {
+            (policy.spl_token.allow_close_account, policy.spl_token.allow_set_authority)
+        };
+        !(can_close || can_set_authority)
+            || *destination
+                == get_associated_token_address_with_program_id(
+                    kora_owner,
+                    destination_mint,
+                    &token_program_id,
+                )
+    }
+
     /// Returns the SPL transfers of a token Kora accepts that move funds into or out of token
     /// accounts owned by `kora_owner`. Token accounts created earlier in the transaction (or
     /// bundle, via `bundle_instructions`) are resolved from their ATA creation instruction.
-    ///
-    /// A transfer into an account that someone other than `kora_owner` or `fee_payer` can close
-    /// is not an inflow: that party could close the account and recreate it at the same address
-    /// with another mint and owner, inside the transaction or between signing and landing.
     pub(crate) async fn find_kora_token_transfers(
         config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
@@ -253,17 +289,26 @@ impl TokenUtil {
                 .await?;
 
                 let is_inflow = match &destination_account_info {
-                    Some((account_owner, _, _, close_authority)) if account_owner == kora_owner => {
-                        let closable_by_kora_only = close_authority.is_none_or(|authority| {
-                            authority == *kora_owner || authority == *fee_payer
-                        });
-                        if !closable_by_kora_only {
+                    Some((account_owner, destination_mint, _, close_authority))
+                        if account_owner == kora_owner =>
+                    {
+                        let stable = Self::is_stable_payment_destination(
+                            config,
+                            destination_address,
+                            destination_mint,
+                            *close_authority,
+                            kora_owner,
+                            fee_payer,
+                            token_program.program_id(),
+                            *is_2022,
+                        );
+                        if !stable {
                             log::warn!(
-                                "Ignoring payment into {destination_address}: its close authority \
-                                 is not Kora"
+                                "Ignoring payment into {destination_address}: an authority other \
+                                 than the payment address can close it or rewrite it"
                             );
                         }
-                        closable_by_kora_only
+                        stable
                     }
                     _ => false,
                 };

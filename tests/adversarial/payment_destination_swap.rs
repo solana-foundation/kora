@@ -1,12 +1,13 @@
-// Payment destinations that someone other than Kora can close (kora-test.toml sets
-// `fee_payer_policy.spl_token.allow_close_account = true` and `system.allow_transfer = true`).
+// Payment destinations that can be swapped out (kora-test.toml uses the fee payer as payment
+// address and sets `fee_payer_policy.spl_token.allow_close_account = true`,
+// `allow_set_authority = true` and `system.allow_transfer = true`).
 //
 // A legacy Transfer carries no mint, so Kora prices it with the mints of the source and the
 // destination as they are before the transaction runs. Whoever can close the destination can
 // recreate it at the same address with another mint and owner, inside the transaction or between
-// signing and landing. These tests prove that a payment counts only into an account that only
-// Kora can close, and that Kora does not close a token account it owns, since the caller may hold
-// that address's keypair.
+// signing and landing. A signature from the fee payer counts as such a closer, since a caller can
+// collect it before the account becomes a payment destination. These tests prove that with these
+// flags only the fee payer's associated token account counts as a payment destination.
 
 use crate::common::{assertions::RpcErrorAssertions, *};
 use jsonrpsee::rpc_params;
@@ -20,7 +21,7 @@ use solana_sdk::{
 use solana_system_interface::instruction::{create_account, transfer};
 use spl_associated_token_account_interface::address::get_associated_token_address;
 use spl_token_interface::{
-    instruction::{self as token_instruction, AuthorityType},
+    instruction as token_instruction,
     state::{Account as TokenAccount, Mint},
 };
 
@@ -66,64 +67,6 @@ fn close_account_ix(address: &Pubkey, owner: &Keypair) -> Instruction {
     .expect("Failed to create CloseAccount instruction")
 }
 
-async fn send_as(ctx: &TestContext, payer: &Keypair, ixs: &[Instruction], signers: &[&Keypair]) {
-    let mut all_signers = vec![payer];
-    all_signers.extend_from_slice(signers);
-    let recent_blockhash =
-        ctx.rpc_client().get_latest_blockhash().await.expect("Failed to get blockhash");
-    let tx = Transaction::new_signed_with_payer(
-        ixs,
-        Some(&payer.pubkey()),
-        &all_signers,
-        recent_blockhash,
-    );
-    ctx.rpc_client()
-        .send_and_confirm_transaction(&tx)
-        .await
-        .expect("Failed to send setup transaction");
-}
-
-/// Creates a token account of `mint` at a fresh keypair address, owned by the fee payer. With
-/// `creator_keeps_close_authority` the creator stays its close authority.
-async fn create_kora_owned_token_account(
-    ctx: &TestContext,
-    creator: &Keypair,
-    mint: &Pubkey,
-    creator_keeps_close_authority: bool,
-) -> Keypair {
-    let account = Keypair::new();
-    let mut ixs = vec![
-        create_token_account_ix(ctx, creator, &account.pubkey()).await,
-        initialize_account_ix(&account.pubkey(), mint, creator),
-    ];
-    if creator_keeps_close_authority {
-        ixs.push(
-            token_instruction::set_authority(
-                &spl_token_interface::id(),
-                &account.pubkey(),
-                Some(&creator.pubkey()),
-                AuthorityType::CloseAccount,
-                &creator.pubkey(),
-                &[],
-            )
-            .expect("Failed to create SetAuthority instruction"),
-        );
-    }
-    ixs.push(
-        token_instruction::set_authority(
-            &spl_token_interface::id(),
-            &account.pubkey(),
-            Some(&FeePayerTestHelper::get_fee_payer_pubkey()),
-            AuthorityType::AccountOwner,
-            &creator.pubkey(),
-            &[],
-        )
-        .expect("Failed to create SetAuthority instruction"),
-    );
-    send_as(ctx, creator, &ixs, &[&account]).await;
-    account
-}
-
 async fn sender_payment_tx(
     ctx: &TestContext,
     setup: &TestAccountSetup,
@@ -151,6 +94,21 @@ async fn sender_payment_tx(
         .expect("Failed to create payment transaction")
 }
 
+async fn assert_payment_into_ignored(
+    ctx: &TestContext,
+    setup: &TestAccountSetup,
+    destination: &Pubkey,
+) {
+    let payment_tx = sender_payment_tx(ctx, setup, destination).await;
+    let result =
+        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![payment_tx]).await;
+
+    match result {
+        Err(error) => error.assert_contains_message("Insufficient token payment"),
+        Ok(_) => panic!("Expected the payment into {destination} to be ignored"),
+    }
+}
+
 #[tokio::test]
 async fn test_transfer_between_recreated_accounts_is_not_a_payment() {
     let ctx = crate::ctx().await;
@@ -165,7 +123,7 @@ async fn test_transfer_between_recreated_accounts_is_not_a_payment() {
         .get_minimum_balance_for_rent_exemption(Mint::LEN)
         .await
         .expect("Failed to get mint rent");
-    let setup_ixs = vec![
+    let setup_ixs = [
         create_account(
             &attacker.pubkey(),
             &worthless_mint.pubkey(),
@@ -184,8 +142,26 @@ async fn test_transfer_between_recreated_accounts_is_not_a_payment() {
         create_token_account_ix(&ctx, &attacker, &source.pubkey()).await,
         initialize_account_ix(&source.pubkey(), &allowed_mint, &attacker),
     ];
-    send_as(&ctx, &attacker, &setup_ixs, &[&worthless_mint, &source]).await;
-    let destination = create_kora_owned_token_account(&ctx, &attacker, &allowed_mint, true).await;
+    let recent_blockhash =
+        ctx.rpc_client().get_latest_blockhash().await.expect("Failed to get blockhash");
+    let setup_tx = Transaction::new_signed_with_payer(
+        &setup_ixs,
+        Some(&attacker.pubkey()),
+        &[&attacker, &worthless_mint, &source],
+        recent_blockhash,
+    );
+    ctx.rpc_client()
+        .send_and_confirm_transaction(&setup_tx)
+        .await
+        .expect("Failed to send setup transaction");
+    let destination = create_token_account_at_keypair_address(
+        &ctx,
+        &attacker,
+        &allowed_mint,
+        &fee_payer_pubkey,
+        Some(&attacker.pubkey()),
+    )
+    .await;
 
     #[allow(deprecated)]
     let legacy_transfer_ix = token_instruction::transfer(
@@ -249,66 +225,66 @@ async fn test_payment_into_account_closable_by_attacker_rejected() {
     let ctx = crate::ctx().await;
     let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
     let attacker = create_funded_wallet(&ctx).await;
-    let destination =
-        create_kora_owned_token_account(&ctx, &attacker, &setup.usdc_mint.pubkey(), true).await;
+    let destination = create_token_account_at_keypair_address(
+        &ctx,
+        &attacker,
+        &setup.usdc_mint.pubkey(),
+        &FeePayerTestHelper::get_fee_payer_pubkey(),
+        Some(&attacker.pubkey()),
+    )
+    .await;
 
-    let payment_tx = sender_payment_tx(&ctx, &setup, &destination.pubkey()).await;
-    let result =
-        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![payment_tx]).await;
-
-    match result {
-        Err(error) => error.assert_contains_message("Insufficient token payment"),
-        Ok(_) => panic!("Expected a payment into an account the attacker can close to be ignored"),
-    }
+    assert_payment_into_ignored(&ctx, &setup, &destination.pubkey()).await;
 }
 
 #[tokio::test]
-async fn test_payment_into_non_ata_account_only_kora_can_close_accepted() {
+async fn test_payment_into_account_closable_by_fee_payer_rejected() {
     let ctx = crate::ctx().await;
     let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
-    let creator = create_funded_wallet(&ctx).await;
-    let destination =
-        create_kora_owned_token_account(&ctx, &creator, &setup.usdc_mint.pubkey(), false).await;
+    let attacker = create_funded_wallet(&ctx).await;
+    let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
+    let destination = create_token_account_at_keypair_address(
+        &ctx,
+        &attacker,
+        &setup.usdc_mint.pubkey(),
+        &fee_payer_pubkey,
+        Some(&fee_payer_pubkey),
+    )
+    .await;
 
-    let payment_tx = sender_payment_tx(&ctx, &setup, &destination.pubkey()).await;
+    assert_payment_into_ignored(&ctx, &setup, &destination.pubkey()).await;
+}
+
+#[tokio::test]
+async fn test_payment_into_non_ata_account_rejected_when_fee_payer_can_close() {
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
+    let attacker = create_funded_wallet(&ctx).await;
+    let destination = create_token_account_at_keypair_address(
+        &ctx,
+        &attacker,
+        &setup.usdc_mint.pubkey(),
+        &FeePayerTestHelper::get_fee_payer_pubkey(),
+        None,
+    )
+    .await;
+
+    assert_payment_into_ignored(&ctx, &setup, &destination.pubkey()).await;
+}
+
+#[tokio::test]
+async fn test_payment_into_fee_payer_ata_accepted_when_fee_payer_can_close() {
+    let ctx = crate::ctx().await;
+    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
+    let fee_payer_ata = get_associated_token_address(
+        &FeePayerTestHelper::get_fee_payer_pubkey(),
+        &setup.usdc_mint.pubkey(),
+    );
+
+    let payment_tx = sender_payment_tx(&ctx, &setup, &fee_payer_ata).await;
     let response: serde_json::Value = ctx
         .rpc_call("signTransaction", rpc_params![payment_tx])
         .await
-        .expect("Expected a payment into a Kora-owned account only Kora can close to be signed");
+        .expect("Expected a payment into the fee payer's associated token account to be signed");
     assert!(response["signed_transaction"].as_str().is_some());
-}
-
-#[tokio::test]
-async fn test_fee_payer_close_of_own_token_account_rejected() {
-    let ctx = crate::ctx().await;
-    let setup = TestAccountSetup::new(ctx.rpc_client().clone()).await;
-    let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
-    let attacker = create_funded_wallet(&ctx).await;
-    let kora_token_account =
-        create_kora_owned_token_account(&ctx, &attacker, &setup.usdc_mint.pubkey(), false).await;
-
-    let close_ix = token_instruction::close_account(
-        &spl_token_interface::id(),
-        &kora_token_account.pubkey(),
-        &fee_payer_pubkey,
-        &fee_payer_pubkey,
-        &[],
-    )
-    .expect("Failed to create CloseAccount instruction");
-
-    let malicious_tx = ctx
-        .transaction_builder()
-        .with_fee_payer(fee_payer_pubkey)
-        .with_instruction(close_ix)
-        .build()
-        .await
-        .expect("Failed to create transaction closing a Kora token account");
-
-    let result =
-        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![malicious_tx]).await;
-
-    match result {
-        Err(error) => error.assert_contains_message("owned by Kora"),
-        Ok(_) => panic!("Expected the fee payer not to close a token account it owns"),
-    }
 }
