@@ -168,7 +168,7 @@ impl TokenUtil {
         token_program: &dyn TokenInterface,
         account_address: &Pubkey,
         all_instructions: &[Instruction],
-    ) -> Result<Option<(Pubkey, Pubkey, bool)>, KoraError> {
+    ) -> Result<Option<(Pubkey, Pubkey, bool, Option<Pubkey>)>, KoraError> {
         match CacheUtil::get_account(config, rpc_client, account_address, true).await {
             Ok(account) => {
                 let token_state =
@@ -176,12 +176,17 @@ impl TokenUtil {
                         KoraError::InvalidTransaction(format!("Invalid token account: {e}"))
                     })?;
 
-                Ok(Some((token_state.owner(), token_state.mint(), true)))
+                Ok(Some((
+                    token_state.owner(),
+                    token_state.mint(),
+                    true,
+                    token_state.close_authority(),
+                )))
             }
             Err(e) => {
                 if matches!(e, KoraError::AccountNotFound(_)) {
                     Ok(Self::find_ata_creation_for_destination(all_instructions, account_address)
-                        .map(|(wallet_owner, ata_mint)| (wallet_owner, ata_mint, false)))
+                        .map(|(wallet_owner, ata_mint)| (wallet_owner, ata_mint, false, None)))
                 } else {
                     Err(KoraError::RpcError(e.to_string()))
                 }
@@ -192,11 +197,16 @@ impl TokenUtil {
     /// Returns the SPL transfers of a token Kora accepts that move funds into or out of token
     /// accounts owned by `kora_owner`. Token accounts created earlier in the transaction (or
     /// bundle, via `bundle_instructions`) are resolved from their ATA creation instruction.
+    ///
+    /// A transfer into an account that someone other than `kora_owner` or `fee_payer` can close
+    /// is not an inflow: that party could close the account and recreate it at the same address
+    /// with another mint and owner, inside the transaction or between signing and landing.
     pub(crate) async fn find_kora_token_transfers(
         config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         kora_owner: &Pubkey,
+        fee_payer: &Pubkey,
         bundle_instructions: Option<&[Instruction]>,
     ) -> Result<Vec<KoraTokenTransfer>, KoraError> {
         let all_instructions = bundle_instructions
@@ -242,20 +252,31 @@ impl TokenUtil {
                 )
                 .await?;
 
-                let is_inflow = destination_account_info
-                    .as_ref()
-                    .map(|(account_owner, _, _)| account_owner == kora_owner)
-                    .unwrap_or(false);
+                let is_inflow = match &destination_account_info {
+                    Some((account_owner, _, _, close_authority)) if account_owner == kora_owner => {
+                        let closable_by_kora_only = close_authority.is_none_or(|authority| {
+                            authority == *kora_owner || authority == *fee_payer
+                        });
+                        if !closable_by_kora_only {
+                            log::warn!(
+                                "Ignoring payment into {destination_address}: its close authority \
+                                 is not Kora"
+                            );
+                        }
+                        closable_by_kora_only
+                    }
+                    _ => false,
+                };
                 let is_outflow = source_account_info
                     .as_ref()
-                    .map(|(account_owner, _, _)| account_owner == kora_owner)
+                    .map(|(account_owner, _, _, _)| account_owner == kora_owner)
                     .unwrap_or(false);
 
                 if !is_inflow && !is_outflow {
                     continue;
                 }
 
-                if let (None, Some((_, source_mint, _)), Some((_, destination_mint, _))) =
+                if let (None, Some((_, source_mint, _, _)), Some((_, destination_mint, _, _))) =
                     (mint, &source_account_info, &destination_account_info)
                 {
                     if source_mint != destination_mint {
@@ -267,8 +288,8 @@ impl TokenUtil {
                 }
 
                 let token_mint = mint
-                    .or(source_account_info.as_ref().map(|(_, token_mint, _)| *token_mint))
-                    .or(destination_account_info.as_ref().map(|(_, token_mint, _)| *token_mint))
+                    .or(source_account_info.as_ref().map(|(_, token_mint, _, _)| *token_mint))
+                    .or(destination_account_info.as_ref().map(|(_, token_mint, _, _)| *token_mint))
                     .ok_or_else(|| {
                         KoraError::InvalidTransaction(
                             "Unable to resolve token mint for payment transfer".to_string(),
@@ -284,10 +305,10 @@ impl TokenUtil {
                     source_address: *source_address,
                     destination_address: *destination_address,
                     existing_source_owner: source_account_info
-                        .filter(|(_, _, exists)| *exists)
-                        .map(|(source_owner, _, _)| source_owner),
+                        .filter(|(_, _, exists, _)| *exists)
+                        .map(|(source_owner, _, _, _)| source_owner),
                     destination_exists: destination_account_info
-                        .map(|(_, _, exists)| exists)
+                        .map(|(_, _, exists, _)| exists)
                         .unwrap_or(false),
                     authority: *owner,
                     multisig_signers: multisig_signers.clone(),
@@ -312,6 +333,7 @@ impl TokenUtil {
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         expected_destination_owner: &Pubkey,
+        fee_payer: &Pubkey,
         bundle_instructions: Option<&[Instruction]>,
     ) -> Result<PaymentLamportTotals, KoraError> {
         let mut totals = PaymentLamportTotals::default();
@@ -332,6 +354,7 @@ impl TokenUtil {
             transaction_resolved,
             rpc_client,
             expected_destination_owner,
+            fee_payer,
             bundle_instructions,
         )
         .await?
@@ -414,7 +437,7 @@ impl TokenUtil {
                 } else {
                     Box::new(TokenProgram::new())
                 };
-                let Some((owner, source_mint, _)) = Self::resolve_token_account_owner_and_mint(
+                let Some((owner, source_mint, _, _)) = Self::resolve_token_account_owner_and_mint(
                     config,
                     rpc_client,
                     token_program.as_ref(),
@@ -457,7 +480,7 @@ impl TokenUtil {
                 &all_instructions,
             )
             .await?
-            .map(|(owner, _, _)| owner);
+            .map(|(owner, _, _, _)| owner);
             if source_owner == Some(*expected_destination_owner) {
                 return Err(KoraError::InvalidTransaction(format!(
                     "Permissioned burn from Kora token account {source} is not supported"
@@ -522,6 +545,7 @@ impl TokenUtil {
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         expected_destination_owner: &Pubkey,
+        fee_payer: &Pubkey,
         bundle_instructions: Option<&[Instruction]>,
     ) -> Result<u64, KoraError> {
         Self::calculate_payment_lamport_totals(
@@ -529,6 +553,7 @@ impl TokenUtil {
             transaction_resolved,
             rpc_client,
             expected_destination_owner,
+            fee_payer,
             bundle_instructions,
         )
         .await
@@ -545,6 +570,7 @@ impl TokenUtil {
         rpc_client: &RpcClient,
         required_lamports: u64,
         expected_destination_owner: &Pubkey,
+        fee_payer: &Pubkey,
         bundle_instructions: Option<&[Instruction]>,
     ) -> Result<bool, KoraError> {
         let payment = Self::find_payment_in_transaction(
@@ -552,6 +578,7 @@ impl TokenUtil {
             transaction_resolved,
             rpc_client,
             expected_destination_owner,
+            fee_payer,
             bundle_instructions,
         )
         .await?;

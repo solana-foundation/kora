@@ -1,8 +1,15 @@
 use super::TransactionValidator;
 use crate::{
+    cache::CacheUtil,
+    config::Config,
     error::KoraError,
-    transaction::{ParsedSPLInstructionData, ParsedSPLInstructionType},
+    token::token::TokenType,
+    transaction::{
+        ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionResolved,
+    },
 };
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 
 impl TransactionValidator {
@@ -92,6 +99,53 @@ impl TransactionValidator {
             self.fee_payer_signs(owner, multisig_signers),
             unless token_policy(self.fee_payer_policy, *is_2022).allow_unwrap_lamports,
             "UnwrapLamports");
+
+        Ok(())
+    }
+
+    /// Not flag-gated: `allow_close_account` only covers token accounts Kora is the close
+    /// authority of but does not own. Closing an account owned by the fee payer or the payment
+    /// address frees its address, and a caller holding that address's keypair can then recreate
+    /// a payment destination Kora already priced with another mint and owner.
+    pub(super) async fn validate_fee_payer_token_account_closes(
+        &self,
+        config: &Config,
+        transaction_resolved: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+    ) -> Result<(), KoraError> {
+        let closes: Vec<Pubkey> = transaction_resolved
+            .get_or_parse_spl_instructions()?
+            .get(&ParsedSPLInstructionType::SplTokenCloseAccount)
+            .into_iter()
+            .flatten()
+            .filter_map(|instruction| match instruction {
+                ParsedSPLInstructionData::SplTokenCloseAccount {
+                    owner,
+                    account,
+                    multisig_signers,
+                    ..
+                } if self.fee_payer_signs(owner, multisig_signers) => Some(*account),
+                _ => None,
+            })
+            .collect();
+        if closes.is_empty() {
+            return Ok(());
+        }
+
+        let payment_address = config.kora.get_payment_address(&self.fee_payer_pubkey)?;
+        for account in closes {
+            let account_data = CacheUtil::get_account(config, rpc_client, &account, true).await?;
+            let token_program = TokenType::get_token_program_from_owner(&account_data.owner)?;
+            let owner = token_program
+                .unpack_token_account(&account_data.data)
+                .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token account: {e}")))?
+                .owner();
+            if owner == self.fee_payer_pubkey || owner == payment_address {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Fee payer cannot close token account {account} owned by Kora"
+                )));
+            }
+        }
 
         Ok(())
     }

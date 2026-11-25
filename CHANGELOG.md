@@ -92,6 +92,10 @@ First stable release since 2.0.5. It includes every 2.1 and 2.2 beta. Audit stat
 
 - payment validation rejects unchecked transfers with mismatched mints and PermissionedBurn from a payment account. gas_swap needs the token transfer to be the only token instruction (#782)
 
+- a payment into a token account whose close authority is not the payment address or the fee payer is not counted
+
+- the fee payer never closes a token account owned by the fee payer or the payment address, even with `allow_close_account`
+
 #### deploy_authority plugin and kora-deploy
 
 - upgrade kora-deploy. Loader-v3 buffer writes, deploys, upgrades and buffer closes through the plugin need the buffer keypair's signature, and deploys also need the program keypair's (#782)

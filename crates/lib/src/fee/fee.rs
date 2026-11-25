@@ -118,6 +118,7 @@ impl FeeConfigUtil {
             resolved_transaction,
             rpc_client,
             &payment_destination,
+            fee_payer,
             bundle_instructions,
         )
         .await?;

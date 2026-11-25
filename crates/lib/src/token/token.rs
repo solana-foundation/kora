@@ -1081,6 +1081,7 @@ mod tests_token {
             &mut transaction_resolved,
             &rpc_client,
             &expected_destination_owner,
+            &expected_destination_owner,
             None,
         )
         .await;
@@ -1532,6 +1533,7 @@ mod tests_token {
             &mut transaction_resolved,
             &rpc_client,
             &expected_destination_owner,
+            &expected_destination_owner,
             None,
         )
         .await;
@@ -1584,6 +1586,7 @@ mod tests_token {
                 &config,
                 &mut transaction_resolved,
                 &rpc_client,
+                &kora_owner,
                 &kora_owner,
                 None,
             )
@@ -1693,6 +1696,7 @@ mod tests_token {
             &mut transaction_resolved,
             &rpc_client,
             &expected_destination_owner,
+            &expected_destination_owner,
             None,
         )
         .await
@@ -1746,11 +1750,74 @@ mod tests_token {
             &mut transaction_resolved,
             &rpc_client,
             &expected_destination_owner,
+            &expected_destination_owner,
             None,
         )
         .await
         .unwrap_err();
 
         assert!(err.to_string().contains("does not match destination mint"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn test_find_kora_token_transfers_ignores_destination_closable_by_someone_else() {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let payment_address = Pubkey::new_unique();
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+
+        for (close_authority, counted) in [
+            (None, true),
+            (Some(payment_address), true),
+            (Some(fee_payer), true),
+            (Some(Pubkey::new_unique()), false),
+        ] {
+            let source_address = Pubkey::new_unique();
+            let destination_address = Pubkey::new_unique();
+            let source_account = TokenAccountMockBuilder::new()
+                .with_mint(&mint)
+                .with_owner(&Pubkey::new_unique())
+                .build();
+            let destination_account = TokenAccountMockBuilder::new()
+                .with_mint(&mint)
+                .with_owner(&payment_address)
+                .with_close_authority(close_authority)
+                .build();
+
+            let payment = spl_token_interface::instruction::transfer(
+                &spl_token_interface::id(),
+                &source_address,
+                &destination_address,
+                &Pubkey::new_unique(),
+                &[],
+                1_000_000,
+            )
+            .unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[payment], Some(&fee_payer)));
+            let mut transaction_resolved =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let rpc_client = RpcMockBuilder::new()
+                .build_with_sequential_accounts(vec![&source_account, &destination_account]);
+
+            let mut config = get_config().unwrap();
+            config.kora.cache.enabled = false;
+            let transfers = TokenUtil::find_kora_token_transfers(
+                &config,
+                &mut transaction_resolved,
+                &rpc_client,
+                &payment_address,
+                &fee_payer,
+                None,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                transfers.iter().any(|transfer| transfer.is_inflow),
+                counted,
+                "close authority {close_authority:?}"
+            );
+        }
     }
 }

@@ -535,6 +535,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                 required_lamports,
                 rpc_client,
                 &payment_destination,
+                &fee_payer,
             )
             .await?;
         }

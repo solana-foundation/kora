@@ -30,6 +30,9 @@ impl TokenState for TokenAccount {
     fn amount(&self) -> u64 {
         self.amount
     }
+    fn close_authority(&self) -> Option<Pubkey> {
+        self.close_authority
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

@@ -96,6 +96,8 @@ impl TransactionValidator {
         self.validate_priority_fee(transaction_resolved)?;
         self.validate_disallowed_accounts(transaction_resolved)?;
         self.validate_fee_payer_usage(config, transaction_resolved)?;
+        self.validate_fee_payer_token_account_closes(config, transaction_resolved, rpc_client)
+            .await?;
         self.validate_transfer_amounts(config, transaction_resolved, rpc_client).await?;
 
         Ok(())
@@ -477,6 +479,7 @@ impl TransactionValidator {
         required_lamports: u64,
         rpc_client: &RpcClient,
         expected_payment_destination: &Pubkey,
+        fee_payer: &Pubkey,
     ) -> Result<(), KoraError> {
         if TokenUtil::verify_token_payment(
             config,
@@ -484,6 +487,7 @@ impl TransactionValidator {
             rpc_client,
             required_lamports,
             expected_payment_destination,
+            fee_payer,
             None,
         )
         .await?
@@ -2526,7 +2530,10 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let closed_account = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
-        let rent_account = AccountMockBuilder::new().with_lamports(2_000_000).build();
+        let rent_account = TokenAccountMockBuilder::new()
+            .with_close_authority(Some(fee_payer))
+            .with_lamports(2_000_000)
+            .build_token2022();
 
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_close_account = true;
@@ -2538,7 +2545,8 @@ mod tests {
             .build();
         setup_both_configs(config);
 
-        let rpc_client = RpcMockBuilder::new().with_account_info(&rent_account).build();
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&rent_account, &rent_account]);
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
@@ -2836,11 +2844,15 @@ mod tests {
     #[serial]
     async fn test_fee_payer_policy_close_account() {
         let fee_payer = Pubkey::new_unique();
-        let fee_payer_token_account = Pubkey::new_unique();
+        let user_token_account = Pubkey::new_unique();
         let destination = Pubkey::new_unique();
 
-        let closed_account = AccountMockBuilder::new().with_lamports(5_000).build();
-        let rpc_client = RpcMockBuilder::new().with_account_info(&closed_account).build();
+        let closed_account = TokenAccountMockBuilder::new()
+            .with_close_authority(Some(fee_payer))
+            .with_lamports(5_000)
+            .build();
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&closed_account, &closed_account]);
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_close_account = true;
         setup_spl_config_with_policy(policy);
@@ -2850,7 +2862,7 @@ mod tests {
 
         let close_ix = spl_token_interface::instruction::close_account(
             &spl_token_interface::id(),
-            &fee_payer_token_account,
+            &user_token_account,
             &destination,
             &fee_payer,
             &[],
@@ -2875,7 +2887,7 @@ mod tests {
 
         let close_ix = spl_token_interface::instruction::close_account(
             &spl_token_interface::id(),
-            &fee_payer_token_account,
+            &user_token_account,
             &destination,
             &fee_payer,
             &[],
@@ -2890,6 +2902,82 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
+    }
+
+    async fn close_token_account_as_fee_payer(
+        fee_payer: Pubkey,
+        token_account_owner: Pubkey,
+        payment_address: Option<Pubkey>,
+    ) -> Result<(), KoraError> {
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_close_account = true;
+        let mut config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_interface::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        config.kora.payment_address = payment_address.map(|address| address.to_string());
+        setup_both_configs(config);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let token_account = TokenAccountMockBuilder::new()
+            .with_owner(&token_account_owner)
+            .with_close_authority(Some(fee_payer))
+            .with_amount(0)
+            .with_lamports(5_000)
+            .build();
+        let rpc_client = RpcMockBuilder::new().with_account_info(&token_account).build();
+
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &fee_payer,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        validator.validate_transaction(config, &mut transaction, &rpc_client).await
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_cannot_close_token_account_it_owns_even_when_allowed() {
+        let fee_payer = Pubkey::new_unique();
+        let result = close_token_account_as_fee_payer(fee_payer, fee_payer, None).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message)) if message.contains("owned by Kora")
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_cannot_close_token_account_owned_by_payment_address() {
+        let payment_address = Pubkey::new_unique();
+        let result = close_token_account_as_fee_payer(
+            Pubkey::new_unique(),
+            payment_address,
+            Some(payment_address),
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message)) if message.contains("owned by Kora")
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_can_close_user_token_account_it_is_close_authority_of() {
+        let result =
+            close_token_account_as_fee_payer(Pubkey::new_unique(), Pubkey::new_unique(), None)
+                .await;
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[tokio::test]

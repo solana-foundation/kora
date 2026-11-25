@@ -6,10 +6,12 @@
 //        - Invalid token states (frozen)
 //        - Fee payer exploitation
 //        - Token-2022 Reallocate rent counted as fee payer outflow
+//        - Payment destinations that someone other than Kora can close
 //        - Request body size limit (DDOS protection)
 
 mod body_size_limit;
 mod fee_payer_exploitation;
+mod payment_destination_swap;
 mod program_validation;
 mod token_2022_reallocate;
 mod token_states;
