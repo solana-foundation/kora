@@ -301,7 +301,7 @@ impl TransactionValidator {
     }
 
     /// Rejects a fee payer CloseAccount of a token account the fee payer owns or that is missing
-    /// before the transaction, whatever `allow_close_account` says.
+    /// before the transaction, whatever `allow_close_account` says. Token-2022 mint closes pass.
     async fn validate_fee_payer_token_account_closes(
         &self,
         config: &Config,
@@ -337,11 +337,18 @@ impl TransactionValidator {
                     Err(e) => return Err(e),
                 };
             let token_program = TokenType::get_token_program_from_owner(&account_data.owner)?;
-            let owner = token_program
-                .unpack_token_account(&account_data.data)
-                .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token account: {e}")))?
-                .owner();
-            if owner == self.fee_payer_pubkey {
+            let token_account = match token_program.unpack_token_account(&account_data.data) {
+                Ok(token_account) => token_account,
+                Err(_) if token_program.unpack_mint(&account, &account_data.data).is_ok() => {
+                    continue
+                }
+                Err(e) => {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Invalid token account: {e}"
+                    )))
+                }
+            };
+            if token_account.owner() == self.fee_payer_pubkey {
                 return Err(KoraError::InvalidTransaction(format!(
                     "Fee payer cannot close token account {account} owned by the fee payer"
                 )));
@@ -3014,6 +3021,35 @@ mod tests {
             Err(KoraError::InvalidTransaction(message))
                 if message.contains("missing before the transaction")
         ));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_can_close_token_2022_mint_it_is_close_authority_of() {
+        let fee_payer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_close_account = true;
+        setup_token2022_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let rpc_client = RpcMockBuilder::new()
+            .with_account_info(&MintAccountMockBuilder::new().with_supply(0).build_token2022())
+            .build();
+
+        let close_ix = spl_token_2022_interface::instruction::close_account(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+            &fee_payer,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[tokio::test]
