@@ -5,6 +5,7 @@ pub trait TokenState: Any + Send + Sync {
     fn mint(&self) -> Pubkey;
     fn owner(&self) -> Pubkey;
     fn amount(&self) -> u64;
+    fn close_authority(&self) -> Option<Pubkey>;
 
     fn as_any(&self) -> &dyn Any;
 }

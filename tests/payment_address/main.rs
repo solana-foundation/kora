@@ -6,7 +6,9 @@
 //        - Associated Token Account (ATA) creation and initialization
 //        - Token transfer validation with specific payment addresses
 //        - Fee payer policy enforcement for payment scenarios
+//        - Payment destinations that are not the payment address's ATA
 
+mod payment_address_destination_tests;
 mod payment_address_legacy_tests;
 mod payment_address_multi_payment_tests;
 mod payment_address_v0_lut_tests;

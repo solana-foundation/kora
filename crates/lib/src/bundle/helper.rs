@@ -219,6 +219,7 @@ impl BundleProcessor {
                 resolved,
                 rpc_client,
                 payment_destination,
+                &fee_payer,
                 Some(&all_bundle_instructions),
             )
             .await?;

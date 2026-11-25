@@ -59,10 +59,22 @@ Do not go looking for a `fee_payer_policy` flag for these. They are rejected reg
   recipient must also be the fee payer.
 - Loader v4 `SetProgramLength` (`transaction_validator/loader_v4.rs`): when the fee payer is the
   authority, the recipient must also be the fee payer.
+- SPL Token and Token-2022 `CloseAccount` (`validate_fee_payer_token_account_closes` in
+  `transaction_validator.rs`): the fee payer never closes a token account it owns, or one missing
+  before the transaction, even with `allow_close_account`. A wrapped SOL account closes with its
+  balance, so the caller would get back a payment made into it earlier in the transaction or
+  bundle.
 - Stake and Vote (`validate_stake_vote_fee_payer_usage` in `transaction_validator.rs`): any
   instruction for either program that references the fee payer in any account position is rejected.
   Simulation returns inner Stake and Vote instructions without accounts, so a CPI into either
   program is also rejected when its top-level instruction references the fee payer.
+
+### Payments count only into destinations that cannot be swapped out
+
+Payments are priced from the destination's mint and owner before the transaction. Anyone who can
+close the destination, including through a fee payer close or SetAuthority collected earlier, can
+recreate it with another mint before the payment lands. `is_stable_payment_destination`
+(`token/token/payment.rs`) decides which destinations count.
 
 ### Fee payer policy must fail closed
 

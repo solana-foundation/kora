@@ -16,6 +16,7 @@ use crate::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 use std::collections::{HashMap, HashSet};
 
 use super::{PaymentLamportTotals, TokenUtil};
@@ -168,7 +169,7 @@ impl TokenUtil {
         token_program: &dyn TokenInterface,
         account_address: &Pubkey,
         all_instructions: &[Instruction],
-    ) -> Result<Option<(Pubkey, Pubkey, bool)>, KoraError> {
+    ) -> Result<Option<(Pubkey, Pubkey, bool, Option<Pubkey>)>, KoraError> {
         match CacheUtil::get_account(config, rpc_client, account_address, true).await {
             Ok(account) => {
                 let token_state =
@@ -176,17 +177,63 @@ impl TokenUtil {
                         KoraError::InvalidTransaction(format!("Invalid token account: {e}"))
                     })?;
 
-                Ok(Some((token_state.owner(), token_state.mint(), true)))
+                Ok(Some((
+                    token_state.owner(),
+                    token_state.mint(),
+                    true,
+                    token_state.close_authority(),
+                )))
             }
             Err(e) => {
                 if matches!(e, KoraError::AccountNotFound(_)) {
                     Ok(Self::find_ata_creation_for_destination(all_instructions, account_address)
-                        .map(|(wallet_owner, ata_mint)| (wallet_owner, ata_mint, false)))
+                        .map(|(wallet_owner, ata_mint)| (wallet_owner, ata_mint, false, None)))
                 } else {
                     Err(KoraError::RpcError(e.to_string()))
                 }
             }
         }
+    }
+
+    /// Whether a payment into `destination` counts: nobody but a separate payment address may be
+    /// able to close it, and a fee payer that may close or re-authorize token accounts only gets
+    /// paid into its associated token account.
+    fn is_stable_payment_destination(
+        config: &Config,
+        destination: &Pubkey,
+        destination_mint: &Pubkey,
+        close_authority: Option<Pubkey>,
+        kora_owner: &Pubkey,
+        fee_payer: &Pubkey,
+        is_2022: bool,
+    ) -> bool {
+        if kora_owner != fee_payer {
+            return close_authority.is_none_or(|authority| authority == *kora_owner);
+        }
+        if close_authority.is_some() {
+            return false;
+        }
+        let policy = &config.validation.fee_payer_policy;
+        let (can_close, can_set_authority, token_program_id) = if is_2022 {
+            (
+                policy.token_2022.allow_close_account,
+                policy.token_2022.allow_set_authority,
+                spl_token_2022_interface::id(),
+            )
+        } else {
+            (
+                policy.spl_token.allow_close_account,
+                policy.spl_token.allow_set_authority,
+                spl_token_interface::id(),
+            )
+        };
+        !(can_close || can_set_authority)
+            || *destination
+                == get_associated_token_address_with_program_id(
+                    kora_owner,
+                    destination_mint,
+                    &token_program_id,
+                )
     }
 
     /// Returns the SPL transfers of a token Kora accepts that move funds into or out of token
@@ -197,6 +244,7 @@ impl TokenUtil {
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         kora_owner: &Pubkey,
+        fee_payer: &Pubkey,
         bundle_instructions: Option<&[Instruction]>,
     ) -> Result<Vec<KoraTokenTransfer>, KoraError> {
         let all_instructions = bundle_instructions
@@ -242,20 +290,39 @@ impl TokenUtil {
                 )
                 .await?;
 
-                let is_inflow = destination_account_info
-                    .as_ref()
-                    .map(|(account_owner, _, _)| account_owner == kora_owner)
-                    .unwrap_or(false);
+                let is_inflow = match &destination_account_info {
+                    Some((account_owner, destination_mint, _, close_authority))
+                        if account_owner == kora_owner =>
+                    {
+                        let stable = Self::is_stable_payment_destination(
+                            config,
+                            destination_address,
+                            destination_mint,
+                            *close_authority,
+                            kora_owner,
+                            fee_payer,
+                            *is_2022,
+                        );
+                        if !stable {
+                            log::warn!(
+                                "Ignoring payment into {destination_address}: the destination can \
+                                 be closed or re-authorized"
+                            );
+                        }
+                        stable
+                    }
+                    _ => false,
+                };
                 let is_outflow = source_account_info
                     .as_ref()
-                    .map(|(account_owner, _, _)| account_owner == kora_owner)
+                    .map(|(account_owner, _, _, _)| account_owner == kora_owner)
                     .unwrap_or(false);
 
                 if !is_inflow && !is_outflow {
                     continue;
                 }
 
-                if let (None, Some((_, source_mint, _)), Some((_, destination_mint, _))) =
+                if let (None, Some((_, source_mint, _, _)), Some((_, destination_mint, _, _))) =
                     (mint, &source_account_info, &destination_account_info)
                 {
                     if source_mint != destination_mint {
@@ -267,8 +334,8 @@ impl TokenUtil {
                 }
 
                 let token_mint = mint
-                    .or(source_account_info.as_ref().map(|(_, token_mint, _)| *token_mint))
-                    .or(destination_account_info.as_ref().map(|(_, token_mint, _)| *token_mint))
+                    .or(source_account_info.as_ref().map(|(_, token_mint, _, _)| *token_mint))
+                    .or(destination_account_info.as_ref().map(|(_, token_mint, _, _)| *token_mint))
                     .ok_or_else(|| {
                         KoraError::InvalidTransaction(
                             "Unable to resolve token mint for payment transfer".to_string(),
@@ -284,10 +351,10 @@ impl TokenUtil {
                     source_address: *source_address,
                     destination_address: *destination_address,
                     existing_source_owner: source_account_info
-                        .filter(|(_, _, exists)| *exists)
-                        .map(|(source_owner, _, _)| source_owner),
+                        .filter(|(_, _, exists, _)| *exists)
+                        .map(|(source_owner, _, _, _)| source_owner),
                     destination_exists: destination_account_info
-                        .map(|(_, _, exists)| exists)
+                        .map(|(_, _, exists, _)| exists)
                         .unwrap_or(false),
                     authority: *owner,
                     multisig_signers: multisig_signers.clone(),
@@ -312,6 +379,7 @@ impl TokenUtil {
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         expected_destination_owner: &Pubkey,
+        fee_payer: &Pubkey,
         bundle_instructions: Option<&[Instruction]>,
     ) -> Result<PaymentLamportTotals, KoraError> {
         let mut totals = PaymentLamportTotals::default();
@@ -332,6 +400,7 @@ impl TokenUtil {
             transaction_resolved,
             rpc_client,
             expected_destination_owner,
+            fee_payer,
             bundle_instructions,
         )
         .await?
@@ -414,7 +483,7 @@ impl TokenUtil {
                 } else {
                     Box::new(TokenProgram::new())
                 };
-                let Some((owner, source_mint, _)) = Self::resolve_token_account_owner_and_mint(
+                let Some((owner, source_mint, _, _)) = Self::resolve_token_account_owner_and_mint(
                     config,
                     rpc_client,
                     token_program.as_ref(),
@@ -457,7 +526,7 @@ impl TokenUtil {
                 &all_instructions,
             )
             .await?
-            .map(|(owner, _, _)| owner);
+            .map(|(owner, _, _, _)| owner);
             if source_owner == Some(*expected_destination_owner) {
                 return Err(KoraError::InvalidTransaction(format!(
                     "Permissioned burn from Kora token account {source} is not supported"
@@ -522,6 +591,7 @@ impl TokenUtil {
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         expected_destination_owner: &Pubkey,
+        fee_payer: &Pubkey,
         bundle_instructions: Option<&[Instruction]>,
     ) -> Result<u64, KoraError> {
         Self::calculate_payment_lamport_totals(
@@ -529,6 +599,7 @@ impl TokenUtil {
             transaction_resolved,
             rpc_client,
             expected_destination_owner,
+            fee_payer,
             bundle_instructions,
         )
         .await
@@ -545,6 +616,7 @@ impl TokenUtil {
         rpc_client: &RpcClient,
         required_lamports: u64,
         expected_destination_owner: &Pubkey,
+        fee_payer: &Pubkey,
         bundle_instructions: Option<&[Instruction]>,
     ) -> Result<bool, KoraError> {
         let payment = Self::find_payment_in_transaction(
@@ -552,6 +624,7 @@ impl TokenUtil {
             transaction_resolved,
             rpc_client,
             expected_destination_owner,
+            fee_payer,
             bundle_instructions,
         )
         .await?;

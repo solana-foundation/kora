@@ -10,6 +10,10 @@ use std::str::FromStr;
 use crate::common::constants::*;
 #[cfg(test)]
 use crate::common::TestContext;
+#[cfg(test)]
+use solana_program_pack::Pack;
+#[cfg(test)]
+use spl_token_interface::instruction::{self as token_instruction, AuthorityType};
 
 /// Default fee for a transaction with 2 signers (5000 lamports each)
 /// This is used for a lot of tests that only has sender and fee payer as signers
@@ -176,4 +180,68 @@ pub async fn create_funded_wallet(ctx: &TestContext) -> Keypair {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
     wallet
+}
+
+/// The creator initializes the account as its own and hands the owner over with SetAuthority, so
+/// any `owner` works without its signature.
+#[cfg(test)]
+pub async fn create_token_account_at_keypair_address(
+    ctx: &TestContext,
+    creator: &Keypair,
+    mint: &Pubkey,
+    owner: &Pubkey,
+    close_authority: Option<&Pubkey>,
+) -> Keypair {
+    let account = Keypair::new();
+    let rent = ctx
+        .rpc_client()
+        .get_minimum_balance_for_rent_exemption(spl_token_interface::state::Account::LEN)
+        .await
+        .expect("Failed to get token account rent");
+    let set_authority = |new_authority: &Pubkey, authority_type| {
+        token_instruction::set_authority(
+            &spl_token_interface::id(),
+            &account.pubkey(),
+            Some(new_authority),
+            authority_type,
+            &creator.pubkey(),
+            &[],
+        )
+        .expect("Failed to create SetAuthority instruction")
+    };
+
+    let mut ixs = vec![
+        solana_system_interface::instruction::create_account(
+            &creator.pubkey(),
+            &account.pubkey(),
+            rent,
+            spl_token_interface::state::Account::LEN as u64,
+            &spl_token_interface::id(),
+        ),
+        token_instruction::initialize_account3(
+            &spl_token_interface::id(),
+            &account.pubkey(),
+            mint,
+            &creator.pubkey(),
+        )
+        .expect("Failed to create InitializeAccount3 instruction"),
+    ];
+    if let Some(close_authority) = close_authority {
+        ixs.push(set_authority(close_authority, AuthorityType::CloseAccount));
+    }
+    ixs.push(set_authority(owner, AuthorityType::AccountOwner));
+
+    let recent_blockhash =
+        ctx.rpc_client().get_latest_blockhash().await.expect("Failed to get blockhash");
+    let tx = Transaction::new_signed_with_payer(
+        &ixs,
+        Some(&creator.pubkey()),
+        &[creator, &account],
+        recent_blockhash,
+    );
+    ctx.rpc_client()
+        .send_and_confirm_transaction(&tx)
+        .await
+        .expect("Failed to create token account");
+    account
 }

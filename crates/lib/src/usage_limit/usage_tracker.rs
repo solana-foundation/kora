@@ -140,6 +140,7 @@ impl UsageTracker {
             transaction,
             rpc_client,
             &payment_destination,
+            fee_payer,
             None,
         )
         .await?;
