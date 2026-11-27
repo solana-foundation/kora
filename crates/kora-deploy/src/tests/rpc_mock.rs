@@ -82,6 +82,16 @@ impl DeployRpcMockBuilder {
         self
     }
 
+    pub fn with_slot(mut self, slot: u64) -> Self {
+        self.mocks.insert(RpcRequest::GetSlot, json!(slot));
+        self
+    }
+
+    pub fn with_slot_error(mut self) -> Self {
+        self.mocks.insert(RpcRequest::GetSlot, json!("invalid_slot_error"));
+        self
+    }
+
     pub fn with_minimum_balance_for_rent_exemption(mut self, lamports: u64) -> Self {
         self.mocks.insert(RpcRequest::GetMinimumBalanceForRentExemption, json!(lamports));
         self

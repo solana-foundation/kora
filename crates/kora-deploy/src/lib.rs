@@ -163,9 +163,9 @@ impl<'a> DeployCtx<'a> {
 }
 
 macro_rules! cleanup_buffer {
-    ($msg:expr, $err_log:expr, $ctx:expr, $buffer:expr, $kora_pubkey:expr) => {
+    ($msg:expr, $ctx:expr, $buffer:expr, $kora_pubkey:expr) => {
         if $ctx.cleanup_on_failure {
-            log::warn!("{}, attempting to close buffer for cleanup...", $msg);
+            println!("{}, attempting to close buffer for cleanup...", $msg);
             let mut close_ix = loader_v3::close_any(
                 &$buffer.pubkey(),
                 $kora_pubkey,
@@ -188,7 +188,7 @@ macro_rules! cleanup_buffer {
                     let state_path = $ctx.state_path;
                     if state_path.exists() {
                         if let Err(err) = fs::remove_file(state_path) {
-                            log::warn!(
+                            println!(
                                 "Buffer closed successfully, but failed to delete state file: {}. Please manually delete {} to start a fresh deployment.",
                                 err,
                                 state_path.display()
@@ -197,7 +197,10 @@ macro_rules! cleanup_buffer {
                     }
                 }
                 Err(e) => {
-                    $err_log(e);
+                    println!(
+                        "failed to close buffer: {}; keeping state file for manual recovery",
+                        sanitize_error!(e)
+                    );
                 }
             }
         }
@@ -402,16 +405,7 @@ async fn load_or_init_deploy_state(
         new_state.save(state_path).context("failed to save initial deploy state")?;
 
         if let Err(e) = create_buffer_account(ctx, &kora_pubkey, &buffer, bytes.len()).await {
-            cleanup_buffer!(
-                "failed to create buffer account",
-                |err| log::warn!(
-                    "failed to close buffer: {}; keeping state file for manual recovery",
-                    sanitize_error!(err)
-                ),
-                ctx,
-                &buffer,
-                &kora_pubkey
-            );
+            cleanup_buffer!("failed to create buffer account", ctx, &buffer, &kora_pubkey);
             return Err(e.context("failed to create buffer account"));
         }
 
@@ -473,10 +467,6 @@ async fn handle_state_invariant_violation(
         StateInvariantViolation::ChunkOverflow { written, total } => {
             cleanup_buffer!(
                 "written_chunks exceeds chunk_count (corrupted state or smaller .so file)",
-                |e| log::warn!(
-                    "failed to close buffer: {}; keeping state file for manual recovery",
-                    sanitize_error!(e)
-                ),
                 ctx,
                 buffer,
                 kora_pubkey
@@ -671,16 +661,7 @@ async fn load_or_init_upgrade_state(
         new_state.save(state_path).context("failed to save initial upgrade state")?;
 
         if let Err(e) = create_buffer_account(ctx, &kora_pubkey, &buffer, bytes.len()).await {
-            cleanup_buffer!(
-                "failed to create buffer account",
-                |err| log::warn!(
-                    "failed to close buffer: {}; keeping state file for manual recovery",
-                    sanitize_error!(err)
-                ),
-                ctx,
-                &buffer,
-                &kora_pubkey
-            );
+            cleanup_buffer!("failed to create buffer account", ctx, &buffer, &kora_pubkey);
             return Err(e.context("failed to create buffer account"));
         }
 
@@ -709,35 +690,15 @@ async fn write_chunks<S: ChunkWriterState>(
                 written_chunks += ixs.len();
                 state.set_written_chunks(written_chunks);
                 if let Err(e) = state.save(state_path) {
-                    cleanup_buffer!(
-                        "failed to save chunk state",
-                        |err| {
-                            log::warn!(
-                                "failed to close buffer: {}; keeping state file for manual recovery",
-                                sanitize_error!(err)
-                            )
-                        },
-                        ctx,
-                        buffer,
-                        kora_pubkey
-                    );
+                    cleanup_buffer!("failed to save chunk state", ctx, buffer, kora_pubkey);
                     return Err(e.context("failed to save state after chunk write"));
                 }
                 if written_chunks % 25 < ixs.len() || written_chunks == chunk_count {
-                    log::info!("wrote chunk {}/{}", written_chunks, chunk_count);
+                    println!("wrote chunk {}/{}", written_chunks, chunk_count);
                 }
             }
             Err(e) => {
-                cleanup_buffer!(
-                    "chunk write failed",
-                    |err| log::warn!(
-                        "failed to close buffer: {}; keeping state file for manual recovery",
-                        sanitize_error!(err)
-                    ),
-                    ctx,
-                    buffer,
-                    kora_pubkey
-                );
+                cleanup_buffer!("chunk write failed", ctx, buffer, kora_pubkey);
                 return Err(e.context("failed to write chunk"));
             }
         }
@@ -748,7 +709,7 @@ async fn write_chunks<S: ChunkWriterState>(
 fn remove_state_file_on_success(state_path: &Path, action: &str) {
     if state_path.exists() {
         if let Err(err) = fs::remove_file(state_path) {
-            log::warn!(
+            println!(
                 "{action} succeeded, but failed to delete state file: {err}. Please manually delete {} to start a fresh deployment.",
                 state_path.display()
             );
@@ -808,21 +769,12 @@ async fn finalize_deploy(
             Ok(())
         }
         Err(e) => {
-            cleanup_buffer!(
-                "deploy transaction failed",
-                |err| log::warn!(
-                    "failed to close buffer: {}; keeping state file for manual recovery",
-                    sanitize_error!(err)
-                ),
-                ctx,
-                buffer,
-                kora_pubkey
-            );
+            cleanup_buffer!("deploy transaction failed", ctx, buffer, kora_pubkey);
             Err(anyhow::anyhow!(
                 "Failed to submit deploy transaction for {}: {}. \n\
                 Verify status: `solana program show {}`",
                 program.pubkey(),
-                e,
+                sanitize_error!(e),
                 program.pubkey()
             ))
         }
@@ -912,19 +864,54 @@ async fn finalize_upgrade(
 ) -> Result<Signature> {
     let state_path = ctx.state_path;
 
-    // The loader rejects upgrades in the same slot the program was deployed or extended.
-    if let Ok(slot) = ctx.rpc.get_slot().await {
-        let pdata_addr = derive_program_data_address(program);
-        if let Ok(pdata_acc) = ctx.rpc.get_account(&pdata_addr).await {
-            let pdata_slot = pdata_acc
-                .data
-                .get(4..12)
-                .and_then(|b| b.try_into().ok())
-                .map(u64::from_le_bytes)
-                .unwrap_or(0);
-            if slot <= pdata_slot {
-                let _ = wait_for_next_slot(ctx.rpc).await;
+    // The loader rejects upgrades in the same slot the program was deployed, upgraded, or extended.
+    match ctx.rpc.get_slot().await {
+        Ok(slot) => {
+            let pdata_addr = derive_program_data_address(program);
+            match ctx.rpc.get_account(&pdata_addr).await {
+                Ok(pdata_acc) => {
+                    let meta_len = UpgradeableLoaderState::size_of_programdata_metadata();
+                    let pdata_slot = pdata_acc
+                        .data
+                        .get(..meta_len)
+                        .and_then(|hdr| bincode::deserialize::<UpgradeableLoaderState>(hdr).ok())
+                        .and_then(|st| match st {
+                            UpgradeableLoaderState::ProgramData { slot, .. } => Some(slot),
+                            _ => None,
+                        });
+                    match pdata_slot {
+                        Some(pdata_slot) => {
+                            if slot <= pdata_slot {
+                                if let Err(err) =
+                                    wait_for_slot_past(ctx.rpc, Some(pdata_slot)).await
+                                {
+                                    println!(
+                                        "Notice: slot-pacing wait skipped due to RPC error ({}); proceeding with upgrade submission...",
+                                        sanitize_error!(err)
+                                    );
+                                }
+                            }
+                        }
+                        None => {
+                            println!(
+                                "Notice: slot-pacing check skipped due to malformed ProgramData account; proceeding with upgrade submission..."
+                            );
+                        }
+                    }
+                }
+                Err(err) => {
+                    println!(
+                        "Notice: slot-pacing check skipped due to RPC error fetching ProgramData ({}); proceeding with upgrade submission...",
+                        sanitize_error!(err)
+                    );
+                }
             }
+        }
+        Err(err) => {
+            println!(
+                "Notice: slot-pacing check skipped due to RPC error fetching slot ({}); proceeding with upgrade submission...",
+                sanitize_error!(err)
+            );
         }
     }
 
@@ -948,19 +935,11 @@ async fn finalize_upgrade(
             Ok(sig)
         }
         Err(e) => {
-            cleanup_buffer!(
-                "upgrade transaction failed",
-                |err| log::warn!(
-                    "failed to close buffer: {}; keeping state file for manual recovery",
-                    sanitize_error!(err)
-                ),
-                ctx,
-                buffer,
-                kora_pubkey
-            );
+            cleanup_buffer!("upgrade transaction failed", ctx, buffer, kora_pubkey);
             Err(anyhow::anyhow!(
-                "Failed to submit upgrade transaction for {program}: {e}. \n\
-                Verify status: `solana program show {program}`"
+                "Failed to submit upgrade transaction for {program}: {}. \n\
+                Verify status: `solana program show {program}`",
+                sanitize_error!(e)
             ))
         }
     }
@@ -1366,7 +1345,11 @@ async fn await_tx(rpc: &RpcClient, sig: &Signature) -> Result<()> {
 }
 
 async fn wait_for_next_slot(rpc: &RpcClient) -> Result<()> {
-    let mut start = None;
+    wait_for_slot_past(rpc, None).await
+}
+
+async fn wait_for_slot_past(rpc: &RpcClient, target: Option<u64>) -> Result<()> {
+    let mut start = target;
     for _ in 0..40 {
         match rpc.get_slot().await {
             Ok(slot) => match start {
@@ -4472,5 +4455,155 @@ mod inline_tests {
 
         transient_mock.assert_async().await;
         success_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_finalize_upgrade_slot_lookup_rpc_error_proceeds_with_submission() {
+        let program = Pubkey::new_unique();
+        let buffer = Keypair::new();
+        let wallet = Keypair::new();
+        let kora_pubkey = Pubkey::new_unique();
+        let expected_sig = Signature::new_unique();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-upgrade-pacing-slot-err-{}.json", Pubkey::new_unique()));
+        std::fs::write(&state_path, b"dummy").unwrap();
+
+        let mut server = mockito::Server::new_async().await;
+        let sign_mock =
+            mock_sign_and_send_success(&mut server, &expected_sig.to_string()).await.expect(1);
+
+        // GetSlot returns an RPC error via with_slot_error().
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_slot_error()
+            .with_blockhash()
+            .with_signature_status(10)
+            .build();
+
+        let cfg = UpgradeConfig {
+            kora_url: &server.url(),
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            program,
+            wallet: &wallet,
+            resume: false,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
+
+        let res = finalize_upgrade(&ctx, &program, &buffer, &kora_pubkey, &wallet).await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), expected_sig);
+        assert!(!state_path.exists());
+
+        sign_mock.assert_async().await;
+
+        let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[tokio::test]
+    async fn test_finalize_upgrade_pdata_lookup_rpc_error_proceeds_with_submission() {
+        let program = Pubkey::new_unique();
+        let buffer = Keypair::new();
+        let wallet = Keypair::new();
+        let kora_pubkey = Pubkey::new_unique();
+        let expected_sig = Signature::new_unique();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-upgrade-pacing-pdata-err-{}.json", Pubkey::new_unique()));
+        std::fs::write(&state_path, b"dummy").unwrap();
+
+        let mut server = mockito::Server::new_async().await;
+        let sign_mock =
+            mock_sign_and_send_success(&mut server, &expected_sig.to_string()).await.expect(1);
+
+        // GetSlot succeeds, but ProgramData account lookup is unmocked (simulating an RPC error on get_account).
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_slot(100)
+            .with_blockhash()
+            .with_signature_status(10)
+            .build();
+
+        let cfg = UpgradeConfig {
+            kora_url: &server.url(),
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            program,
+            wallet: &wallet,
+            resume: false,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
+
+        let res = finalize_upgrade(&ctx, &program, &buffer, &kora_pubkey, &wallet).await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), expected_sig);
+        assert!(!state_path.exists());
+
+        sign_mock.assert_async().await;
+
+        let _ = std::fs::remove_file(&state_path);
+    }
+
+    #[tokio::test]
+    async fn test_finalize_upgrade_malformed_program_data_proceeds_with_submission() {
+        let program = Pubkey::new_unique();
+        let buffer = Keypair::new();
+        let wallet = Keypair::new();
+        let kora_pubkey = Pubkey::new_unique();
+        let expected_sig = Signature::new_unique();
+
+        let state_path = std::env::temp_dir()
+            .join(format!("kora-upgrade-pacing-malformed-pdata-{}.json", Pubkey::new_unique()));
+        std::fs::write(&state_path, b"dummy").unwrap();
+
+        let mut server = mockito::Server::new_async().await;
+        let sign_mock =
+            mock_sign_and_send_success(&mut server, &expected_sig.to_string()).await.expect(1);
+
+        // ProgramData account has truncated data (< 45 bytes), so bincode metadata deserialization fails.
+        let malformed_account = Account {
+            lamports: 1_000_000,
+            data: vec![0u8; 10],
+            owner: BPF_LOADER_UPGRADEABLE,
+            executable: false,
+            rent_epoch: 0,
+        };
+
+        let mock_rpc = DeployRpcMockBuilder::new()
+            .with_slot(100)
+            .with_account_info(&malformed_account)
+            .with_blockhash()
+            .with_signature_status(10)
+            .build();
+
+        let cfg = UpgradeConfig {
+            kora_url: &server.url(),
+            rpc_url: "unused",
+            program_so: Path::new("unused.so"),
+            user_id: "test-user".to_string(),
+            program,
+            wallet: &wallet,
+            resume: false,
+            cleanup_on_failure: true,
+            state_path: state_path.clone(),
+        };
+        let http = reqwest::Client::new();
+        let ctx = DeployCtx::from_upgrade_config(&cfg, &http, &mock_rpc);
+
+        let res = finalize_upgrade(&ctx, &program, &buffer, &kora_pubkey, &wallet).await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), expected_sig);
+        assert!(!state_path.exists());
+
+        sign_mock.assert_async().await;
+
+        let _ = std::fs::remove_file(&state_path);
     }
 }

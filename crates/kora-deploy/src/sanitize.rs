@@ -47,7 +47,7 @@ pub fn sanitize_message(message: &str) -> String {
 #[macro_export]
 macro_rules! sanitize_error {
     ($error:expr) => {{
-        $crate::sanitize::sanitize_message(&format!("{}", $error))
+        $crate::sanitize::sanitize_message(&format!("{:#}", $error))
     }};
 }
 
@@ -150,6 +150,18 @@ mod tests {
     fn test_sanitize_error_macro() {
         let err = anyhow::anyhow!("error with https://rpc.example.com/?api-key=secret");
         let sanitized = sanitize_error!(err);
+        assert!(!sanitized.contains("secret"));
+        assert!(sanitized.contains("[REDACTED_PATH]"));
+    }
+
+    #[test]
+    fn test_sanitize_error_macro_preserves_cause_chain() {
+        let root = anyhow::anyhow!("connection refused to https://rpc.example.com/?api-key=secret");
+        let wrapped = root.context("RPC request failed");
+        let sanitized = sanitize_error!(wrapped);
+        assert!(
+            sanitized.contains("RPC request failed: connection refused to https://rpc.example.com")
+        );
         assert!(!sanitized.contains("secret"));
         assert!(sanitized.contains("[REDACTED_PATH]"));
     }
