@@ -34,34 +34,47 @@ Flags:
 | `--rpc-url` | `https://api.devnet.solana.com` | Solana RPC for reads |
 | `--program-so` | _required_ | Path to your `.so` |
 | `--user-id` | random per run | Tag the paymaster buckets by for usage limits |
-| `--wallet` | `~/.config/solana/id.json` | Owner wallet registered for upgrades; without one the program is immutable |
+| `--wallet` | `~/.config/solana/id.json` | Owner wallet registered for upgrades (resolved via `HOME` or `USERPROFILE`); without one the program is immutable |
 | `--program-id` | _(none)_ | Existing program to upgrade; omit to deploy fresh |
-| `--resume` | `false` | Resume a previous deployment from the local `.kora-deploy-state.json` file |
+| `--resume` | `false` | Resume a previous deployment or upgrade from the local state file |
 | `--no-cleanup-on-failure` | `false` | Do not close the buffer on failure, leaving it open so you can `--resume` later |
+| `--state-path` | `.(kora-deploy\|kora-upgrade)-state.json` | Custom path for the deployment or upgrade state file |
 
-## Recovering from a failed deploy
+## Recovering from a failed deploy or upgrade
 
-When you start a fresh deployment, `kora-deploy` writes a `.kora-deploy-state.json`
-file to your directory. This stores the program and buffer keypairs required to
-deploy your code. If deployment succeeds, the file is automatically removed.
-If it fails (e.g., timeout or rate limit), the file remains for recovery.
+When you start a fresh deployment, `kora-deploy` writes
+`.kora-deploy-state.json`; for an upgrade, it writes
+`.kora-upgrade-state.json`. These store the buffer keypair and progress
+required to resume. If the operation succeeds, the file is automatically
+removed. When `--no-cleanup-on-failure` is active (or if buffer reclamation
+fails), the file remains for recovery.
 
 **Normal Resume Flow**:
 Run the exact same `kora-deploy` command but add the `--resume` flag.
-It reads `.kora-deploy-state.json`, skips already-written chunks,
-and continues where it left off.
+It reads the state file, skips already-written chunks, and continues
+where it left off.
 
 **Cleanup on Failure**:
-By default, failed or interrupted deploys automatically close the buffer
+By default, failed or interrupted runs automatically close the buffer
 to return rent to the paymaster. This prevents you from resuming.
 If you anticipate connection issues, pass `--no-cleanup-on-failure`
 on your initial run to leave the buffer open for `--resume`.
 
 **Hash Mismatch**:
-If you recompile your `.so` file before resuming, the hashes won't match.
-`kora-deploy` will refuse to resume to prevent corrupted data.
-Either restore the original `.so` file, or delete the state file
-and start a fresh deploy.
+If you recompile your `.so` file while chunk writes are still in flight,
+the binary hashes won't match. `kora-deploy` will refuse to resume to prevent
+corrupted data, but it preserves the buffer on-chain and keeps the state file intact
+(even with cleanup enabled) so your progress is not lost.
+
+Note: If a final deployment or upgrade transaction timed out on the client but
+actually landed on-chain, `--resume` checks on-chain status before validating the
+local hash and completes cleanly even if you rebuilt your `.so` file.
+
+To recover from an in-flight hash mismatch:
+- Either restore the original `.so` binary and run `--resume` again.
+- Or, if you want to abandon this deployment and start over, you must
+  close the buffer account first (see Manual Recovery below) before
+  deleting the state file; otherwise, the paymaster's rent remains locked.
 
 **Manual Recovery / Deploy Timeout**:
 Rarely, the final transaction might time out, leaving an ambiguous state.
@@ -70,11 +83,11 @@ You can check if the paymaster finalized it manually:
 solana program show <PROGRAM_ID>
 ```
 If it's not live, you can't resume, and automatic cleanup failed,
-the buffer may be stuck. You can manually close it using
-`solana program close`. The `.kora-deploy-state.json` file stores the
-`program_keypair` and `buffer_keypair` as raw JSON byte arrays. To use them
-with the Solana CLI, copy the array of numbers (e.g., `[1,2,...]`) into a new
-file and pass that file to the CLI, then delete the state file to start over.
+the buffer may remain on-chain until the paymaster's reaper reclaims it.
+Note that because the paymaster is the on-chain buffer authority (not your local wallet),
+the buffer cannot be closed directly with `solana program close`. You can delete the
+local state file (`.kora-deploy-state.json` or `.kora-upgrade-state.json`)
+to start a fresh deployment.
 
 ## Trade-offs
 
@@ -84,6 +97,10 @@ file and pass that file to the CLI, then delete the state file to start over.
   signature.
 - Deploying without a wallet makes the program immutable — nobody can upgrade
   or close it through the paymaster; it just waits for the reaper.
+- Upgrades that grow the binary size automatically extend the on-chain ProgramData
+  account capacity via the paymaster before uploading chunks.
+  Note: this requires the paymaster to have `allow_extend_program_checked = true` set
+  in its fee-payer policy, which is a separate flag from `allow_extend_program`.
 - The program gets reaped after 7 days of on-chain idleness.
 
 Production deploys should go to a paid RPC. This is for devnet.

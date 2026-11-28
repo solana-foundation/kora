@@ -1551,6 +1551,17 @@ mod tests {
         (ix, buffer)
     }
 
+    fn extend_program_checked_ix_with_owner_signer(
+        program: &Pubkey,
+        fee_payer: &Pubkey,
+        owner: &Pubkey,
+    ) -> solana_sdk::instruction::Instruction {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let mut ix = loader_v3::extend_program_checked(program, fee_payer, Some(fee_payer), 64);
+        ix.accounts.push(AccountMeta::new_readonly(*owner, true));
+        ix
+    }
+
     #[tokio::test]
     async fn registry_rejects_upgrade_of_unregistered_program() {
         let config = registry_test_config();
@@ -1646,6 +1657,76 @@ mod tests {
         let mut signed = ix;
         signed.accounts.push(AccountMeta::new_readonly(owner.pubkey(), true));
         assert!(run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[signed], &[&owner])
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn registry_rejects_extend_program_checked_of_unregistered_program() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let config = registry_test_config();
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let ix = loader_v3::extend_program_checked(&program, &fee_payer, Some(&fee_payer), 64);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("not registered")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_rejects_extend_program_checked_without_owner_signature() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let config = registry_test_config();
+        let owner = Keypair::new();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let entry = registry_entry_account(&owner.pubkey(), &fee_payer);
+        let rpc_client = RpcMockBuilder::new().with_account_info(&entry).build();
+
+        let ix = loader_v3::extend_program_checked(&program, &fee_payer, Some(&fee_payer), 64);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("has not signed")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_rejects_extend_program_checked_with_wrong_wallet_signature() {
+        let config = registry_test_config();
+        let owner = Keypair::new();
+        let attacker = Keypair::new();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let entry = registry_entry_account(&owner.pubkey(), &fee_payer);
+        let rpc_client = RpcMockBuilder::new().with_account_info(&entry).build();
+
+        let ix =
+            extend_program_checked_ix_with_owner_signer(&program, &fee_payer, &attacker.pubkey());
+        let err = run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&attacker])
+            .await
+            .expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("has not signed")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_accepts_extend_program_checked_with_owner_signature() {
+        let config = registry_test_config();
+        let owner = Keypair::new();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let entry = registry_entry_account(&owner.pubkey(), &fee_payer);
+        let rpc_client = RpcMockBuilder::new().with_account_info(&entry).build();
+
+        let ix = extend_program_checked_ix_with_owner_signer(&program, &fee_payer, &owner.pubkey());
+        assert!(run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&owner])
             .await
             .is_ok());
     }

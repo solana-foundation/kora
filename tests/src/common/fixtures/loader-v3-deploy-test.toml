@@ -67,6 +67,7 @@ allow_write = true
 allow_deploy_with_max_data_len = true
 allow_upgrade = true
 allow_extend_program = true
+allow_extend_program_checked = true
 allow_set_authority = true
 allow_set_authority_checked = true
 allow_close = true
